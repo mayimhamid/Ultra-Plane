@@ -10,7 +10,7 @@ import Link from "next/link";
 import { mutate } from "swr";
 import { setToast } from "@plane/blocks/toast";
 import { formatDuration, formatHm, getWeekRange, toDateKey } from "@plane/services";
-import type { TFinishWorkPayload, TOpsNotification, TDayMode, TWorkPlace } from "@plane/types";
+import type { TFinishWorkPayload, TOpsNotification, TDayMode, TWorkdayTimer, TWorkPlace } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
 import { useUser, useUserProfile } from "@/hooks/store/user";
@@ -23,9 +23,10 @@ import { getErrorMessage } from "../calendar/error-message";
 import { MyReportsRoot } from "../reports/my-reports-root";
 // local imports
 import { ContributionGraph } from "./contribution-graph";
-import { DayModeChip, DayStart } from "./day-start";
+import { DayModeChip, DayOverride, DayStart, Gate, WeekUnlock } from "./day-start";
 import { FinishWorkPanel } from "./finish-work-panel";
 import { NowCard } from "./now-card";
+import { ParallelTasks } from "./parallel-tasks";
 import type { TPickedTask } from "./project-task-picker";
 import { SessionsList } from "./sessions-list";
 import { TeamNow } from "./team-now";
@@ -59,7 +60,15 @@ function Section({ title, hint, children }: { title: string; hint: string; child
   );
 }
 
-function Alerts({ items, onRead }: { items: TOpsNotification[]; onRead: (id?: string) => Promise<void> }) {
+function Alerts({
+  items,
+  onRead,
+  workspaceSlug,
+}: {
+  items: TOpsNotification[];
+  onRead: (id?: string) => Promise<void>;
+  workspaceSlug: string;
+}) {
   if (items.length === 0) return null;
   return (
     <section
@@ -80,7 +89,13 @@ function Alerts({ items, onRead }: { items: TOpsNotification[]; onRead: (id?: st
         {items.slice(0, 5).map((item) => (
           <li key={item.id} className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-body-sm-medium text-primary">{item.title}</p>
+              <Link
+                href={item.link ? `/${workspaceSlug}/${item.link.replace(/^\/+/, "")}/` : "#"}
+                onClick={() => void onRead(item.id)}
+                className="text-body-sm-medium text-primary hover:underline"
+              >
+                {item.title}
+              </Link>
               {item.body ? <p className="line-clamp-2 text-body-xs-regular text-secondary">{item.body}</p> : null}
             </div>
             <button
@@ -101,6 +116,7 @@ function Alerts({ items, onRead }: { items: TOpsNotification[]; onRead: (id?: st
 export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Props) {
   // states
   const [isFinishing, setIsFinishing] = useState(false);
+  const [parallelFinishing, setParallelFinishing] = useState<TWorkdayTimer | null>(null);
   // hooks
   const { data: currentUser } = useUser();
   const { data: userProfile } = useUserProfile();
@@ -129,6 +145,7 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
   const todaySessions = (weekly.sessions ?? []).filter((session) => toDateKey(new Date(session.finished_at)) === today);
   const attentionCount = (weekly.sessions ?? []).filter((session) => session.needs_attention).length;
   const unread = (notifications ?? []).filter((item) => !item.read);
+  const parallelActive = Boolean(timer) && (state?.parallel.length ?? 0) > 0;
 
   const fail = (title: string) => (error: unknown) =>
     setToast({ type: "error", title, message: getErrorMessage(error) });
@@ -174,25 +191,35 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
           <h1 className="text-h4-medium text-primary">Workday</h1>
           <p className="text-body-sm-regular text-secondary">{dateFormat.format(new Date())}</p>
         </div>
-        {mode ? <DayModeChip mode={mode} onChange={choose} /> : null}
+        {mode ? <DayModeChip mode={mode} /> : null}
       </header>
 
-      <Alerts items={unread} onRead={markRead} />
+      <Alerts items={unread} onRead={markRead} workspaceSlug={workspaceSlug} />
 
       {day.isLoading ? <p className="text-body-sm-regular text-tertiary">Loading your day...</p> : null}
 
-      {state && !mode ? <DayStart onChoose={choose} /> : null}
+      {state?.week?.complete && !mode ? (
+        <Gate label="Start your day">
+          <DayStart onChoose={choose} />
+        </Gate>
+      ) : null}
 
-      {state?.week && currentUser ? (
-        <WeekPlan
-          workspaceSlug={workspaceSlug}
-          userId={currentUser.id}
-          week={state.week}
-          onChanged={async () => {
-            await day.refresh();
-            await everything();
-          }}
-        />
+      {state?.week && currentUser && !state.week.complete ? (
+        <Gate label="Plan your week">
+          <WeekPlan
+            workspaceSlug={workspaceSlug}
+            userId={currentUser.id}
+            week={state.week}
+            onChanged={async () => {
+              await day.refresh();
+              await everything();
+            }}
+            onConfirm={async () => {
+              await day.confirmWeek();
+              await everything();
+            }}
+          />
+        </Gate>
       ) : null}
 
       {mode && timer && isFinishing ? (
@@ -206,16 +233,51 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
         />
       ) : null}
 
-      {mode && !(timer && isFinishing) ? (
-        <NowCard
-          workspaceSlug={workspaceSlug}
-          mode={mode}
-          timer={timer}
-          onStart={start}
-          onBreak={rest}
-          onCheckIn={checkIn}
-          onFinish={() => setIsFinishing(true)}
+      {mode && parallelFinishing ? (
+        <FinishWorkPanel
+          title={`Parallel: ${parallelFinishing.work_item ?? ""} ${parallelFinishing.work_item_name ?? ""}`}
+          elapsedLabel={formatDuration(parallelFinishing.worked_seconds, "en-US")}
+          teams={teams ?? []}
+          people={(people ?? []).filter((person) => person.id !== currentUser?.id)}
+          onFinish={async (payload) => {
+            await finish({ ...payload, timer: parallelFinishing.id });
+            setParallelFinishing(null);
+          }}
+          onCancel={() => setParallelFinishing(null)}
         />
+      ) : null}
+
+      {mode && !(timer && isFinishing) ? (
+        <div
+          className={cn("flex flex-col gap-3", parallelActive && "rounded-xl border-2 p-3")}
+          style={parallelActive ? { borderColor: "#8b5cf6" } : undefined}
+        >
+          {parallelActive ? (
+            <p className="px-1 text-body-sm-medium" style={{ color: "#8b5cf6" }}>
+              {1 + (state?.parallel.length ?? 0)} tasks at the same time. Each has its own clock.
+            </p>
+          ) : null}
+          <NowCard
+            workspaceSlug={workspaceSlug}
+            mode={mode}
+            timer={timer}
+            onStart={start}
+            onBreak={rest}
+            onCheckIn={checkIn}
+            onFinish={() => setIsFinishing(true)}
+          />
+          {timer && !parallelFinishing ? (
+            <ParallelTasks
+              workspaceSlug={workspaceSlug}
+              defaultPlace={timer.location}
+              parallel={state?.parallel ?? []}
+              onStart={async (task, place) => {
+                await day.startParallel(task.id, place).catch(fail("Could not start"));
+              }}
+              onFinish={setParallelFinishing}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       {mode ? (
@@ -227,6 +289,17 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
                 <Stat label="Onsite" value={formatHm(totals?.onsite_seconds ?? 0)} />
                 <Stat label="Remote" value={formatHm(totals?.remote_seconds ?? 0)} />
               </>
+            ) : null}
+            {(totals?.parallel_seconds ?? 0) > 0 ? (
+              <div
+                className="flex min-w-32 flex-1 flex-col rounded-lg border bg-surface-1 px-4 py-3"
+                style={{ borderColor: "#8b5cf6" }}
+              >
+                <span className="text-caption-sm-regular text-tertiary">Parallel</span>
+                <span className="text-h4-medium tabular-nums" style={{ color: "#8b5cf6" }}>
+                  {formatHm(totals?.parallel_seconds ?? 0)}
+                </span>
+              </div>
             ) : null}
             <Stat label="Rest pauses" value={formatHm(totals?.break_seconds ?? 0)} />
             <Stat
@@ -313,6 +386,46 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
           <MyReportsRoot workspaceSlug={workspaceSlug} />
         </Section>
       </div>
+
+      {state?.week && currentUser && state.week.complete ? (
+        <WeekPlan
+          workspaceSlug={workspaceSlug}
+          userId={currentUser.id}
+          week={state.week}
+          onChanged={async () => {
+            await day.refresh();
+            await everything();
+          }}
+          onConfirm={async () => {
+            await day.confirmWeek();
+          }}
+        />
+      ) : null}
+
+      {state?.week?.confirmed ? (
+        <WeekUnlock
+          onUnlock={async () => {
+            await day.unlockWeek().catch(fail("Could not reopen"));
+            await everything();
+          }}
+        />
+      ) : null}
+
+      {mode ? (
+        <DayOverride
+          mode={mode}
+          sessions={todaySessions}
+          onSubmit={async (next, places) => {
+            try {
+              await day.overrideDay(next, places);
+              await everything();
+            } catch (error) {
+              fail("Could not change")(error);
+              throw error;
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 });

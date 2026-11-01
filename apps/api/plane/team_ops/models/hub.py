@@ -33,6 +33,7 @@ class WorkSession(BaseModel):
     needs_attention = models.BooleanField(default=False)
     attention_message = models.TextField(blank=True, default="")
     location = models.CharField(max_length=10, blank=True, default="")
+    is_parallel = models.BooleanField(default=False)
     break_seconds = models.PositiveIntegerField(default=0)
     frozen_seconds = models.PositiveIntegerField(default=0)
 

@@ -32,7 +32,8 @@ from plane.team_ops.views import (
     NotificationEndpoint,
     FlowDetailEndpoint,
     FlowListEndpoint,
-    FlowProjectMembersEndpoint,
+    FlowProjectModulesEndpoint,
+    FlowSuggestionsEndpoint,
     HubDirectEndpoint,
     HubDocDetailEndpoint,
     HubDocListEndpoint,
@@ -43,17 +44,29 @@ from plane.team_ops.views import (
     HubSecretDetailEndpoint,
     HubSecretListEndpoint,
     HubSecretRevealEndpoint,
+    ControlApprovalEndpoint,
     ControlFlowsEndpoint,
+    ControlFreezeCreditEndpoint,
+    ControlNotificationsEndpoint,
+    ControlSumEndpoint,
+    ControlHoursEndpoint,
+    ControlRankingEndpoint,
     ControlHubChannelEndpoint,
     ControlHubEndpoint,
     ControlHubMessageEndpoint,
     ControlInterruptionsEndpoint,
     ControlTeamEndpoint,
+    ModuleRelationsEndpoint,
+    TasksEndpoint,
     TeamflowEndpoint,
     WorkHeatmapEndpoint,
     WorkdayBreakEndpoint,
     WorkdayCheckInEndpoint,
     WorkdayDayEndpoint,
+    WorkdayDayOverrideEndpoint,
+    WorkdayParallelEndpoint,
+    WorkdayWeekConfirmEndpoint,
+    WorkdayWeekUnlockEndpoint,
     WorkdayStartEndpoint,
     WorkdayStateEndpoint,
     WorkdayTeamEndpoint,
@@ -237,9 +250,9 @@ urlpatterns = [
     ),
     path("workspaces/<str:slug>/team-ops/teamflow/flows/", FlowListEndpoint.as_view(), name="team-ops-flows"),
     path(
-        "workspaces/<str:slug>/team-ops/teamflow/flows/members/",
-        FlowProjectMembersEndpoint.as_view(),
-        name="team-ops-flow-members",
+        "workspaces/<str:slug>/team-ops/teamflow/flows/modules/",
+        FlowProjectModulesEndpoint.as_view(),
+        name="team-ops-flow-modules",
     ),
     path(
         "workspaces/<str:slug>/team-ops/teamflow/flows/<uuid:pk>/", FlowDetailEndpoint.as_view(), name="team-ops-flow"
@@ -267,7 +280,62 @@ urlpatterns = [
     path(
         "workspaces/<str:slug>/team-ops/control/flows/", ControlFlowsEndpoint.as_view(), name="team-ops-control-flows"
     ),
+    path(
+        "workspaces/<str:slug>/team-ops/control/hours/", ControlHoursEndpoint.as_view(), name="team-ops-control-hours"
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/control/approvals/",
+        ControlApprovalEndpoint.as_view(),
+        name="team-ops-control-approvals",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/control/ranking/",
+        ControlRankingEndpoint.as_view(),
+        name="team-ops-control-ranking",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/teamflow/flows/<uuid:pk>/pull/",
+        FlowSuggestionsEndpoint.as_view(),
+        name="team-ops-flow-pull",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/workday/day/override/",
+        WorkdayDayOverrideEndpoint.as_view(),
+        name="team-ops-workday-override",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/workday/parallel/",
+        WorkdayParallelEndpoint.as_view(),
+        name="team-ops-workday-parallel",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/workday/week/confirm/",
+        WorkdayWeekConfirmEndpoint.as_view(),
+        name="team-ops-week-confirm",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/workday/week/unlock/",
+        WorkdayWeekUnlockEndpoint.as_view(),
+        name="team-ops-week-unlock",
+    ),
+    path("workspaces/<str:slug>/team-ops/control/sum/", ControlSumEndpoint.as_view(), name="team-ops-control-sum"),
+    path(
+        "workspaces/<str:slug>/team-ops/control/sum/freeze/",
+        ControlFreezeCreditEndpoint.as_view(),
+        name="team-ops-control-sum-freeze",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/control/notifications/",
+        ControlNotificationsEndpoint.as_view(),
+        name="team-ops-control-notifications",
+    ),
     path("workspaces/<str:slug>/team-ops/work-tasks/", WorkTasksEndpoint.as_view(), name="team-ops-work-tasks"),
+    path("workspaces/<str:slug>/team-ops/tasks/", TasksEndpoint.as_view(), name="team-ops-tasks"),
+    path(
+        "workspaces/<str:slug>/team-ops/projects/<uuid:project_id>/modules/<uuid:module_id>/relations/",
+        ModuleRelationsEndpoint.as_view(),
+        name="team-ops-module-relations",
+    ),
     path("workspaces/<str:slug>/team-ops/teamflow/", TeamflowEndpoint.as_view(), name="team-ops-teamflow"),
     path(
         "workspaces/<str:slug>/team-ops/hub/channels/", HubChannelListEndpoint.as_view(), name="team-ops-hub-channels"

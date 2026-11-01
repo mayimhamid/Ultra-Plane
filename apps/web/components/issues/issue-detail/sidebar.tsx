@@ -39,6 +39,7 @@ import { useUserProfile } from "@/hooks/store/user";
 // components
 import { IssueParentSelectRoot } from "@/components/issues/parent-select-root";
 import { SidebarPropertyListItem } from "@/components/common/layout/sidebar/property-list-item";
+import { WorkItemTimePanel } from "@/components/team-ops/tasks";
 import { IssueCycleSelect } from "./cycle-select";
 import { IssueLabel } from "./label";
 import { IssueModuleSelect } from "./module-select";
@@ -239,6 +240,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
               />
             </SidebarPropertyListItem>
           </div>
+          <WorkItemTimePanel workspaceSlug={workspaceSlug} issueId={issueId} />
         </div>
       </div>
     </>

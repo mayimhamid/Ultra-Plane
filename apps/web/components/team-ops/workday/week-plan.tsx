@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { Button } from "@makeplane/propel/components/button";
 import { setToast } from "@plane/blocks/toast";
 import type { TWeekDay, TWeekPlan } from "@plane/types";
 import { cn } from "@plane/utils";
@@ -19,6 +20,8 @@ type Props = {
   week: TWeekPlan;
   /** Called after a day was saved, so the page asks the server again. */
   onChanged: () => Promise<unknown>;
+  /** Confirms and locks the plan. */
+  onConfirm: () => Promise<unknown>;
 };
 
 const CHOICES = [
@@ -40,15 +43,17 @@ function DayTile({
   day,
   isToday,
   busy,
+  locked,
   onChoose,
 }: {
   day: TWeekDay;
   isToday: boolean;
   busy: boolean;
+  locked: boolean;
   onChoose: (mode: "ONSITE" | "REMOTE" | "OFF") => void;
 }) {
   const open = day.expected && !day.past && day.mode === null;
-  const editable = !day.past && day.mode !== "LEAVE";
+  const editable = !locked && !day.past && day.mode !== "LEAVE";
   return (
     <li
       className={cn(
@@ -90,9 +95,20 @@ function DayTile({
 }
 
 /** Saturday to Friday: which days the person works and where. Required; your manager sees it in the team calendar. */
-export function WeekPlan({ workspaceSlug, userId, week, onChanged }: Props) {
+export function WeekPlan({ workspaceSlug, userId, week, onChanged, onConfirm }: Props) {
   const [busy, setBusy] = useState(false);
   const today = week.days.find((day) => !day.past)?.date;
+
+  const confirm = async () => {
+    setBusy(true);
+    try {
+      await onConfirm();
+    } catch (error) {
+      setToast({ type: "error", title: "Could not confirm", message: getErrorMessage(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const choose = async (day: TWeekDay, mode: "ONSITE" | "REMOTE" | "OFF") => {
     setBusy(true);
@@ -111,17 +127,17 @@ export function WeekPlan({ workspaceSlug, userId, week, onChanged }: Props) {
       aria-label="Plan your week"
       className={cn(
         "flex flex-col gap-3 rounded-lg border p-4",
-        week.complete ? "border-subtle bg-surface-1" : "border-warning-strong bg-surface-1"
+        week.confirmed ? "border-subtle bg-surface-1" : "border-warning-strong bg-surface-1"
       )}
     >
       <div>
         <h2 className="text-body-md-medium text-primary">
-          {week.complete ? "Your week" : "Plan your week to start working"}
+          {week.confirmed ? "Your week (confirmed)" : "Plan your week to start working"}
         </h2>
         <p className="text-body-xs-regular text-secondary">
-          {week.complete
-            ? "Saturday to Friday. Change a day any time before it ends."
-            : "Say which days you work, and where, for the rest of this week. It is required, and your manager sees it. You can do it on any day of the week."}
+          {week.confirmed
+            ? "Saturday to Friday. It is locked and your manager can see it. To change it, use the red section at the bottom of the page."
+            : "Say which days you work, and where, for the rest of this week, then confirm. It is required, your manager sees it, and after you confirm it is locked. You can do it on any day of the week."}
         </p>
       </div>
       <ol className="flex flex-wrap gap-2">
@@ -131,10 +147,29 @@ export function WeekPlan({ workspaceSlug, userId, week, onChanged }: Props) {
             day={day}
             isToday={day.date === today}
             busy={busy}
+            locked={week.confirmed}
             onChoose={(mode) => void choose(day, mode)}
           />
         ))}
       </ol>
+      {!week.confirmed ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="primary"
+            size="md"
+            stretch="auto"
+            label="Confirm my week"
+            loading={busy}
+            disabled={week.missing.length > 0}
+            onClick={confirm}
+          />
+          {week.missing.length > 0 ? (
+            <span className="text-body-xs-regular text-warning-primary">
+              {week.missing.length} working day(s) still need a plan.
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

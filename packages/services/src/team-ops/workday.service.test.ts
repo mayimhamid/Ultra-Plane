@@ -103,3 +103,26 @@ describe("WorkdayService", () => {
     expect(get).toHaveBeenNthCalledWith(3, `${BASE}/teamflow/`, { params: { status: "delivered", team: "t1" } });
   });
 });
+
+describe("WorkdayService tasks", () => {
+  it("asks for the unified task list with its filters", async () => {
+    const service = new WorkdayService("http://api.test");
+    const get = vi.spyOn(service, "get").mockResolvedValue({ data: { results: [], total: 0 } } as never);
+
+    await expect(service.getTasks("acme", { project: "p1", status: "open", mine: "1" })).resolves.toEqual({
+      results: [],
+      total: 0,
+    });
+
+    expect(get).toHaveBeenCalledWith(`${BASE}/tasks/`, { params: { project: "p1", status: "open", mine: "1" } });
+  });
+
+  it("asks for the relation graph of a module", async () => {
+    const service = new WorkdayService("http://api.test");
+    const get = vi.spyOn(service, "get").mockResolvedValue({ data: { issues: [], relations: [] } } as never);
+
+    await expect(service.getModuleRelations("acme", "p1", "m1")).resolves.toEqual({ issues: [], relations: [] });
+
+    expect(get).toHaveBeenCalledWith(`${BASE}/projects/p1/modules/m1/relations/`);
+  });
+});

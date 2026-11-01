@@ -26,6 +26,7 @@ export type TWorkSession = {
   attention_message: string;
   files: TFileInfo[];
   location: TWorkPlace | "";
+  is_parallel: boolean;
   break_seconds: number;
   frozen_seconds: number;
 };
@@ -39,6 +40,8 @@ export type TFinishWorkPayload = {
   /** Colleagues tagged one by one, besides the teams. */
   attention_users: string[];
   files: File[];
+  /** The parallel timer to finish; leave out for the main one. */
+  timer?: string;
 };
 
 export type TFinishWorkResponse = { session: TWorkSession; capped: boolean };
@@ -133,6 +136,7 @@ export type TTimerState = "RUNNING" | "BREAK" | "FROZEN";
 
 export type TWorkdayTimer = {
   id: string;
+  is_parallel: boolean;
   state: TTimerState;
   location: TWorkPlace | "";
   started_at: string;
@@ -154,6 +158,8 @@ export type TInterruption = { kind: "BREAK" | "FREEZE"; started_at: string; ende
 export type TDayTotals = {
   onsite_seconds: number;
   remote_seconds: number;
+  /** Tasks worked beside the main one; counted apart from the onsite and remote hours. */
+  parallel_seconds: number;
   break_seconds: number;
   frozen_seconds: number;
   interruptions: TInterruption[];
@@ -173,6 +179,8 @@ export type TWeekPlan = {
   start: string;
   end: string;
   days: TWeekDay[];
+  /** The person confirmed the plan; it is locked until they reopen it. */
+  confirmed: boolean;
   /** Every working day from today to the end of the week is planned. Starting work needs this. */
   complete: boolean;
   missing: string[];
@@ -181,6 +189,8 @@ export type TWeekPlan = {
 export type TWorkdayState = {
   day: { date: string; mode: TDayMode } | null;
   timer: TWorkdayTimer | null;
+  /** Second and third tasks worked at the same time as the main one. */
+  parallel: TWorkdayTimer[];
   totals: TDayTotals;
   week: TWeekPlan;
 };
@@ -204,7 +214,7 @@ export type TTeamStatusRow = {
 
 export type TOpsNotification = {
   id: string;
-  kind: "MENTION" | "ATTENTION" | "FREEZE" | "NEWS" | "DIRECT" | "SECRET";
+  kind: "MENTION" | "ATTENTION" | "FREEZE" | "NEWS" | "DIRECT" | "SECRET" | "FLOW";
   title: string;
   body: string;
   link: string;
@@ -221,6 +231,8 @@ export type THubDoc = {
   author: THubPerson;
   updated_at: string;
   excerpt: string;
+  /** The Plane Page the document is written in (documents of a project). */
+  page: string | null;
   /** Only in the full document. */
   body?: string;
 };
@@ -256,24 +268,124 @@ export type THubSecretLog = {
   at: string;
 };
 
-export type TFlowPerson = { user: THubPerson; done: number; total: number; percent: number | null };
+/** One module of a stage: its progress, and the people on it (lead, members, assignees). */
+export type TFlowModule = {
+  id: string;
+  name: string;
+  /** The module's own status in Plane: backlog, planned, in-progress, paused, completed, cancelled. */
+  status: string;
+  done: number;
+  total: number;
+  /** Work items added to the module after the flow was drawn. They never hold a stage back. */
+  side_done: number;
+  side_total: number;
+  percent: number | null;
+  people: THubPerson[];
+};
 
 export type TFlowStage = {
   id: string;
   name: string;
   /** Waiting for an earlier stage to finish. */
   pending: boolean;
+  /** The progress of its modules together. */
   percent: number | null;
   done: number;
   total: number;
-  people: TFlowPerson[];
+  side_done: number;
+  side_total: number;
+  modules: TFlowModule[];
 };
 
 export type TFlow = {
   id: string;
   name: string;
   project: { id: string; name: string; identifier: string };
+  side_tasks: { done: number; total: number };
   stages: TFlowStage[];
 };
 
-export type TFlowPayload = { project?: string; name: string; stages: { name: string; users: string[] }[] };
+export type TFlowPayload = { project?: string; name: string; stages: { name: string; modules: string[] }[] };
+
+export type TFlowOffer = {
+  eligible: boolean;
+  /** Open work items nobody has. */
+  pull: { id: string; name: string; key: string }[];
+  /** Open work items others are still on, which the person can join. */
+  merge: { id: string; name: string; key: string }[];
+};
+
+export type TTaskProject = { id: string; name: string; identifier: string };
+
+export type TTaskFlow = {
+  id: string;
+  name: string;
+  /** The stages of this flow the people on the task are in. */
+  stages: string[];
+  /** The task was created after the flow was drawn. */
+  side: boolean;
+};
+
+/** One work item, in the same shape wherever it is shown. */
+export type TTaskLite = {
+  id: string;
+  key: string;
+  name: string;
+  project: TTaskProject;
+  state: { name: string; group: string } | null;
+  assignees: THubPerson[];
+  flows: TTaskFlow[];
+};
+
+/** A branch of a task: a sub work item, or a person working on it with their own time and stage. */
+export type TTaskFork =
+  | ({ kind: "sub" } & TTaskLite)
+  | {
+      kind: "person";
+      user: THubPerson;
+      seconds: number;
+      sessions: number;
+      stage: string | null;
+      done: boolean;
+    };
+
+export type TTask = TTaskLite & { seconds: number; sessions: number; forks: TTaskFork[] };
+
+export type TTaskParams = {
+  /** One work item, whether or not it is a sub work item. */
+  issue?: string;
+  /** The work items of one module. */
+  module?: string;
+  project?: string;
+  flow?: string;
+  assignee?: string;
+  status?: "open" | "done";
+  q?: string;
+  mine?: "1";
+};
+
+export type TTasks = {
+  results: TTask[];
+  total: number;
+  has_more: boolean;
+  filters: {
+    projects: TTaskProject[];
+    flows: { id: string; name: string; project: string }[];
+  };
+};
+
+/** What the flow editor offers for a project. */
+export type TProjectModule = { id: string; name: string; status: string; people: THubPerson[] };
+
+/** The work items of a module and the relations among them. `blocking`: `from` blocks `to`. */
+export type TModuleRelationKind = "blocking" | "duplicate" | "relates_to";
+export type TModuleRelationItem = {
+  id: string;
+  key: string;
+  name: string;
+  state_group: string | null;
+  /** The work item it is a sub work item of, when that one is in the module too. */
+  parent: string | null;
+};
+export type TModuleRelation = { id: string; from: string; to: string; type: TModuleRelationKind };
+export type TModuleRelations = { issues: TModuleRelationItem[]; relations: TModuleRelation[] };

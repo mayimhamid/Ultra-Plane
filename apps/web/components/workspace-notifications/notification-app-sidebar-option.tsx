@@ -12,6 +12,7 @@ import { getNumberCount } from "@plane/utils";
 import { CountChip } from "@/components/common/count-chip";
 // hooks
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
+import { useOpsUnread } from "@/hooks/team-ops/use-ops-unread";
 
 type TNotificationAppSidebarOption = {
   workspaceSlug: string;
@@ -31,15 +32,18 @@ export const NotificationAppSidebarOption = observer(function NotificationAppSid
 
   // derived values
   const isMentionsEnabled = unreadNotificationsCount.mention_unread_notifications_count > 0 ? true : false;
-  const totalNotifications = isMentionsEnabled
-    ? unreadNotificationsCount.mention_unread_notifications_count
-    : unreadNotificationsCount.total_unread_notifications_count;
+  // Team Ops notifications ride on the same count.
+  const opsUnread = useOpsUnread(workspaceSlug);
+  const totalNotifications =
+    (isMentionsEnabled
+      ? unreadNotificationsCount.mention_unread_notifications_count
+      : unreadNotificationsCount.total_unread_notifications_count) + opsUnread;
 
   if (totalNotifications <= 0) return <></>;
 
   return (
     <div className="ml-auto">
-      <CountChip count={`${isMentionsEnabled ? `@ ` : ``}${getNumberCount(totalNotifications)}`} />
+      <CountChip count={`${isMentionsEnabled && opsUnread === 0 ? `@ ` : ``}${getNumberCount(totalNotifications)}`} />
     </div>
   );
 });

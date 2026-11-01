@@ -7,15 +7,15 @@ from django.db import transaction
 
 # Third party imports
 from rest_framework import status
-from rest_framework.exceptions import ParseError
+from rest_framework.exceptions import NotFound, ParseError
 from rest_framework.response import Response
 
 # Module imports
-from plane.app.permissions import allow_permission
+from plane.app.permissions import ROLE, allow_permission
 from plane.app.views.base import BaseAPIView
-from plane.db.models import User, Workspace
+from plane.db.models import Module, User, Workspace
 from plane.team_ops.models import OpsTeam, OpsTeamMember, WorkSession
-from plane.team_ops.services import hub_files, teamflow, work_sessions, workday
+from plane.team_ops.services import hub_files, module_relations, tasks, teamflow, work_sessions, workday
 from plane.team_ops.services.access import CALENDAR_ROLES, CalendarAccess, calendar_user_ids
 from plane.team_ops.services.date_params import parse_day_range
 from plane.team_ops.services.time_entry import parse_uuid
@@ -47,6 +47,7 @@ def _session_payload(session):
         "needs_attention": session.needs_attention,
         "attention_message": session.attention_message,
         "location": session.location,
+        "is_parallel": session.is_parallel,
         "break_seconds": session.break_seconds,
         "frozen_seconds": session.frozen_seconds,
         "files": [
@@ -93,6 +94,7 @@ class WorkSessionFinishEndpoint(BaseAPIView):
                 no_document=_flag(data.get("no_document")),
                 attention=attention,
                 attachments_expected=bool(files),
+                timer_id=parse_uuid(data.get("timer"), "timer") if data.get("timer") else None,
             )
             for upload in files:
                 hub_files.store_attachment(workspace=workspace, user=request.user, upload=upload, session=session)
@@ -186,3 +188,35 @@ class TeamflowEndpoint(BaseAPIView):
             workspace, visible_team_ids=visible, start=start, end=end, team_id=team_id, status=state
         )
         return Response({"results": rows, **teamflow.flow_summary(workspace, rows, visible)})
+
+
+class TasksEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug):
+        """All work items of the person's projects (admins: all projects) in one shape, with their forks.
+
+        Filters: `project`, `flow`, `assignee`, `status` (open or done), `q`, `mine=1`.
+        """
+        workspace = Workspace.objects.get(slug=slug)
+        access = CalendarAccess(request.user, workspace)
+        if not access.is_calendar_user:
+            return _forbidden()
+        params = {key: value for key, value in request.query_params.items()}
+        for key in ("issue", "project", "flow", "module", "assignee"):
+            if params.get(key):
+                params[key] = parse_uuid(params[key], key)
+        if params.get("status") not in (None, "", "open", "done"):
+            raise ParseError(detail="Unknown status.")
+        data = tasks.task_list(workspace, request.user, access.is_admin, params)
+        data["filters"] = tasks.task_filters(workspace, request.user, access.is_admin)
+        return Response(data)
+
+
+class ModuleRelationsEndpoint(BaseAPIView):
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="PROJECT")
+    def get(self, request, slug, project_id, module_id):
+        """The work items of a module and the relations among them (the module page's relation graph)."""
+        module = Module.objects.filter(workspace__slug=slug, project_id=project_id, pk=module_id).first()
+        if module is None:
+            raise NotFound("Module not found.")
+        return Response(module_relations.module_relations(module))

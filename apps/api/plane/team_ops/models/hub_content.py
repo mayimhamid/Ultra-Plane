@@ -22,6 +22,8 @@ class HubDoc(BaseModel):
     title = models.CharField(max_length=200)
     body = models.TextField(blank=True, default="")
     tags = models.JSONField(default=list, blank=True)
+    # The Plane Page that holds the text, when the document belongs to a project
+    page = models.ForeignKey("db.Page", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
 
     class Meta:
         verbose_name = "Hub Doc"

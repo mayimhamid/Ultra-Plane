@@ -8,7 +8,7 @@ import { useCallback } from "react";
 import useSWR from "swr";
 // plane imports
 import { WorkdayService } from "@plane/services";
-import type { TFinishWorkPayload, TTeamflowParams, TDayMode, TWorkPlace, TWorkdayState } from "@plane/types";
+import type { TDayMode, TFinishWorkPayload, TTeamflowParams, TWorkPlace, TWorkdayState } from "@plane/types";
 
 const workdayService = new WorkdayService();
 
@@ -72,6 +72,12 @@ export const useWorkdayState = (workspaceSlug: string) => {
     setDayMode: (mode: TDayMode) => apply(workdayService.setDayMode(workspaceSlug, mode)),
     startWork: (issue: string, location?: TWorkPlace) =>
       apply(workdayService.startWork(workspaceSlug, issue, location)),
+    confirmWeek: () => apply(workdayService.confirmWeek(workspaceSlug)),
+    unlockWeek: () => apply(workdayService.unlockWeek(workspaceSlug)),
+    startParallel: (issue: string, location?: TWorkPlace) =>
+      apply(workdayService.startParallel(workspaceSlug, issue, location)),
+    overrideDay: (mode: TDayMode, sessions: Record<string, TWorkPlace>) =>
+      apply(workdayService.overrideDay(workspaceSlug, mode, sessions)),
     setBreak: (action: "start" | "end") => apply(workdayService.setBreak(workspaceSlug, action)),
     checkIn: () => apply(workdayService.checkIn(workspaceSlug)),
   };
@@ -95,8 +101,8 @@ export const useOpsNotifications = (workspaceSlug: string) => {
     refreshInterval: REFRESH_MS,
   });
   const markRead = useCallback(
-    async (id?: string) => {
-      await workdayService.markNotificationsRead(workspaceSlug, id);
+    async (id?: string, read = true) => {
+      await workdayService.markNotificationsRead(workspaceSlug, id, read);
       await mutate();
     },
     [workspaceSlug, mutate]

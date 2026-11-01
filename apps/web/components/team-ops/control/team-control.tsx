@@ -22,6 +22,7 @@ import { useOpsTeams } from "@/hooks/team-ops/use-work-calendar";
 // components
 import { getErrorMessage } from "../calendar/error-message";
 import { ContributionGraph } from "../workday/contribution-graph";
+import { PersonNotifications } from "./notifications-box";
 import { SessionsList } from "../workday/sessions-list";
 import { TimeByTask } from "../workday/time-by-task";
 
@@ -100,6 +101,7 @@ function PersonDetail({
       <ContributionGraph workspaceSlug={workspaceSlug} userId={userId} />
       <div className="grid gap-4 lg:grid-cols-2">
         <TimeByTask title="Time by task" tasks={tasks} />
+        <PersonNotifications workspaceSlug={workspaceSlug} userId={userId} />
         <section className="flex flex-col gap-2 rounded-lg border border-subtle p-4">
           <h4 className="text-body-md-medium text-primary">Pauses and freezes</h4>
           {(interruptions ?? []).length === 0 ? (
@@ -326,8 +328,10 @@ export const TeamControl = observer(function TeamControl({ workspaceSlug }: Prop
                 <td className="px-3 py-2">
                   {row.unplanned_days > 0 ? (
                     <Badge variant="warning" size="sm" label={`${row.unplanned_days} day(s) missing`} />
+                  ) : !row.week_confirmed ? (
+                    <Badge variant="warning" size="sm" label="Not confirmed" />
                   ) : (
-                    <span className="text-success-primary">Planned</span>
+                    <span className="text-success-primary">Confirmed</span>
                   )}
                 </td>
               </tr>

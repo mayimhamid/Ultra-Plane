@@ -7,7 +7,6 @@
 import React, { useMemo } from "react";
 import { observer } from "mobx-react";
 import { Collapsible } from "@makeplane/propel/components/collapsible";
-import { MoreHorizontalOutline } from "@makeplane/propel/icons";
 // plane imports
 import {
   WORKSPACE_SIDEBAR_DYNAMIC_NAVIGATION_ITEMS_LINKS,
@@ -17,10 +16,7 @@ import {
   TEAM_OPS_SIDEBAR_NAVIGATION_ITEMS_LINKS,
 } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
-// components
-import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
 // store hooks
-import { useAppTheme } from "@/hooks/store/use-app-theme";
 import useLocalStorage from "@/hooks/use-local-storage";
 import {
   usePersonalNavigationPreferences,
@@ -36,7 +32,6 @@ export const SidebarMenuItems = observer(function SidebarMenuItems() {
   );
 
   // store hooks
-  const { isExtendedSidebarOpened, toggleExtendedSidebar } = useAppTheme();
   // hooks
   const { preferences: personalPreferences } = usePersonalNavigationPreferences();
   const { preferences: workspacePreferences } = useWorkspaceNavigationPreferences();
@@ -118,29 +113,13 @@ export const SidebarMenuItems = observer(function SidebarMenuItems() {
             <SidebarItemBase
               key={`team_ops_${item.key}`}
               item={item}
-              additionalStaticItems={["workday", "hub", "teamflow", "team_control", "team_dashboard", "team_leave", "teamspaces"]}
+              additionalStaticItems={["workday", "hub", "teamflow", "team_dashboard", "team_leave", "teamspaces"]}
             />
           ))}
           {sortedNavigationItems.map((item, _index) => (
             // oxlint-disable-next-line react/no-array-index-key
             <SidebarItemBase key={`dynamic_${_index}`} item={item} />
           ))}
-          <SidebarNavItem>
-            <button
-              type="button"
-              onClick={() => toggleExtendedSidebar()}
-              className="flex flex-grow items-center gap-1.5 text-13 font-medium text-tertiary"
-              id="extended-sidebar-toggle"
-              aria-label={t(
-                isExtendedSidebarOpened
-                  ? "aria_labels.app_sidebar.close_extended_sidebar"
-                  : "aria_labels.app_sidebar.open_extended_sidebar"
-              )}
-            >
-              <MoreHorizontalOutline className="size-4 flex-shrink-0" />
-              <span>{isExtendedSidebarOpened ? "Hide" : "More"}</span>
-            </button>
-          </SidebarNavItem>
         </div>
       </Collapsible>
     </>

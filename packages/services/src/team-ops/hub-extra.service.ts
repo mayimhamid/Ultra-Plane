@@ -7,6 +7,7 @@
 import { API_BASE_URL } from "@plane/constants";
 import type {
   TFlow,
+  TFlowOffer,
   TFlowPayload,
   THubChannel,
   THubDoc,
@@ -15,6 +16,7 @@ import type {
   THubSecret,
   THubSecretLog,
   THubSecretPayload,
+  TProjectModule,
   TLibraryFile,
 } from "@plane/types";
 // services
@@ -181,9 +183,22 @@ export class FlowService extends APIService {
       .catch(fail);
   }
 
-  /** The people of a project who can be put into its flow. */
-  async listProjectPeople(workspaceSlug: string, project: string): Promise<THubPerson[]> {
-    return this.get(`${this.base(workspaceSlug)}/members/`, { params: { project } })
+  /** What the caller can pick up (pull) or join (merge) when nothing of theirs is left. */
+  async getOffer(workspaceSlug: string, flowId: string): Promise<TFlowOffer> {
+    return this.get(`${this.base(workspaceSlug)}/${flowId}/pull/`)
+      .then((response) => response?.data)
+      .catch(fail);
+  }
+
+  async pull(workspaceSlug: string, flowId: string, issue: string): Promise<{ kind: "pull" | "merge" }> {
+    return this.post(`${this.base(workspaceSlug)}/${flowId}/pull/`, { issue })
+      .then((response) => response?.data)
+      .catch(fail);
+  }
+
+  /** The modules of a project, with the people on them, to put into stages. */
+  async listProjectModules(workspaceSlug: string, project: string): Promise<TProjectModule[]> {
+    return this.get(`${this.base(workspaceSlug)}/modules/`, { params: { project } })
       .then((response) => response?.data?.results)
       .catch(fail);
   }

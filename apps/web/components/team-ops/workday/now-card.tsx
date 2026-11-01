@@ -26,7 +26,7 @@ type Props = {
 };
 
 /** Seconds since the timer data was read, so the clock moves between refreshes without trusting the computer's time. */
-const useSecondsSince = (stamp: unknown) => {
+export const useSecondsSince = (stamp: unknown) => {
   const readAt = useRef(Date.now());
   const [now, setNow] = useState(Date.now());
   useEffect(() => {

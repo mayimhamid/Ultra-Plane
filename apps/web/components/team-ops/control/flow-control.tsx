@@ -58,7 +58,7 @@ export const FlowControl = observer(function FlowControl({ workspaceSlug }: Prop
               </div>
               {flow.finished ? (
                 <Badge variant="success" size="sm" label="Finished" />
-              ) : flow.people_without_tasks.length > 0 ? (
+              ) : flow.modules_without_tasks.length > 0 ? (
                 <Badge variant="warning" size="sm" label="Waiting for tasks" />
               ) : (
                 <Badge variant="brand" size="sm" label="In progress" />
@@ -95,9 +95,9 @@ export const FlowControl = observer(function FlowControl({ workspaceSlug }: Prop
                 </li>
               ))}
             </ol>
-            {flow.people_without_tasks.length > 0 ? (
+            {flow.modules_without_tasks.length > 0 ? (
               <p className="text-body-xs-regular text-warning-primary">
-                No tasks assigned yet: {flow.people_without_tasks.join(", ")}
+                No work items yet in: {flow.modules_without_tasks.join(", ")}
               </p>
             ) : null}
           </li>

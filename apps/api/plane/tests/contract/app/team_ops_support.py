@@ -155,3 +155,15 @@ def guest_client(guest):
 @pytest.fixture
 def outsider_client(outsider):
     return make_client(outsider)
+
+
+def make_module(workspace, project, name="Phase 1", lead=None, members=(), issues=()):
+    """A module of the project with its people and the given work items in it."""
+    from plane.db.models import Module, ModuleIssue, ModuleMember
+
+    module = Module.objects.create(name=name, project=project, workspace=workspace, lead=lead)
+    for user in members:
+        ModuleMember.objects.create(module=module, member=user, project=project, workspace=workspace)
+    for issue in issues:
+        ModuleIssue.objects.create(module=module, issue=issue, project=project, workspace=workspace)
+    return module

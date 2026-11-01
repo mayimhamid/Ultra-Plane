@@ -89,7 +89,7 @@ describe("FlowService", () => {
     const post = vi.spyOn(service, "post").mockResolvedValue({ data: { id: "f1" } } as never);
     const put = vi.spyOn(service, "put").mockResolvedValue({ data: { id: "f1" } } as never);
     const del = vi.spyOn(service, "delete").mockResolvedValue({ status: 204 } as never);
-    const payload = { project: "p1", name: "Release", stages: [{ name: "Build", users: ["u1"] }] };
+    const payload = { project: "p1", name: "Release", stages: [{ name: "Build", modules: ["m1"] }] };
 
     await expect(service.list("acme")).resolves.toEqual({ results: [], can_manage: true });
     await service.create("acme", payload);
@@ -102,11 +102,11 @@ describe("FlowService", () => {
     expect(del).toHaveBeenCalledWith(`${FLOWS}/f1/`);
   });
 
-  it("asks for the people of one project", async () => {
+  it("asks for the modules of one project", async () => {
     const get = vi.spyOn(service, "get").mockResolvedValue({ data: { results: [{ id: "u1" }] } } as never);
 
-    await expect(service.listProjectPeople("acme", "p1")).resolves.toEqual([{ id: "u1" }]);
+    await expect(service.listProjectModules("acme", "p1")).resolves.toEqual([{ id: "u1" }]);
 
-    expect(get).toHaveBeenCalledWith(`${FLOWS}/members/`, { params: { project: "p1" } });
+    expect(get).toHaveBeenCalledWith(`${FLOWS}/modules/`, { params: { project: "p1" } });
   });
 });

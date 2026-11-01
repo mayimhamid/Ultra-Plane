@@ -24,6 +24,7 @@ from plane.tests.contract.app.team_ops_support import (
     lead,
     lead_client,
     make_client,
+    make_module,
     make_project,
     make_team,
     member,
@@ -230,27 +231,29 @@ class TestHubControl:
 
 @pytest.mark.contract
 class TestFlowControl:
-    def test_flow_overview_shows_where_work_is_stuck(self, admin_client, workspace, project, member, colleague):
-        admin_client.post(
+    def draw(self, client, workspace, project, *groups):
+        return client.post(
             url(workspace, "teamflow/flows/"),
             {
                 "project": str(project.id),
                 "name": "Release",
-                "stages": [
-                    {"name": "Build", "users": [str(member.id)]},
-                    {"name": "QA", "users": [str(colleague.id)]},
-                ],
+                "stages": [{"name": f"S{i}", "modules": [str(m.id) for m in g]} for i, g in enumerate(groups)],
             },
             format="json",
         )
+
+    def test_flow_overview_shows_where_work_is_stuck(self, admin_client, workspace, project):
+        build = make_module(workspace, project, "Build")
+        test = make_module(workspace, project, "Test")
+        self.draw(admin_client, workspace, project, [build], [test])
         data = admin_client.get(c(workspace, "flows/")).data
         (flow,) = data["flows"]
-        assert flow["current_stage"] == "Build" and flow["finished"] is False and flow["pending_stages"] == 1
-        assert flow["people_without_tasks"] == [member.display_name] and flow["percent"] is None
+        assert flow["current_stage"] == "S0" and flow["finished"] is False and flow["pending_stages"] == 1
+        assert flow["modules_without_tasks"] == ["Build"] and flow["percent"] is None
         assert data["stale_after_hours"] == 48 and data["stale_handoffs"] == []
 
     def test_old_unopened_handoffs_are_listed(self, admin_client, member_client, workspace, member, colleague, project):
-        dev = make_team(workspace, "Dev", members=[member])
+        make_team(workspace, "Dev", members=[member])
         qa = make_team(workspace, "QA", members=[colleague])
         from plane.team_ops.services.hub import channel_for_project, post_message
 
@@ -266,4 +269,4 @@ class TestFlowControl:
 
         HubMention.objects.filter(message=message).update(created_at=timezone.now() - timedelta(hours=60))
         stale = admin_client.get(c(workspace, "flows/")).data["stale_handoffs"]
-        assert len(stale) == 1 and stale[0]["to_team"]["name"] == "QA" and dev.name == "Dev"
+        assert len(stale) == 1 and stale[0]["to_team"]["name"] == "QA"

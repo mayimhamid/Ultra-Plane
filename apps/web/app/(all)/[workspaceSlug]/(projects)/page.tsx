@@ -12,7 +12,7 @@ import { useTranslation } from "@plane/i18n";
 import { AppHeader } from "@/components/core/app-header";
 import { ContentWrapper } from "@/components/core/content-wrapper";
 import { PageHead } from "@/components/core/page-title";
-import { WorkspaceHomeView } from "@/components/home";
+import { PersonalHome } from "@/components/team-ops/home";
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
 // local components
@@ -43,7 +43,7 @@ function WorkspaceDashboardPage() {
       <AppHeader header={<WorkspaceDashboardHeader />} />
       <ContentWrapper>
         <PageHead title={pageTitle} />
-        <WorkspaceHomeView />
+        <PersonalHome workspaceSlug={workspaceSlug ?? ""} />
       </ContentWrapper>
     </>
   );

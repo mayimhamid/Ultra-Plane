@@ -22,6 +22,7 @@ from plane.team_ops.models import (
     ActiveTimer,
     CalendarEntry,
     CalendarHoliday,
+    WeekPlanConfirmation,
     WorkDay,
     WorkInterruption,
     WorkSession,
@@ -64,8 +65,16 @@ def get_day(workspace, user):
 
 
 def set_day_mode(workspace, user, mode):
-    if mode not in WorkDay.Mode.values:
-        raise ParseError(detail="Choose remote, onsite or hybrid.")
+    """Today's first answer. It cannot be changed here afterwards; see `override_day`."""
+    if mode not in LOCATIONS:
+        raise ParseError(detail="Choose remote or onsite.")
+    existing = get_day(workspace, user)
+    if existing is not None:
+        if existing.mode == mode:
+            return existing
+        raise ParseError(
+            detail="Today's answer is fixed. To change it, use the confirmation at the bottom of the page."
+        )
     day, _ = WorkDay.objects.update_or_create(
         workspace=workspace, user=user, date=today_in_timezone(user.user_timezone), defaults={"mode": mode}
     )
@@ -105,7 +114,48 @@ def week_plan(workspace, user):
             }
         )
     missing = [item["date"] for item in days if item["expected"] and item["mode"] is None and not item["past"]]
-    return {"start": start, "end": end, "days": days, "complete": not missing, "missing": missing}
+    confirmed = WeekPlanConfirmation.objects.filter(workspace=workspace, user=user, week_start=start).exists()
+    return {
+        "start": start,
+        "end": end,
+        "days": days,
+        "confirmed": confirmed,
+        "complete": not missing and confirmed,
+        "missing": missing,
+    }
+
+
+def confirm_week(workspace, user):
+    """Lock this week's plan. Every working day still ahead must have a plan first."""
+    plan = week_plan(workspace, user)
+    if plan["missing"]:
+        raise ParseError(detail="Plan every working day of the week first.")
+    WeekPlanConfirmation.objects.get_or_create(
+        workspace=workspace, user=user, week_start=plan["start"], defaults={"confirmed_at": timezone.now()}
+    )
+    return week_plan(workspace, user)
+
+
+def unlock_week(workspace, user):
+    """Reopen a confirmed plan so it can be changed. The managers are told: they had already seen it."""
+    from plane.team_ops.services.notifications import managers_of, notify
+
+    plan = week_plan(workspace, user)
+    rows = WeekPlanConfirmation.objects.filter(workspace=workspace, user=user, week_start=plan["start"])
+    if not rows.exists():
+        return plan
+    for row in rows:
+        row.delete(soft=False)
+    notify(
+        workspace,
+        managers_of(workspace, user),
+        "ATTENTION",
+        f"{user.display_name} reopened their week plan",
+        "The plan for this week is being changed.",
+        link="team-ops/calendar/team",
+        actor=user,
+    )
+    return week_plan(workspace, user)
 
 
 def start_work(workspace, user, issue, location):
@@ -132,7 +182,7 @@ def start_work(workspace, user, issue, location):
     now = timezone.now()
     try:
         with transaction.atomic():
-            if ActiveTimer.objects.filter(workspace=workspace, user=user).exists():
+            if ActiveTimer.objects.filter(workspace=workspace, user=user, is_parallel=False).exists():
                 raise TimerAlreadyRunning
             return ActiveTimer.objects.create(
                 workspace=workspace,
@@ -146,6 +196,58 @@ def start_work(workspace, user, issue, location):
         raise TimerAlreadyRunning
 
 
+MAX_PARALLEL = 3
+
+
+def start_parallel(workspace, user, issue, location=None):
+    """A second task worked at the same time as the main one. It needs a main task, and has no pauses or check-ins."""
+    main = ActiveTimer.objects.filter(workspace=workspace, user=user, is_parallel=False).first()
+    if main is None:
+        raise ParseError(detail="Start a main task first.")
+    if ActiveTimer.objects.filter(workspace=workspace, user=user, is_parallel=True).count() >= MAX_PARALLEL:
+        raise ParseError(detail=f"At most {MAX_PARALLEL} parallel tasks.")
+    if location and location not in LOCATIONS:
+        raise ParseError(detail="Say whether you work on this task remotely or onsite.")
+    now = timezone.now()
+    return ActiveTimer.objects.create(
+        workspace=workspace,
+        user=user,
+        issue=issue,
+        started_at=now,
+        last_confirmed_at=now,
+        location=location or main.location,
+        is_parallel=True,
+    )
+
+
+def override_day(workspace, user, mode, locations):
+    """Change today's answer after the fact. Every task finished today must be given its place again."""
+    if mode not in LOCATIONS:
+        raise ParseError(detail="Choose remote or onsite.")
+    day = get_day(workspace, user)
+    if day is None:
+        raise ParseError(detail="Say how you are working today first.")
+    start, end = day_window(today_in_timezone(user.user_timezone), _zone(user))
+    sessions = list(
+        WorkSession.objects.filter(workspace=workspace, user=user, finished_at__gte=start, finished_at__lt=end)
+    )
+    if not isinstance(locations, dict) or set(map(str, locations)) != {str(s.id) for s in sessions}:
+        raise ParseError(detail="Say where you did every task today.")
+    if any(place not in LOCATIONS for place in locations.values()):
+        raise ParseError(detail="Say whether each task was remote or onsite.")
+    places = set(locations.values())
+    running = ActiveTimer.objects.filter(workspace=workspace, user=user, is_parallel=False).first()
+    if running is not None and running.location:
+        places.add(running.location)
+    with transaction.atomic():
+        for session in sessions:
+            session.location = locations[str(session.id)]
+            session.save(update_fields=["location", "updated_at"])
+        day.mode = mode if places <= {mode} else WorkDay.Mode.HYBRID
+        day.save()
+    return day
+
+
 def timer_payload(timer, now=None):
     if timer is None:
         return None
@@ -154,6 +256,7 @@ def timer_payload(timer, now=None):
     issue = timer.issue
     return {
         "id": timer.id,
+        "is_parallel": timer.is_parallel,
         "state": timer.state,
         "location": timer.location,
         "started_at": timer.started_at,
@@ -176,12 +279,20 @@ def day_totals(workspace, user, running=None):
     start, end = day_window(today_in_timezone(user.user_timezone), zone)
     rows = (
         WorkSession.objects.filter(workspace=workspace, user=user, finished_at__gte=start, finished_at__lt=end)
-        .values("location")
+        .values("location", "is_parallel")
         .annotate(seconds=Sum("duration_seconds"))
     )
-    seconds = {row["location"]: row["seconds"] or 0 for row in rows}
+    seconds = {}
+    parallel = 0
+    for row in rows:
+        if row["is_parallel"]:
+            parallel += row["seconds"] or 0
+        else:
+            seconds[row["location"]] = seconds.get(row["location"], 0) + (row["seconds"] or 0)
     if running is not None and running.location:
         seconds[running.location] = seconds.get(running.location, 0) + worked_seconds(running)
+    now_parallel = ActiveTimer.objects.filter(workspace=workspace, user=user, is_parallel=True)
+    parallel += sum(worked_seconds(t) for t in now_parallel)
     interruptions = list(
         WorkInterruption.objects.filter(workspace=workspace, user=user, started_at__gte=start, started_at__lt=end)
     )
@@ -193,6 +304,7 @@ def day_totals(workspace, user, running=None):
     return {
         "onsite_seconds": seconds.get("ONSITE", 0),
         "remote_seconds": seconds.get("REMOTE", 0),
+        "parallel_seconds": parallel,
         "break_seconds": sum(length(i) for i in interruptions if i.kind == "BREAK"),
         "frozen_seconds": sum(length(i) for i in interruptions if i.kind == "FREEZE"),
         "interruptions": [
@@ -208,6 +320,12 @@ def day_state(workspace, user):
     return {
         "day": {"date": day.date, "mode": day.mode} if day else None,
         "timer": timer_payload(timer),
+        "parallel": [
+            timer_payload(t)
+            for t in ActiveTimer.objects.filter(workspace=workspace, user=user, is_parallel=True).select_related(
+                "issue", "issue__project"
+            )
+        ],
         "totals": day_totals(workspace, user, timer),
         "week": week_plan(workspace, user),
     }
@@ -228,9 +346,9 @@ def team_status(workspace, user_ids, reference_user):
     }
     timers = {
         t.user_id: t
-        for t in ActiveTimer.objects.filter(workspace=workspace, user_id__in=user_ids).select_related(
-            "issue", "issue__project"
-        )
+        for t in ActiveTimer.objects.filter(
+            workspace=workspace, user_id__in=user_ids, is_parallel=False
+        ).select_related("issue", "issue__project")
     }
     done = {
         row["user_id"]: row["seconds"] or 0
@@ -284,7 +402,7 @@ def freeze_unanswered_timers():
     from plane.team_ops.services.timer import refresh
 
     frozen = 0
-    for pk in list(ActiveTimer.objects.filter(state=RUNNING).values_list("pk", flat=True)):
+    for pk in list(ActiveTimer.objects.filter(state=RUNNING, is_parallel=False).values_list("pk", flat=True)):
         with transaction.atomic():
             timer = (
                 ActiveTimer.objects.select_for_update(of=("self",))

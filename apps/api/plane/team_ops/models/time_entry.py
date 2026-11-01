@@ -85,6 +85,8 @@ class ActiveTimer(BaseModel):
     note = models.TextField(blank=True, default="")
     # Where the person works on this task: REMOTE or ONSITE.
     location = models.CharField(max_length=10, blank=True, default="")
+    # A second task worked at the same time as the main one. It has no check-in and no pauses.
+    is_parallel = models.BooleanField(default=False)
     # RUNNING counts time; BREAK is a rest pause the person started; FROZEN means a check-in was missed.
     state = models.CharField(max_length=10, default="RUNNING")
     # When the current break or freeze began (null while running). A freeze begins when the check-in fell due.
@@ -102,7 +104,7 @@ class ActiveTimer(BaseModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["user", "workspace"],
-                condition=Q(deleted_at__isnull=True),
+                condition=Q(deleted_at__isnull=True, is_parallel=False),
                 name="tops_timer_unique_user_workspace_when_deleted_at_null",
             )
         ]

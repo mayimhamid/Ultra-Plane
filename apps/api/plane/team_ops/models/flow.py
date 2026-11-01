@@ -3,7 +3,6 @@
 # See the LICENSE file for details.
 
 # Django imports
-from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
@@ -12,7 +11,7 @@ from plane.db.models.base import BaseModel
 
 
 class Flow(BaseModel):
-    """Who works with whom on a project, drawn by an admin as stages: the people of stage 1, then stage 2, and so on."""
+    """A project split into phases. Each stage holds modules of the project; its progress is the modules' progress."""
 
     workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_flows")
     project = models.ForeignKey("db.Project", on_delete=models.CASCADE, related_name="team_ops_flows")
@@ -35,14 +34,16 @@ class FlowStage(BaseModel):
         ordering = ("position",)
 
 
-class FlowStageMember(BaseModel):
-    stage = models.ForeignKey(FlowStage, on_delete=models.CASCADE, related_name="members")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+class FlowStageModule(BaseModel):
+    """A module of the project that belongs to a stage. The stage's progress is that of its modules."""
+
+    stage = models.ForeignKey(FlowStage, on_delete=models.CASCADE, related_name="modules")
+    module = models.ForeignKey("db.Module", on_delete=models.CASCADE, related_name="+")
 
     class Meta:
-        db_table = "tops_flow_stage_member"
+        db_table = "tops_flow_stage_module"
         constraints = [
             models.UniqueConstraint(
-                fields=["stage", "user"], condition=Q(deleted_at__isnull=True), name="tops_flow_stage_member_once"
+                fields=["stage", "module"], condition=Q(deleted_at__isnull=True), name="tops_flow_stage_module_once"
             )
         ]

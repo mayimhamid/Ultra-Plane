@@ -13,6 +13,7 @@ from rest_framework import status
 
 from plane.db.models import Issue
 from plane.team_ops.models import (
+    WeekPlanConfirmation,
     ActiveTimer,
     CalendarEntry,
     OpsNotification,
@@ -63,6 +64,9 @@ def plan_week(workspace, user, skip=()):
             CalendarEntry.objects.get_or_create(
                 workspace=workspace, user=user, work_date=day, defaults={"work_mode": "REMOTE"}
             )
+    WeekPlanConfirmation.objects.get_or_create(
+        workspace=workspace, user=user, week_start=start, defaults={"confirmed_at": timezone.now()}
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -108,8 +112,8 @@ class TestDayMode:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert not ActiveTimer.objects.exists()
 
-    @pytest.mark.parametrize("mode", ["REMOTE", "ONSITE", "HYBRID"])
-    def test_modes_are_saved_and_can_change(self, member_client, workspace, mode):
+    @pytest.mark.parametrize("mode", ["REMOTE", "ONSITE"])
+    def test_modes_are_saved(self, member_client, workspace, mode):
         assert set_mode(member_client, workspace, mode).data["day"]["mode"] == mode
 
     def test_unknown_mode(self, member_client, workspace):
@@ -134,8 +138,15 @@ class TestDayMode:
         set_mode(member_client, workspace, "REMOTE")
         assert start(member_client, workspace, issue, location="REMOTE").data["day"]["mode"] == "REMOTE"
 
-    def test_a_hybrid_day_still_needs_a_place_for_each_task(self, member_client, workspace, issue):
-        set_mode(member_client, workspace, "HYBRID")
+    def test_the_answer_cannot_be_changed_from_the_top_of_the_page(self, member_client, workspace):
+        set_mode(member_client, workspace, "REMOTE")
+        assert set_mode(member_client, workspace, "REMOTE").status_code == status.HTTP_200_OK
+        assert set_mode(member_client, workspace, "ONSITE").status_code == status.HTTP_400_BAD_REQUEST
+        assert set_mode(member_client, workspace, "HYBRID").status_code == status.HTTP_400_BAD_REQUEST
+        assert WorkDay.objects.get().mode == "REMOTE"
+
+    def test_a_hybrid_day_still_needs_a_place_for_each_task(self, member_client, workspace, issue, member):
+        WorkDay.objects.create(workspace=workspace, user=member, date=timezone.now().date(), mode="HYBRID")
         assert start(member_client, workspace, issue).status_code == status.HTTP_400_BAD_REQUEST
         assert start(member_client, workspace, issue, location="home").status_code == status.HTTP_400_BAD_REQUEST
         assert start(member_client, workspace, issue, location="REMOTE").data["timer"]["location"] == "REMOTE"
@@ -285,7 +296,7 @@ class TestCheckIn:
 @pytest.mark.contract
 class TestHybridHours:
     def test_hours_are_split_by_place(self, member_client, workspace, member, issue):
-        set_mode(member_client, workspace, "HYBRID")
+        set_mode(member_client, workspace, "REMOTE")
         start(member_client, workspace, issue, location="ONSITE")
         age({"user": member}, 20)
         finish(member_client, workspace, "A")
@@ -354,11 +365,13 @@ class TestWeekPlanGate:
             assert not ActiveTimer.objects.exists()
             for day in needed:
                 CalendarEntry.objects.create(workspace=workspace, user=member, work_date=day, work_mode="OFF")
+        confirm = member_client.post(w(workspace, "week/confirm/"), format="json")
+        assert confirm.status_code == status.HTTP_200_OK
         assert start(member_client, workspace, issue).status_code == status.HTTP_201_CREATED
         assert today.isoweekday() >= 1
 
     def test_days_off_and_leave_count_as_planned(self, member_client, workspace, member, issue):
-        CalendarEntry.objects.filter(user=member).update(work_mode="OFF")
+        CalendarEntry.objects.filter(user=member).update(work_mode="OFF")  # already confirmed by the fixture
         set_mode(member_client, workspace, "REMOTE")
         assert start(member_client, workspace, issue).status_code == status.HTTP_201_CREATED
 
@@ -424,3 +437,62 @@ class TestHeatmapAndPeopleTags:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert ActiveTimer.objects.exists() and not WorkSession.objects.exists()
+
+
+@pytest.mark.contract
+class TestWeekConfirmation:
+    def forget(self, member):
+        WeekPlanConfirmation.objects.filter(user=member).delete()
+
+    def test_an_unconfirmed_week_blocks_starting(self, member_client, workspace, member, issue):
+        self.forget(member)
+        set_mode(member_client, workspace, "REMOTE")
+        week = member_client.get(w(workspace)).data["week"]
+        assert week["confirmed"] is False and week["complete"] is False and week["missing"] == []
+        assert start(member_client, workspace, issue).status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_confirming_locks_and_unlocks_the_start(self, member_client, workspace, member, issue):
+        self.forget(member)
+        set_mode(member_client, workspace, "REMOTE")
+        week = member_client.post(w(workspace, "week/confirm/"), format="json").data["week"]
+        assert week["confirmed"] is True and week["complete"] is True
+        assert start(member_client, workspace, issue).status_code == status.HTTP_201_CREATED
+
+    def test_cannot_confirm_a_week_with_gaps(self, member_client, workspace, member):
+        self.forget(member)
+        today = timezone.now().date()
+        CalendarEntry.objects.filter(user=member, work_date__gte=today).delete()
+        week = member_client.get(w(workspace)).data["week"]
+        if week["missing"]:
+            assert member_client.post(w(workspace, "week/confirm/"), format="json").status_code == 400
+            assert not WeekPlanConfirmation.objects.filter(user=member).exists()
+
+    def test_reopening_tells_the_managers_and_needs_a_new_confirmation(
+        self, member_client, workspace, member, admin, issue
+    ):
+        response = member_client.post(w(workspace, "week/unlock/"), format="json")
+        assert response.data["week"]["confirmed"] is False and response.data["week"]["complete"] is False
+        assert OpsNotification.objects.filter(user=admin, kind="ATTENTION", title__contains="reopened").count() == 1
+        set_mode(member_client, workspace, "REMOTE")
+        assert start(member_client, workspace, issue).status_code == status.HTTP_400_BAD_REQUEST
+        member_client.post(w(workspace, "week/confirm/"), format="json")
+        assert start(member_client, workspace, issue).status_code == status.HTTP_201_CREATED
+
+    def test_reopening_twice_notifies_once(self, member_client, workspace, admin):
+        member_client.post(w(workspace, "week/unlock/"), format="json")
+        member_client.post(w(workspace, "week/unlock/"), format="json")
+        assert OpsNotification.objects.filter(user=admin, title__contains="reopened").count() == 1
+
+    def test_control_shows_who_has_not_confirmed(self, admin_client, member_client, workspace, member):
+        data = admin_client.get(
+            url(workspace, "control/team/"),
+            {"from": str(timezone.now().date()), "to": str(timezone.now().date())},
+        ).data
+        row = next(r for r in data["results"] if r["user"]["id"] == member.id)
+        assert row["week_confirmed"] is True
+        member_client.post(w(workspace, "week/unlock/"), format="json")
+        data = admin_client.get(
+            url(workspace, "control/team/"),
+            {"from": str(timezone.now().date()), "to": str(timezone.now().date())},
+        ).data
+        assert next(r for r in data["results"] if r["user"]["id"] == member.id)["week_confirmed"] is False

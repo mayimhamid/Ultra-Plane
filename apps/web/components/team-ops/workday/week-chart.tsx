@@ -7,6 +7,7 @@
 import { useMemo, useState } from "react";
 import { SelectField } from "@makeplane/propel/components/select-field";
 import { formatHm, weeklyChart } from "@plane/services";
+import { HoursChart } from "../control/hours-chart";
 import type { TWorkSession } from "@plane/types";
 
 type Props = { weekStart: string; sessions: TWorkSession[] };
@@ -38,7 +39,26 @@ export function WeekChart({ weekStart, sessions }: Props) {
     () => weeklyChart(sessions, weekStart, { place, fromHour, toHour: Math.max(toHour, fromHour + 1) }),
     [sessions, weekStart, place, fromHour, toHour]
   );
-  const total = days.reduce((sum, day) => sum + day.seconds, 0);
+  const stacked = useMemo(() => {
+    const window = { fromHour, toHour: Math.max(toHour, fromHour + 1) };
+    const solo = sessions.filter((session) => !session.is_parallel);
+    const side = sessions.filter((session) => session.is_parallel);
+    const onsite = weeklyChart(solo, weekStart, {
+      ...window,
+      place: place === "REMOTE" ? "ONSITE" : place || "ONSITE",
+    });
+    const remote = weeklyChart(solo, weekStart, { ...window, place: "REMOTE" });
+    const parallel = weeklyChart(side, weekStart, { ...window, place });
+    return days.map((day, index) => ({
+      date: day.date,
+      onsite_seconds: place === "REMOTE" ? 0 : onsite[index].seconds,
+      remote_seconds: place === "ONSITE" ? 0 : remote[index].seconds,
+      parallel_seconds: parallel[index].seconds,
+      frozen_seconds: 0,
+      break_seconds: 0,
+    }));
+  }, [days, sessions, weekStart, place, fromHour, toHour]);
+  const total = stacked.reduce((sum, day) => sum + day.onsite_seconds + day.remote_seconds + day.parallel_seconds, 0);
   // At least four hours of height, so a quiet week does not look full.
   const top = Math.max(4 * 3600, ...days.map((day) => day.seconds));
 
@@ -94,26 +114,7 @@ export function WeekChart({ weekStart, sessions }: Props) {
           </button>
         </div>
       </header>
-      <ol className="flex h-40 items-end gap-2">
-        {days.map((day) => (
-          <li key={day.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
-            <span className="text-caption-sm-medium text-secondary tabular-nums">
-              {day.seconds > 0 ? formatHm(day.seconds) : ""}
-            </span>
-            <div
-              role="img"
-              aria-label={`${weekday.format(parse(day.date))}: ${formatHm(day.seconds)}`}
-              className="w-full max-w-12 rounded-t-md"
-              style={{
-                height: `${Math.max(day.seconds > 0 ? 4 : 2, Math.round((day.seconds / top) * 100))}%`,
-                backgroundColor:
-                  day.seconds > 0 ? "var(--background-color-accent-primary)" : "var(--background-color-layer-1)",
-              }}
-            />
-            <span className="text-caption-sm-regular text-tertiary">{weekday.format(parse(day.date))}</span>
-          </li>
-        ))}
-      </ol>
+      <HoursChart days={stacked} />
     </section>
   );
 }

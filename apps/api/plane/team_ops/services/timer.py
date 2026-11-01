@@ -68,7 +68,7 @@ def _close_pause(timer, now):
 def refresh(timer, now=None):
     """Freeze the timer if its check-in was not answered in time. Safe to call as often as needed."""
     now = now or timezone.now()
-    if timer.state != RUNNING:
+    if timer.state != RUNNING or timer.is_parallel:
         return timer
     due = check_in_due_at(timer)
     if now < due + timedelta(seconds=GRACE_SECONDS):
@@ -101,7 +101,16 @@ def refresh(timer, now=None):
 def _lock(workspace, user):
     return (
         ActiveTimer.objects.select_for_update(of=("self",))
-        .filter(workspace=workspace, user=user)
+        .filter(workspace=workspace, user=user, is_parallel=False)
+        .select_related("workspace", "user", "issue", "issue__project")
+        .first()
+    )
+
+
+def _lock_parallel(workspace, user, timer_id):
+    return (
+        ActiveTimer.objects.select_for_update(of=("self",))
+        .filter(workspace=workspace, user=user, is_parallel=True, pk=timer_id)
         .select_related("workspace", "user", "issue", "issue__project")
         .first()
     )
@@ -167,16 +176,17 @@ class StopResult:
     location: str
     break_seconds: int
     frozen_seconds: int
+    is_parallel: bool = False
 
 
-def stop_timer(workspace, user):
+def stop_timer(workspace, user, timer_id=None):
     """Stop the running timer and turn it into a time entry; `None` when none is running.
 
     The entry holds the worked time only. A timer left running for days logs at most a day, and
     `capped` says so.
     """
     with transaction.atomic():
-        timer = _lock(workspace, user)
+        timer = _lock_parallel(workspace, user, timer_id) if timer_id else _lock(workspace, user)
         if timer is None:
             return None
         timer = refresh(timer)
@@ -198,7 +208,7 @@ def stop_timer(workspace, user):
             note=timer.note,
             source=TimeEntry.Source.TIMER,
         )
-        result = StopResult(entry, capped, timer.location, timer.break_seconds, timer.frozen_seconds)
+        result = StopResult(entry, capped, timer.location, timer.break_seconds, timer.frozen_seconds, timer.is_parallel)
         timer.delete(soft=False)
     return result
 

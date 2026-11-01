@@ -71,6 +71,51 @@ class WorkdayStartEndpoint(BaseAPIView):
         return Response(workday.day_state(workspace, request.user), status=status.HTTP_201_CREATED)
 
 
+class WorkdayWeekConfirmEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        """Confirm and lock this week's plan."""
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        workday.confirm_week(workspace, request.user)
+        return Response(workday.day_state(workspace, request.user))
+
+
+class WorkdayWeekUnlockEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        """Reopen this week's plan to change it. Managers are told."""
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        workday.unlock_week(workspace, request.user)
+        return Response(workday.day_state(workspace, request.user))
+
+
+class WorkdayParallelEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        """Start a second task alongside the main one."""
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        issue = resolve_issue(workspace, request.user, request.data.get("issue"))
+        workday.start_parallel(workspace, request.user, issue, request.data.get("location"))
+        return Response(workday.day_state(workspace, request.user), status=status.HTTP_201_CREATED)
+
+
+class WorkdayDayOverrideEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        """Change today's answer: `mode`, and the place of every task finished today as `sessions: {id: place}`."""
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        workday.override_day(workspace, request.user, request.data.get("mode"), request.data.get("sessions", {}))
+        return Response(workday.day_state(workspace, request.user))
+
+
 class WorkdayBreakEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug):
@@ -139,9 +184,13 @@ class NotificationEndpoint(BaseAPIView):
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug):
-        """Mark one notification (`id`) or all of them read."""
+        """Mark one notification (`id`) or all of them read; `read: false` marks the one given as unread again."""
         workspace = Workspace.objects.get(slug=slug)
-        queryset = OpsNotification.objects.filter(workspace=workspace, user=request.user, read_at__isnull=True)
+        mine = OpsNotification.objects.filter(workspace=workspace, user=request.user)
+        if request.data.get("id") and request.data.get("read") is False:
+            mine.filter(pk=parse_uuid(request.data["id"], "id")).update(read_at=None)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        queryset = mine.filter(read_at__isnull=True)
         if request.data.get("id"):
             queryset = queryset.filter(pk=parse_uuid(request.data["id"], "id"))
         queryset.update(read_at=timezone.now())

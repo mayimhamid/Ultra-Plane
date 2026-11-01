@@ -16,7 +16,15 @@ import { DAY_KIND_META, DayKindDot } from "@/components/team-ops/calendar/work-m
 import { useMember } from "@/hooks/store/use-member";
 import { useUserProfile } from "@/hooks/store/user";
 import { useCalendarSettings, useOpsTeams } from "@/hooks/team-ops/use-work-calendar";
+import { controlService } from "@/hooks/team-ops/use-control";
 import { useDashboard } from "@/hooks/team-ops/use-work-reports";
+import { HoursChart } from "@/components/team-ops/control/hours-chart";
+import { NotificationsBox } from "@/components/team-ops/control/notifications-box";
+import Link from "next/link";
+import { useSearchParams } from "react-router";
+import { ControlRoot } from "@/components/team-ops/control";
+import { TasksView } from "@/components/team-ops/tasks";
+import useSWR from "swr";
 
 type Props = { workspaceSlug: string };
 
@@ -34,7 +42,7 @@ function Card({ label, value, hint }: { label: string; value: string | number; h
 }
 
 /** One page for managers: where everyone is today, planned against logged time, reports and projects. */
-export const DashboardRoot = observer(function DashboardRoot({ workspaceSlug }: Props) {
+const DashboardOverview = observer(function DashboardOverview({ workspaceSlug }: Props) {
   const [periodKey, setPeriodKey] = useState("this-week");
   const [teamId, setTeamId] = useState(ALL);
   const { data: profile } = useUserProfile();
@@ -49,6 +57,11 @@ export const DashboardRoot = observer(function DashboardRoot({ workspaceSlug }: 
     to: period.to,
     team: teamId === ALL ? undefined : teamId,
   });
+  const hoursParams = { from: period.from, to: period.to, team: teamId === ALL ? undefined : teamId };
+  const { data: teamHours } = useSWR(
+    permissions?.can_view_team ? `TEAM_OPS_DASHBOARD_HOURS_${workspaceSlug}_${JSON.stringify(hoursParams)}` : null,
+    () => controlService.getHours(workspaceSlug, hoursParams)
+  );
 
   if (!permissions) return null;
   if (!permissions.can_view_team) {
@@ -135,6 +148,13 @@ export const DashboardRoot = observer(function DashboardRoot({ workspaceSlug }: 
                 <li className="text-body-sm-regular text-tertiary">Nothing is planned for today.</li>
               ) : null}
             </ul>
+          </section>
+
+          <NotificationsBox workspaceSlug={workspaceSlug} />
+
+          <section aria-label="Hours by day" className="rounded-lg border border-subtle bg-surface-1 p-4">
+            <h2 className="mb-3 text-body-sm-medium text-primary">Team hours per day</h2>
+            <HoursChart days={teamHours?.team ?? []} height={150} hideParallel />
           </section>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -234,6 +254,68 @@ export const DashboardRoot = observer(function DashboardRoot({ workspaceSlug }: 
           </div>
         </>
       ) : null}
+    </div>
+  );
+});
+
+const TABS = [
+  { key: "overview", label: "Overview", managers: true },
+  { key: "tasks", label: "Tasks", managers: false },
+  { key: "control", label: "Control", managers: true },
+] as const;
+
+const CORE_LINKS = [
+  { label: "Views", path: "workspace-views/all-issues" },
+  { label: "Analytics", path: "analytics/overview" },
+  { label: "Archives", path: "projects/archives" },
+];
+
+/** The Dashboard: the overview, Control for managers, and the Views, Analytics and Archives pages as tabs. */
+export const DashboardRoot = observer(function DashboardRoot({ workspaceSlug }: Props) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { permissions } = useCalendarSettings(workspaceSlug);
+  const showControl = (permissions?.can_view_team ?? false) || (permissions?.can_manage ?? false);
+  const requested = searchParams.get("view");
+  // People who may not see the team open on their tasks.
+  const view = !permissions
+    ? "overview"
+    : !showControl || requested === "tasks"
+      ? "tasks"
+      : requested === "control"
+        ? "control"
+        : "overview";
+
+  return (
+    <div className="flex w-full flex-col">
+      <nav aria-label="Dashboard" className="mx-auto flex w-full max-w-6xl gap-1 border-b border-subtle px-6 pt-4">
+        {TABS.filter((tab) => !tab.managers || showControl).map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            aria-current={view === tab.key ? "page" : undefined}
+            onClick={() => setSearchParams(tab.key === "overview" ? {} : { view: tab.key })}
+            className={
+              view === tab.key
+                ? "-mb-px border-b-2 border-accent-strong px-3 py-2 text-body-sm-medium text-primary"
+                : "-mb-px border-b-2 border-transparent px-3 py-2 text-body-sm-medium text-tertiary hover:text-secondary"
+            }
+          >
+            {tab.label}
+          </button>
+        ))}
+        {CORE_LINKS.map((tab) => (
+          <Link
+            key={tab.label}
+            href={`/${workspaceSlug}/${tab.path}/`}
+            className="-mb-px border-b-2 border-transparent px-3 py-2 text-body-sm-medium text-tertiary hover:text-secondary"
+          >
+            {tab.label}
+          </Link>
+        ))}
+      </nav>
+      {view === "control" ? <ControlRoot workspaceSlug={workspaceSlug} embedded /> : null}
+      {view === "tasks" ? <TasksView workspaceSlug={workspaceSlug} /> : null}
+      {view === "overview" ? <DashboardOverview workspaceSlug={workspaceSlug} /> : null}
     </div>
   );
 });

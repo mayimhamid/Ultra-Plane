@@ -18,6 +18,7 @@ import { AppSidebarItem } from "@/components/sidebar/sidebar-item";
 import { InboxOutline } from "@makeplane/propel/icons";
 import useSWR from "swr";
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
+import { useOpsUnread } from "@/hooks/team-ops/use-ops-unread";
 // local imports
 import { StarUsOnGitHubLink } from "@/app/(all)/[workspaceSlug]/(projects)/star-us-link";
 
@@ -40,9 +41,12 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
 
   // Calculate notification count
   const isMentionsEnabled = unreadNotificationsCount.mention_unread_notifications_count > 0;
-  const totalNotifications = isMentionsEnabled
-    ? unreadNotificationsCount.mention_unread_notifications_count
-    : unreadNotificationsCount.total_unread_notifications_count;
+  // Team Ops notifications ride on the same bell.
+  const opsUnread = useOpsUnread(workspaceSlug?.toString());
+  const totalNotifications =
+    (isMentionsEnabled
+      ? unreadNotificationsCount.mention_unread_notifications_count
+      : unreadNotificationsCount.total_unread_notifications_count) + opsUnread;
 
   return (
     <div

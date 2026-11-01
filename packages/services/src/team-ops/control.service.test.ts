@@ -72,4 +72,38 @@ describe("ControlService", () => {
     get.mockRejectedValue({ response: { data: { error: "no" } } });
     await expect(service.getHub("acme")).rejects.toEqual({ error: "no" });
   });
+
+  it("reads the sum, counting parallel work twice only when asked", async () => {
+    const get = vi.spyOn(service, "get").mockResolvedValue({ data: { results: [], total_seconds: 0 } } as never);
+
+    await service.getSum("acme", range);
+    await service.getSum("acme", { ...range, parallel_double: true });
+
+    expect(get).toHaveBeenNthCalledWith(1, `${BASE}/sum/`, { params: { ...range, parallel_double: undefined } });
+    expect(get).toHaveBeenNthCalledWith(2, `${BASE}/sum/`, { params: { ...range, parallel_double: "1" } });
+  });
+
+  it("downloads the Excel file and counts a person's frozen time", async () => {
+    const blob = new Blob(["x"]);
+    const get = vi.spyOn(service, "get").mockResolvedValue({ data: blob } as never);
+    const post = vi.spyOn(service, "post").mockResolvedValue({ data: { changed: 2 } } as never);
+
+    await expect(service.exportSum("acme", range)).resolves.toBe(blob);
+    await expect(service.creditFreeze("acme", { user: "u1", ...range, credited: true })).resolves.toBe(2);
+
+    expect(get).toHaveBeenCalledWith(
+      `${BASE}/sum/`,
+      { params: { ...range, parallel_double: undefined, export: "xlsx" } },
+      { responseType: "blob" }
+    );
+    expect(post).toHaveBeenCalledWith(`${BASE}/sum/freeze/`, { user: "u1", ...range, credited: true });
+  });
+
+  it("reads what a person was told", async () => {
+    const get = vi.spyOn(service, "get").mockResolvedValue({ data: { results: [{ id: "n1" }] } } as never);
+
+    await expect(service.getPersonNotifications("acme", "u1")).resolves.toEqual([{ id: "n1" }]);
+
+    expect(get).toHaveBeenCalledWith(`${BASE}/notifications/`, { params: { user: "u1" } });
+  });
 });

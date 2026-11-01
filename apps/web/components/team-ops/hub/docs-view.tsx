@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
+import Link from "next/link";
 import { Button } from "@makeplane/propel/components/button";
 import { InputField } from "@makeplane/propel/components/input-field";
 import { SelectField } from "@makeplane/propel/components/select-field";
@@ -25,7 +26,7 @@ type Props = { workspaceSlug: string };
 const NONE = "none";
 const dateFormat = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric" });
 
-type Draft = { id?: string; title: string; body: string; tags: string; project: string };
+type Draft = { id?: string; title: string; body: string; tags: string; project: string; page?: string | null };
 const emptyDraft: Draft = { title: "", body: "", tags: "", project: NONE };
 
 /** Written documents with tags and an optional project. */
@@ -105,6 +106,7 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
       body: doc.body ?? "",
       tags: doc.tags.join(", "),
       project: doc.project?.id ?? NONE,
+      page: doc.page,
     });
 
   return (
@@ -197,13 +199,19 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
                 placeholder="Title"
                 aria-label="Title"
               />
-              <TextAreaField
-                size="lg"
-                label="Document"
-                value={draft.body}
-                rows={14}
-                onChange={(event) => setDraft({ ...draft, body: event.target.value })}
-              />
+              {draft.page ? (
+                <p className="text-body-sm-regular text-secondary">
+                  The text of this document is a Plane Page. Save, then use "Open in Pages" to write it.
+                </p>
+              ) : (
+                <TextAreaField
+                  size="lg"
+                  label="Document"
+                  value={draft.body}
+                  rows={14}
+                  onChange={(event) => setDraft({ ...draft, body: event.target.value })}
+                />
+              )}
               <InputField
                 type="text"
                 size="lg"
@@ -221,6 +229,11 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
                   value={draft.project}
                   onValueChange={(value) => setDraft({ ...draft, project: value ?? NONE })}
                 />
+                {draft.project !== NONE && !draft.page ? (
+                  <p className="mt-1 text-caption-sm-regular text-tertiary">
+                    A document of a project is kept as a Page in that project.
+                  </p>
+                ) : null}
               </div>
               <div className="flex gap-2">
                 <Button
@@ -250,18 +263,28 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
                     </p>
                   ) : null}
                 </div>
-                {open.author.id === currentUser?.id ? (
-                  <div className="flex gap-2">
-                    <Button variant="secondary" size="sm" stretch="auto" label="Edit" onClick={() => edit(open)} />
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      stretch="auto"
-                      label="Delete"
-                      onClick={() => void remove(open)}
-                    />
-                  </div>
-                ) : null}
+                <div className="flex items-center gap-2">
+                  {open.page && open.project ? (
+                    <Link
+                      className="rounded-md border border-subtle px-2.5 py-1 text-body-xs-medium text-accent-primary hover:bg-layer-1"
+                      href={`/${workspaceSlug}/projects/${open.project.id}/pages/${open.page}/`}
+                    >
+                      Open in Pages
+                    </Link>
+                  ) : null}
+                  {open.author.id === currentUser?.id ? (
+                    <>
+                      <Button variant="secondary" size="sm" stretch="auto" label="Edit" onClick={() => edit(open)} />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        stretch="auto"
+                        label="Delete"
+                        onClick={() => void remove(open)}
+                      />
+                    </>
+                  ) : null}
+                </div>
               </header>
               <p className="text-body-sm-regular break-words whitespace-pre-wrap text-primary">{open.body}</p>
             </article>

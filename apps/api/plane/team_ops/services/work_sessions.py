@@ -36,7 +36,9 @@ def _add_to_day_report(*, workspace, user, session, work_item_key):
     save_report(workspace=workspace, user=user, kind=DAILY, start=day, data={"done": done}, submit=False)
 
 
-def finish_work(*, workspace, user, summary, document_text, no_document, attention, attachments_expected=False):
+def finish_work(
+    *, workspace, user, summary, document_text, no_document, attention, attachments_expected=False, timer_id=None
+):
     """Stop the timer and record the session.
 
     `attention` is `None` or `{"message", "team_ids", "user_ids"}`. A session needs a summary, and a
@@ -52,7 +54,7 @@ def finish_work(*, workspace, user, summary, document_text, no_document, attenti
         raise ParseError(detail="Say what needs attention.")
 
     with transaction.atomic():
-        stopped = stop_timer(workspace, user)
+        stopped = stop_timer(workspace, user, timer_id)
         if stopped is None:
             raise ParseError(detail="No timer is running.")
         entry, capped = stopped.entry, stopped.capped
@@ -71,6 +73,7 @@ def finish_work(*, workspace, user, summary, document_text, no_document, attenti
             document_text=document_text,
             no_document=no_document and not document_text,
             location=stopped.location,
+            is_parallel=stopped.is_parallel,
             break_seconds=stopped.break_seconds,
             frozen_seconds=stopped.frozen_seconds,
             needs_attention=bool(attention),

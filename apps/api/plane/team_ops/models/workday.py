@@ -74,6 +74,7 @@ class OpsNotification(BaseModel):
         NEWS = "NEWS", "News"
         DIRECT = "DIRECT", "Direct message"
         SECRET = "SECRET", "Secret shared"
+        FLOW = "FLOW", "Added to a flow"
 
     workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_notifications")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_ops_notifications")
@@ -93,3 +94,71 @@ class OpsNotification(BaseModel):
         db_table = "tops_notification"
         ordering = ("-created_at",)
         indexes = [models.Index(fields=["user", "read_at", "created_at"], name="tops_notif_user_read_idx")]
+
+
+class WorkApproval(BaseModel):
+    """An admin confirmed a person's hours for a day."""
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_approvals")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_ops_approvals")
+    date = models.DateField()
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    approved_at = models.DateTimeField()
+
+    class Meta:
+        verbose_name = "Work Approval"
+        verbose_name_plural = "Work Approvals"
+        db_table = "tops_work_approval"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "user", "date"],
+                condition=Q(deleted_at__isnull=True),
+                name="tops_work_approval_one_per_user_day",
+            )
+        ]
+
+
+class WeekPlanConfirmation(BaseModel):
+    """The person confirmed their plan for a week (Saturday to Friday). After that it is locked until they reopen it."""
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_week_confirmations")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_ops_week_confirmations"
+    )
+    week_start = models.DateField()
+    confirmed_at = models.DateTimeField()
+
+    class Meta:
+        verbose_name = "Week Plan Confirmation"
+        verbose_name_plural = "Week Plan Confirmations"
+        db_table = "tops_week_confirmation"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "user", "week_start"],
+                condition=Q(deleted_at__isnull=True),
+                name="tops_week_confirmation_one_per_week",
+            )
+        ]
+
+
+class FreezeCredit(BaseModel):
+    """An admin decided that the frozen time of a person on a day counts as worked."""
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_freeze_credits")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_ops_freeze_credits")
+    date = models.DateField()
+    seconds = models.PositiveIntegerField()
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    approved_at = models.DateTimeField()
+
+    class Meta:
+        verbose_name = "Freeze Credit"
+        verbose_name_plural = "Freeze Credits"
+        db_table = "tops_freeze_credit"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "user", "date"],
+                condition=Q(deleted_at__isnull=True),
+                name="tops_freeze_credit_one_per_user_day",
+            )
+        ]

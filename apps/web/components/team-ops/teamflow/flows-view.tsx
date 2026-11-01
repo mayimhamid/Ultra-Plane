@@ -6,16 +6,22 @@
 
 import { Fragment, useState } from "react";
 import { observer } from "mobx-react";
+import useSWR from "swr";
 import { Badge } from "@makeplane/propel/components/badge";
 import { Button } from "@makeplane/propel/components/button";
 import { setToast } from "@plane/blocks/toast";
-import type { TFlow, TFlowStage } from "@plane/types";
+import { WorkdayService } from "@plane/services";
+import type { TFlow, TFlowModule, TFlowStage } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
 import { flowService, useFlows } from "@/hooks/team-ops/use-hub";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
+import { TaskRow } from "../tasks/tasks-view";
 import { FlowEditor } from "./flow-editor";
+import { OfferPanel } from "./offer-panel";
+
+const workdayService = new WorkdayService();
 
 type Props = { workspaceSlug: string };
 
@@ -28,18 +34,77 @@ const Bar = ({ percent }: { percent: number | null }) => (
   </div>
 );
 
-function StageColumn({ stage, index }: { stage: TFlowStage; index: number }) {
+function ModuleBlock({
+  module,
+  pending,
+  selected,
+  onSelect,
+}: {
+  module: TFlowModule;
+  pending: boolean;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        aria-pressed={selected}
+        onClick={onSelect}
+        className={cn(
+          "flex w-full flex-col gap-1.5 rounded-md border bg-surface-1 p-2 text-left hover:bg-layer-1",
+          selected ? "border-accent-strong ring-1 ring-accent-strong" : "border-subtle"
+        )}
+      >
+        <span className="flex items-center justify-between gap-2">
+          <span className="truncate text-body-xs-medium text-primary">{module.name}</span>
+          {pending ? (
+            <span className="text-caption-sm-medium text-warning-primary">Pending</span>
+          ) : (
+            <span className="text-caption-sm-medium text-secondary tabular-nums">
+              {module.percent === null ? "no tasks" : `${module.percent}%`}
+            </span>
+          )}
+        </span>
+        {!pending ? <Bar percent={module.percent} /> : null}
+        {!pending && module.total > 0 ? (
+          <span className="text-caption-sm-regular text-tertiary">
+            {module.done} of {module.total} tasks done
+            {module.side_total > 0 ? ` · +${module.side_done}/${module.side_total} side` : ""}
+          </span>
+        ) : null}
+        {module.people.length > 0 ? (
+          <span className="truncate text-caption-sm-regular text-secondary">
+            {module.people.map((person) => person.display_name).join(", ")}
+          </span>
+        ) : null}
+      </button>
+    </li>
+  );
+}
+
+function StageColumn({
+  stage,
+  index,
+  selectedModule,
+  onSelect,
+}: {
+  stage: TFlowStage;
+  index: number;
+  selectedModule: string | null;
+  onSelect: (moduleId: string) => void;
+}) {
   return (
     <section
       aria-label={`Stage ${index + 1}: ${stage.name}`}
       className={cn(
-        "flex w-56 shrink-0 flex-col gap-2 rounded-lg border p-3",
+        "flex w-60 shrink-0 flex-col gap-2 rounded-lg border p-3",
         stage.pending ? "border-subtle bg-layer-1" : "border-accent-strong bg-surface-1"
       )}
     >
       <header className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-caption-sm-regular text-tertiary">Stage {index + 1}</p>
+          <p className="text-caption-sm-regular text-tertiary">Phase {index + 1}</p>
           <h4 className="truncate text-body-sm-medium text-primary">{stage.name}</h4>
         </div>
         {stage.pending ? (
@@ -51,51 +116,75 @@ function StageColumn({ stage, index }: { stage: TFlowStage; index: number }) {
         )}
       </header>
       <ul className="flex flex-col gap-2">
-        {stage.people.map((person) => (
-          <li key={person.user.id} className="flex flex-col gap-1 rounded-md border border-subtle bg-surface-1 p-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-body-xs-medium text-primary">{person.user.display_name}</span>
-              {stage.pending ? (
-                <span className="text-caption-sm-medium text-warning-primary">Pending</span>
-              ) : (
-                <span className="text-caption-sm-medium text-secondary tabular-nums">
-                  {person.percent === null ? "no tasks" : `${person.percent}%`}
-                </span>
-              )}
-            </div>
-            {!stage.pending ? <Bar percent={person.percent} /> : null}
-            {!stage.pending && person.total > 0 ? (
-              <span className="text-caption-sm-regular text-tertiary">
-                {person.done} of {person.total} tasks done
-              </span>
-            ) : null}
-          </li>
+        {stage.modules.map((module) => (
+          <ModuleBlock
+            key={module.id}
+            module={module}
+            pending={stage.pending}
+            selected={selectedModule === module.id}
+            onSelect={() => onSelect(module.id)}
+          />
         ))}
       </ul>
     </section>
   );
 }
 
-function FlowChart({ flow }: { flow: TFlow }) {
+/** The tasks of the module that was clicked, in the same shape as everywhere else. */
+function ModuleTasks({ workspaceSlug, module }: { workspaceSlug: string; module: TFlowModule }) {
+  const { data, isLoading } = useSWR(`TEAM_OPS_MODULE_TASKS_${module.id}`, () =>
+    workdayService.getTasks(workspaceSlug, { module: module.id })
+  );
   return (
-    <div className="overflow-x-auto pb-2">
-      <div className="flex min-w-max items-stretch gap-1">
-        {flow.stages.map((stage, index) => (
-          <Fragment key={stage.id}>
-            {index > 0 ? (
-              <div aria-hidden className="flex w-8 shrink-0 items-center justify-center text-h5-medium text-tertiary">
-                →
-              </div>
-            ) : null}
-            <StageColumn stage={stage} index={index} />
-          </Fragment>
+    <section
+      aria-label={`Tasks of ${module.name}`}
+      className="flex flex-col gap-2 rounded-lg border border-accent-strong p-3"
+    >
+      <h4 className="text-body-sm-medium text-primary">
+        {module.name}: {isLoading ? "loading" : `${data?.total ?? 0} task(s)`}
+      </h4>
+      <ul className="flex flex-col divide-y divide-subtle rounded-lg border border-subtle bg-surface-1">
+        {(data?.results ?? []).length === 0 && !isLoading ? (
+          <li className="px-4 py-4 text-body-sm-regular text-tertiary">No work items in this module yet.</li>
+        ) : null}
+        {(data?.results ?? []).map((task) => (
+          <TaskRow key={task.id} task={task} workspaceSlug={workspaceSlug} />
         ))}
+      </ul>
+    </section>
+  );
+}
+
+function FlowChart({ flow, workspaceSlug }: { flow: TFlow; workspaceSlug: string }) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const module = flow.stages.flatMap((stage) => stage.modules).find((item) => item.id === selected) ?? null;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="overflow-x-auto pb-2">
+        <div className="flex min-w-max items-stretch gap-1">
+          {flow.stages.map((stage, index) => (
+            <Fragment key={stage.id}>
+              {index > 0 ? (
+                <div aria-hidden className="flex w-8 shrink-0 items-center justify-center text-h5-medium text-tertiary">
+                  →
+                </div>
+              ) : null}
+              <StageColumn
+                stage={stage}
+                index={index}
+                selectedModule={selected}
+                onSelect={(id) => setSelected(selected === id ? null : id)}
+              />
+            </Fragment>
+          ))}
+        </div>
       </div>
+      {module ? <ModuleTasks workspaceSlug={workspaceSlug} module={module} /> : null}
     </div>
   );
 }
 
-/** One flowchart per project: who works with whom, stage by stage, and how far each person is. */
+/** A project in phases: each phase holds modules, its progress is theirs. Click a module to see its tasks. */
 export const FlowsView = observer(function FlowsView({ workspaceSlug }: Props) {
   const { flows, canManage, refresh } = useFlows(workspaceSlug);
   const [editing, setEditing] = useState<TFlow | "new" | null>(null);
@@ -113,8 +202,8 @@ export const FlowsView = observer(function FlowsView({ workspaceSlug }: Props) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="max-w-2xl text-body-sm-regular text-secondary">
-          Each flow shows the people of a project in stages. A person&apos;s box shows how many of their tasks in the
-          project are done. A stage stays <b>Pending</b> until every stage before it is finished.
+          A flow splits a project into phases. Each phase holds modules of the project, and the progress of the phase is
+          the progress of its modules. A phase stays <b>Pending</b> until the phases before it are finished.
         </p>
         {canManage ? (
           <Button variant="primary" size="md" stretch="auto" label="New flow" onClick={() => setEditing("new")} />
@@ -135,9 +224,7 @@ export const FlowsView = observer(function FlowsView({ workspaceSlug }: Props) {
 
       {flows && flows.length === 0 ? (
         <p className="rounded-lg border border-subtle bg-surface-1 p-4 text-body-sm-regular text-tertiary">
-          {canManage
-            ? "No flows yet. Create one for a project to show who works with whom."
-            : "There is no flow for your projects yet. An admin draws them."}
+          No flows yet. Create one for a project, or start a new project together with its flow.
         </p>
       ) : null}
 
@@ -157,7 +244,14 @@ export const FlowsView = observer(function FlowsView({ workspaceSlug }: Props) {
               </div>
             ) : null}
           </header>
-          <FlowChart flow={flow} />
+          <FlowChart flow={flow} workspaceSlug={workspaceSlug} />
+          {flow.side_tasks.total > 0 ? (
+            <p className="text-caption-sm-regular text-tertiary">
+              Side tasks (added to a module after this flow was drawn, they never hold a phase back):{" "}
+              {flow.side_tasks.done} of {flow.side_tasks.total} done.
+            </p>
+          ) : null}
+          <OfferPanel workspaceSlug={workspaceSlug} flowId={flow.id} onTaken={refresh} />
         </article>
       ))}
     </div>

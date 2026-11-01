@@ -17,7 +17,7 @@ from plane.app.permissions import allow_permission
 from plane.app.views.base import BaseAPIView
 from plane.db.models import Project, ProjectMember, User, Workspace
 from plane.team_ops.models import Flow, HubAttachment, HubDoc, HubSecretAccess
-from plane.team_ops.services import flows, hub, hub_files
+from plane.team_ops.services import doc_pages, flows, hub, hub_files
 from plane.team_ops.services import secrets as secret_service
 from plane.team_ops.services.access import CALENDAR_ROLES, CalendarAccess, calendar_user_ids
 from plane.team_ops.services.time_entry import parse_uuid
@@ -84,15 +84,17 @@ def _doc_payload(doc, full=False):
         else None,
         "author": person(doc.author),
         "updated_at": doc.updated_at,
-        "excerpt": doc.body[:200],
+        "excerpt": doc_pages.text_of(doc)[:200],
+        # The Page that holds the text; the document is written there
+        "page": doc.page_id,
     }
     if full:
-        data["body"] = doc.body
+        data["body"] = doc_pages.text_of(doc)
     return data
 
 
 def _visible_docs(workspace, user, is_admin):
-    queryset = HubDoc.objects.filter(workspace=workspace).select_related("author", "project")
+    queryset = HubDoc.objects.filter(workspace=workspace).select_related("author", "project", "page")
     if is_admin:
         return queryset
     mine = ProjectMember.objects.filter(member=user, is_active=True).values("project_id")
@@ -152,6 +154,7 @@ class HubDocListEndpoint(BaseAPIView):
             tags=_tags(data.get("tags")),
             project=_project_of(workspace, request.user, is_admin, data.get("project")),
         )
+        doc_pages.link_page(doc)
         return Response(_doc_payload(doc, full=True), status=status.HTTP_201_CREATED)
 
 
@@ -185,7 +188,7 @@ class HubDocDetailEndpoint(BaseAPIView):
             if not title or len(title) > 200:
                 raise ParseError(detail="Give the document a title.")
             doc.title = title
-        if "body" in data:
+        if "body" in data and not doc.page_id:
             if len(str(data["body"])) > 100000:
                 raise ParseError(detail="The document is too long.")
             doc.body = str(data["body"])
@@ -194,6 +197,8 @@ class HubDocDetailEndpoint(BaseAPIView):
         if "project" in data:
             doc.project = _project_of(workspace, request.user, is_admin, data["project"])
         doc.save()
+        doc_pages.rename_page(doc)
+        doc_pages.link_page(doc)
         return Response(_doc_payload(doc, full=True))
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
@@ -406,15 +411,19 @@ class FlowListEndpoint(BaseAPIView):
         if workspace is None:
             return _forbidden()
         rows = flows.visible_flows(workspace, request.user, is_admin)
-        return Response({"results": [flows.describe(flow) for flow in rows], "can_manage": is_admin})
+        return Response({"results": [flows.describe(flow) for flow in rows], "can_manage": True})
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug):
         workspace, is_admin = _member(request, slug)
-        if workspace is None or not is_admin:
+        if workspace is None:
             return _forbidden()
         project = flows.project_for(workspace, request.data.get("project"))
-        flow = flows.save_flow(workspace, project, request.data.get("name"), request.data.get("stages"))
+        if not flows.can_edit(request.user, project, is_admin):
+            return _forbidden()
+        flow = flows.save_flow(
+            workspace, project, request.data.get("name"), request.data.get("stages"), actor=request.user
+        )
         return Response(flows.describe(flow), status=status.HTTP_201_CREATED)
 
 
@@ -428,31 +437,66 @@ class FlowDetailEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def put(self, request, slug, pk):
         workspace, is_admin = _member(request, slug)
-        if workspace is None or not is_admin:
+        if workspace is None:
             return _forbidden()
         flow = self._flow(workspace, pk)
-        flows.save_flow(workspace, flow.project, request.data.get("name"), request.data.get("stages"), flow=flow)
+        if not flows.can_edit(request.user, flow.project, is_admin):
+            return _forbidden()
+        flows.save_flow(
+            workspace,
+            flow.project,
+            request.data.get("name"),
+            request.data.get("stages"),
+            flow=flow,
+            actor=request.user,
+        )
         return Response(flows.describe(flow))
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def delete(self, request, slug, pk):
         workspace, is_admin = _member(request, slug)
-        if workspace is None or not is_admin:
+        if workspace is None:
             return _forbidden()
-        self._flow(workspace, pk).delete()
+        flow = self._flow(workspace, pk)
+        if not flows.can_edit(request.user, flow.project, is_admin):
+            return _forbidden()
+        flow.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class FlowProjectMembersEndpoint(BaseAPIView):
+class FlowSuggestionsEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug, pk):
+        """Work the caller can pick up (pull) or join (merge) when nothing of theirs is left in the project."""
+        workspace, is_admin = _member(request, slug)
+        if workspace is None:
+            return _forbidden()
+        flow = Flow.objects.filter(workspace=workspace, pk=pk).select_related("project").first()
+        if flow is None or not flows.can_edit(request.user, flow.project, False):
+            raise NotFound("Flow not found.")
+        return Response(flows.suggestions(flow, request.user))
+
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug, pk):
+        """Take the work item `issue`."""
+        workspace, is_admin = _member(request, slug)
+        if workspace is None:
+            return _forbidden()
+        flow = Flow.objects.filter(workspace=workspace, pk=pk).select_related("project").first()
+        if flow is None or not flows.can_edit(request.user, flow.project, False):
+            raise NotFound("Flow not found.")
+        result = flows.pull(flow, request.user, parse_uuid(request.data.get("issue"), "issue"))
+        return Response(result, status=status.HTTP_201_CREATED)
+
+
+class FlowProjectModulesEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def get(self, request, slug):
-        """People who can be put into a flow of a project (admins only): `?project=<id>`."""
+        """The modules of a project, with the people on them, for drawing its flow: `?project=<id>`."""
         workspace, is_admin = _member(request, slug)
-        if workspace is None or not is_admin:
+        if workspace is None:
             return _forbidden()
         project = flows.project_for(workspace, request.query_params.get("project"))
-        ids = calendar_user_ids(workspace) & set(
-            ProjectMember.objects.filter(project=project, is_active=True).values_list("member_id", flat=True)
-        )
-        users = User.objects.filter(pk__in=ids).order_by("display_name")
-        return Response({"results": [person(user) for user in users]})
+        if not flows.can_edit(request.user, project, is_admin):
+            return _forbidden()
+        return Response({"results": flows.modules_of_project(project)})

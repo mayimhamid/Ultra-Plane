@@ -7,6 +7,7 @@
 import { useCallback, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
+import { useSearchParams } from "react-router";
 // icons
 import { BarOutline, ModuleOutline, PreferencesOutline, RightSidePaneOutline } from "@makeplane/propel/icons";
 // plane imports
@@ -83,6 +84,15 @@ export const ModuleIssuesHeader = observer(function ModuleIssuesHeader() {
     EUserPermissionsLevel.PROJECT
   );
   const workItemsCount = getGroupIssueCount(undefined, undefined, false);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showRelations = searchParams.get("relations") === "1";
+  const toggleRelations = () => {
+    const next = new URLSearchParams(searchParams);
+    if (showRelations) next.delete("relations");
+    else next.set("relations", "1");
+    setSearchParams(next);
+  };
 
   const toggleSidebar = () => {
     setValue(`${!isSidebarCollapsed}`);
@@ -240,7 +250,15 @@ export const ModuleIssuesHeader = observer(function ModuleIssuesHeader() {
                   />
                 </span>
               </div>
-              <div className="hidden sm:flex">
+              <div className="hidden sm:flex sm:gap-2">
+                <Button
+                  variant={showRelations ? "tertiary" : "secondary"}
+                  size="md"
+                  stretch="auto"
+                  label="Add relation"
+                  aria-pressed={showRelations}
+                  onClick={toggleRelations}
+                />
                 <Button
                   variant="primary"
                   size="md"

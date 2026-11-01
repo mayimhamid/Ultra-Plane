@@ -7,12 +7,14 @@
 import React from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
+import { useSearchParams } from "react-router";
 import useSWR from "swr";
 // plane imports
 import { ISSUE_DISPLAY_FILTERS_BY_PAGE } from "@plane/constants";
 import { EIssuesStoreType, EIssueLayoutTypes } from "@plane/types";
 import { Row, ERowVariant } from "@plane/blocks/layout";
 // hooks
+import { ModuleRelationGraph } from "@/components/modules/relation-graph";
 import { ProjectLevelWorkItemFiltersHOC } from "@/components/work-item-filters/filters-hoc/project-level";
 import { WorkItemFiltersRow } from "@/components/work-item-filters/filters-row";
 import { useIssues } from "@/hooks/store/use-issues";
@@ -49,6 +51,8 @@ export const ModuleLayoutRoot = observer(function ModuleLayoutRoot() {
   const projectId = routerProjectId ? routerProjectId.toString() : undefined;
   const moduleId = routerModuleId ? routerModuleId.toString() : undefined;
   // hooks
+  const [searchParams] = useSearchParams();
+  const showRelations = searchParams.get("relations") === "1";
   const { issuesFilter } = useIssues(EIssuesStoreType.MODULE);
   // derived values
   const workItemFilters = moduleId ? issuesFilter?.getIssueFilters(moduleId) : undefined;
@@ -83,7 +87,11 @@ export const ModuleLayoutRoot = observer(function ModuleLayoutRoot() {
           <div className="relative flex h-full w-full flex-col overflow-hidden">
             {moduleWorkItemsFilter && <WorkItemFiltersRow filter={moduleWorkItemsFilter} />}
             <Row variant={ERowVariant.HUGGING} className="h-full w-full overflow-auto">
-              <ModuleIssueLayout activeLayout={activeLayout} moduleId={moduleId} />
+              {showRelations ? (
+                <ModuleRelationGraph workspaceSlug={workspaceSlug} projectId={projectId} moduleId={moduleId} />
+              ) : (
+                <ModuleIssueLayout activeLayout={activeLayout} moduleId={moduleId} />
+              )}
             </Row>
             {/* peek overview */}
             <IssuePeekOverview />

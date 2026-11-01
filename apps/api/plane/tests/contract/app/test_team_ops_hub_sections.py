@@ -24,6 +24,7 @@ from plane.tests.contract.app.team_ops_support import (
     lead,
     lead_client,
     make_client,
+    make_module,
     make_project,
     make_team,
     make_user,
@@ -190,6 +191,33 @@ class TestDocHub:
         assert member_client.patch(path, {"title": "Mine v2", "tags": ["a"]}, format="json").data["title"] == "Mine v2"
         assert admin_client.delete(path).status_code == 204
 
+    def test_a_project_doc_is_written_as_a_plane_page(self, member_client, project, workspace):
+        from plane.db.models import Page, ProjectPage
+
+        payload = {"title": "Runbook", "body": "Step 1 <b>\nStep 2", "project": str(project.id)}
+        doc = member_client.post(h(workspace, "docs/"), payload, format="json").data
+        page = Page.objects.get(pk=doc["page"])
+        assert page.name == "Runbook"
+        assert page.description_html == "<p>Step 1 &lt;b&gt;</p><p>Step 2</p>"
+        assert ProjectPage.objects.filter(page=page, project=project).exists()
+        # the text now lives in the Page; the hub text is not changed from here
+        path = h(workspace, f"docs/{doc['id']}/")
+        changed = member_client.patch(path, {"title": "Runbook 2", "body": "ignored"}, format="json").data
+        page.refresh_from_db()
+        assert page.name == "Runbook 2"
+        assert changed["page"] == doc["page"]
+
+    def test_a_doc_without_a_project_has_no_page(self, member_client, workspace):
+        doc = member_client.post(h(workspace, "docs/"), {"title": "Welcome", "body": "hi"}, format="json").data
+        assert doc["page"] is None
+        assert doc["body"] == "hi"
+
+    def test_giving_a_doc_a_project_later_makes_its_page(self, member_client, project, workspace):
+        doc = member_client.post(h(workspace, "docs/"), {"title": "Late", "body": "text"}, format="json").data
+        path = h(workspace, f"docs/{doc['id']}/")
+        changed = member_client.patch(path, {"project": str(project.id)}, format="json").data
+        assert changed["page"] is not None
+
     def test_title_is_required(self, member_client, workspace):
         assert member_client.post(h(workspace, "docs/"), {"title": " "}, format="json").status_code == 400
 
@@ -300,7 +328,8 @@ class TestSecrets:
         secret = self.make(member_client, workspace, users=[str(lead.id)]).data["id"]
         lead_client.post(h(workspace, f"secrets/{secret}/reveal/"))
         log = member_client.get(h(workspace, f"secrets/{secret}/access/"))
-        assert [row["action"] for row in log.data["results"]][:2] == ["REVEAL", "GRANT"]
+        actions = [row["action"] for row in log.data["results"]]
+        assert actions[0] == "REVEAL" and {"GRANT", "CREATE"} == set(actions[1:3])
         assert "s3cr3t" not in str(log.data)
         assert lead_client.get(h(workspace, f"secrets/{secret}/access/")).status_code == 404
 
@@ -338,7 +367,7 @@ class TestSecrets:
 @pytest.mark.contract
 class TestFlows:
     def stages(self, *groups):
-        return [{"name": f"Stage {i + 1}", "users": [str(u.id) for u in group]} for i, group in enumerate(groups)]
+        return [{"name": f"Stage {i + 1}", "modules": [str(m.id) for m in group]} for i, group in enumerate(groups)]
 
     def flow(self, client, workspace, project, *groups):
         return client.post(
@@ -348,85 +377,111 @@ class TestFlows:
         )
 
     def task(self, workspace, project, user, done):
-        state = (
-            State.objects.create(
-                name="Done" if done else "Todo",
-                group="completed" if done else "unstarted",
-                project=project,
-                workspace=workspace,
-            )
-            if not State.objects.filter(project=project, group="completed" if done else "unstarted").exists()
-            else State.objects.filter(project=project, group="completed" if done else "unstarted").first()
+        group = "completed" if done else "unstarted"
+        state = State.objects.filter(project=project, group=group).first() or State.objects.create(
+            name="Done" if done else "Todo", group=group, project=project, workspace=workspace
         )
-        issue = Issue.objects.create(name="t", project=project, workspace=workspace, state=state)
-        IssueAssignee.objects.create(issue=issue, assignee=user, project=project, workspace=workspace)
-        return issue
+        item = Issue.objects.create(name="t", project=project, workspace=workspace, state=state)
+        IssueAssignee.objects.create(issue=item, assignee=user, project=project, workspace=workspace)
+        return item
 
-    def test_only_admins_draw_flows(self, member_client, admin_client, project, member, colleague, workspace):
-        assert self.flow(member_client, workspace, project, [member]).status_code == 403
-        response = self.flow(admin_client, workspace, project, [member], [colleague])
+    def test_people_of_the_project_and_admins_draw_flows(
+        self, member_client, lead_client, admin_client, project, member, workspace
+    ):
+        one = make_module(workspace, project, "One")
+        two = make_module(workspace, project, "Two")
+        assert self.flow(lead_client, workspace, project, [one]).status_code == 403  # not in the project
+        assert self.flow(member_client, workspace, project, [one]).status_code == 201
+        response = self.flow(admin_client, workspace, project, [one], [two])
         assert response.status_code == 201 and [s["name"] for s in response.data["stages"]] == ["Stage 1", "Stage 2"]
 
-    def test_progress_per_person_and_pending_stages(self, admin_client, project, member, colleague, workspace):
-        for done in (True, True, False, False):
-            self.task(workspace, project, member, done)
-        self.task(workspace, project, colleague, True)
-        flow = self.flow(admin_client, workspace, project, [member], [colleague]).data
+    def test_a_stage_is_as_far_as_its_modules(self, admin_client, project, member, colleague, workspace):
+        a, b = self.task(workspace, project, member, True), self.task(workspace, project, member, False)
+        c = self.task(workspace, project, colleague, True)
+        build = make_module(workspace, project, "Build", lead=member, issues=[a, b])
+        test = make_module(workspace, project, "Test", members=[colleague], issues=[c])
+        flow = self.flow(admin_client, workspace, project, [build], [test]).data
         first, second = flow["stages"]
-        assert first["people"][0]["percent"] == 50 and first["pending"] is False
-        assert second["pending"] is True  # stage 1 is not finished
-        assert second["people"][0]["percent"] == 100
+        assert first["percent"] == 50 and first["pending"] is False
+        assert first["modules"][0]["percent"] == 50 and first["modules"][0]["name"] == "Build"
+        assert [p["id"] for p in first["modules"][0]["people"]] == [member.id]
+        assert second["pending"] is True and second["modules"][0]["percent"] == 100
 
-    def test_the_next_stage_starts_when_the_previous_is_done(self, admin_client, project, member, colleague, workspace):
-        self.task(workspace, project, member, True)
-        flow = self.flow(admin_client, workspace, project, [member], [colleague]).data
+    def test_several_modules_in_a_stage_add_up(self, admin_client, project, member, workspace):
+        done, open_ = self.task(workspace, project, member, True), self.task(workspace, project, member, False)
+        one = make_module(workspace, project, "One", issues=[done])
+        two = make_module(workspace, project, "Two", issues=[open_, self.task(workspace, project, member, False)])
+        stage = self.flow(admin_client, workspace, project, [one, two]).data["stages"][0]
+        assert (stage["done"], stage["total"], stage["percent"]) == (1, 3, 33)
+
+    def test_the_next_stage_starts_when_the_previous_is_done(self, admin_client, project, member, workspace):
+        first = make_module(workspace, project, "A", issues=[self.task(workspace, project, member, True)])
+        second = make_module(workspace, project, "B")
+        flow = self.flow(admin_client, workspace, project, [first], [second]).data
         assert flow["stages"][0]["percent"] == 100 and flow["stages"][1]["pending"] is False
 
-    def test_people_without_tasks_have_no_percent_and_block_the_next_stage(
-        self, admin_client, project, member, colleague, workspace
-    ):
-        flow = self.flow(admin_client, workspace, project, [member], [colleague]).data
-        assert flow["stages"][0]["people"][0]["percent"] is None
-        assert flow["stages"][1]["pending"] is True
+    def test_modules_without_tasks_have_no_percent_and_block_the_next_stage(self, admin_client, project, workspace):
+        flow = self.flow(
+            admin_client,
+            workspace,
+            project,
+            [make_module(workspace, project, "A")],
+            [make_module(workspace, project, "B")],
+        ).data
+        assert flow["stages"][0]["modules"][0]["percent"] is None and flow["stages"][1]["pending"] is True
 
-    def test_validation(self, admin_client, project, member, lead, colleague, workspace, other_workspace):
+    def test_people_come_from_the_module_and_its_tasks(self, admin_client, project, member, colleague, lead, workspace):
+        item = self.task(workspace, project, colleague, False)
+        module = make_module(workspace, project, "A", lead=member, issues=[item])
+        stage = self.flow(admin_client, workspace, project, [module]).data["stages"][0]
+        assert {p["id"] for p in stage["modules"][0]["people"]} == {member.id, colleague.id}
+
+    def test_validation(self, admin_client, project, workspace, admin):
+        mine = make_module(workspace, project, "Mine")
+        other_project = make_project(workspace, admin, "OT")
+        foreign = make_module(workspace, other_project, "Foreign")
         bad_cases = [
             [],  # no stages
             [[]],  # empty stage
-            [[member], [member]],  # same person twice
-            [[lead]],  # not a member of the project
-            [[other_workspace.owner]],
+            [[mine], [mine]],  # the same module twice
+            [[foreign]],  # a module of another project
         ]
         for groups in bad_cases:
             assert self.flow(admin_client, workspace, project, *groups).status_code == 400
         blank = admin_client.post(
             url(workspace, "teamflow/flows/"),
-            {"project": str(project.id), "name": " ", "stages": self.stages([member])},
+            {"project": str(project.id), "name": " ", "stages": self.stages([mine])},
             format="json",
         )
         assert blank.status_code == 400
 
     def test_members_see_flows_of_their_projects_only(
-        self, admin_client, member_client, lead_client, project, member, workspace
+        self, admin_client, member_client, lead_client, project, workspace
     ):
-        self.flow(admin_client, workspace, project, [member])
+        self.flow(admin_client, workspace, project, [make_module(workspace, project)])
         assert len(member_client.get(url(workspace, "teamflow/flows/")).data["results"]) == 1
         assert lead_client.get(url(workspace, "teamflow/flows/")).data["results"] == []
-        assert member_client.get(url(workspace, "teamflow/flows/")).data["can_manage"] is False
-        assert admin_client.get(url(workspace, "teamflow/flows/")).data["can_manage"] is True
+        assert member_client.get(url(workspace, "teamflow/flows/")).data["can_manage"] is True
 
-    def test_edit_and_delete(self, admin_client, member_client, project, member, colleague, workspace):
-        flow = self.flow(admin_client, workspace, project, [member]).data
+    def test_edit_and_delete(self, admin_client, member_client, lead_client, project, workspace):
+        one, two = make_module(workspace, project, "One"), make_module(workspace, project, "Two")
+        flow = self.flow(admin_client, workspace, project, [one]).data
         path = url(workspace, f"teamflow/flows/{flow['id']}/")
-        changed = admin_client.put(
-            path, {"name": "Release 2", "stages": self.stages([member], [colleague])}, format="json"
-        )
+        changed = admin_client.put(path, {"name": "Release 2", "stages": self.stages([one], [two])}, format="json")
         assert changed.status_code == 200 and len(changed.data["stages"]) == 2 and changed.data["name"] == "Release 2"
-        assert member_client.put(path, {"name": "x", "stages": []}, format="json").status_code == 403
-        assert member_client.delete(path).status_code == 403
-        assert admin_client.delete(path).status_code == 204
+        assert lead_client.put(path, {"name": "x", "stages": []}, format="json").status_code == 403
+        assert lead_client.delete(path).status_code == 403
+        assert (
+            member_client.put(path, {"name": "x", "stages": []}, format="json").status_code == 400
+        )  # allowed, invalid
+        assert member_client.delete(path).status_code == 204
 
-    def test_members_picker_is_for_admins(self, admin_client, member_client, project, workspace):
+    def test_the_modules_of_a_project_with_their_people(
+        self, admin_client, member_client, lead_client, project, member, workspace
+    ):
+        make_module(workspace, project, "Alpha", lead=member)
         query = {"project": str(project.id)}
-        assert len(admin_client.get(url(workspace, "teamflow/flows/members/"), query).data["results"]) == 3
-        assert member_client.get(url(workspace, "teamflow/flows/members/"), query).status_code == 403
+        rows = admin_client.get(url(workspace, "teamflow/flows/modules/"), query).data["results"]
+        assert [r["name"] for r in rows] == ["Alpha"] and [p["id"] for p in rows[0]["people"]] == [member.id]
+        assert len(member_client.get(url(workspace, "teamflow/flows/modules/"), query).data["results"]) == 1
+        assert lead_client.get(url(workspace, "teamflow/flows/modules/"), query).status_code == 403
