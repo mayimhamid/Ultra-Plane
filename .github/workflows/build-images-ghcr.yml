@@ -1,13 +1,14 @@
 name: Build images for the server (ghcr)
 
 # Builds the Plane images of this fork and pushes them to GitHub's container registry, for a server that
-# cannot build them itself. It runs when this file is pushed to the ultra-plane branch, or by hand
+# cannot build them itself. It runs when this file or the api, web or package code is pushed to the ultra-plane
+# branch, or by hand
 # (Actions -> "Build images for the server (ghcr)" -> Run workflow, once the file is on the default branch).
 
 on:
   push:
     branches: [ultra-plane]
-    paths: [".github/workflows/build-images-ghcr.yml"]
+    paths: [".github/workflows/build-images-ghcr.yml", "apps/api/**", "apps/web/**", "packages/**"]
   workflow_dispatch:
     inputs:
       tag:

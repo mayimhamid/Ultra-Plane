@@ -27,3 +27,7 @@ class TeamOpsConfig(AppConfig):
             "task": "plane.team_ops.tasks.freeze_unanswered_timers_task",
             "schedule": crontab(minute="*/5"),
         }
+        app.conf.beat_schedule["team-ops-sync-admin-access"] = {
+            "task": "plane.team_ops.tasks.sync_admin_access_task",
+            "schedule": crontab(minute="*/5"),
+        }
