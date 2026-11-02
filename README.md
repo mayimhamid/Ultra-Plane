@@ -1,165 +1,79 @@
-<br /><br />
+# Ultra Plane
 
-<p align="center">
-<a href="https://plane.so">
-  <img src="https://media.docs.plane.so/logo/plane_github_readme.png" alt="Plane Logo" width="400">
-</a>
-</p>
-<p align="center"><b>Modern project management for all teams</b></p>
+**Project management with team operations built in.** Ultra Plane is a self-hosted work platform for a team that
+plans, builds and reports together: tasks and projects, a working day for every person, shared chat and documents,
+and a manager's view of the whole team, in one application.
 
-<p align="center">
-    <a href="https://plane.so/"><b>Website</b></a> •
-    <a href="https://forum.plane.so"><b>Forum</b></a> •
-    <a href="https://x.com/planepowers"><b>X</b></a> •
-    <a href="https://docs.plane.so/"><b>Documentation</b></a>
-</p>
+It is built on top of [Plane](https://github.com/makeplane/plane), the open-source project management tool, and
+keeps all of it (work items, cycles, modules, views, pages, analytics). Everything Ultra Plane adds lives in its
+own Django app (`plane.team_ops`, tables `tops_*`) so the core stays intact and can be upgraded separately.
 
-<p>
-    <a href="https://app.plane.so/#gh-light-mode-only" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-top.webp"
-        alt="Plane Screens"
-        width="100%"
-      />
-    </a>
-</p>
+## What it adds
 
-Meet [Plane](https://plane.so/), an open-source project management tool to track issues, run ~sprints~ cycles, and manage product roadmaps without the chaos of managing the tool itself. 🧘‍♀️
+| Area | What it does |
+| --- | --- |
+| **Workday** | One page for the day: Onsite or Remote (hybrid is worked out by itself), a required weekly plan that is confirmed and locked, a timer on a work item with a rest pause, a 30-minute "still working?" check-in, parallel tasks, a finish report with a document or an explicit "no document", attention tags to teams and people, and a contribution graph. |
+| **Time and calendar** | Time tracking per work item, a work calendar with teams and holidays, weekly work reports, leave requests and Teamspaces. |
+| **Hub** | News, a General channel, team and project channels, private messages, a Doc Hub (documents of a project are kept as Plane Pages), a Files library and encrypted Secrets with an access log. |
+| **Teamflow** | A flow is an optional part of a project, split into phases. Each phase holds modules; its progress is the progress of its modules. Hand-offs between teams are tracked and shown as a chart. |
+| **Tasks** | Every work item in one list with its forks (sub work items and people), the flows it belongs to, and the time spent. |
+| **Module relation graph** | On a module's page, the work items are drawn as a commit-history style graph. Drag one onto another to make it a sub work item, or drag from its dot to choose a relation (blocks, blocked by, relates to, duplicate). |
+| **Control** | For managers: team status, hours and approvals, ranking, summed time with Excel export, Hub moderation and Teamflow control. |
+| **Admin view** | Every workspace admin is kept on every project of their workspace, so an admin sees all of it. |
+| **One bell** | Team notifications appear in Plane's own notification bell and page. |
 
-> Plane is evolving every day. Your suggestions, ideas, and reported bugs help us immensely. Do not hesitate to join in the conversation on [Forum](https://forum.plane.so) or raise a GitHub issue. We read everything and respond to most.
+## Repository layout
 
-## 🚀 Installation
+| Path | Contents |
+| --- | --- |
+| `apps/api` | Django API (Plane core + `plane/team_ops`) |
+| `apps/web`, `apps/admin`, `apps/space`, `apps/live` | The web apps and the live collaboration server |
+| `packages/*` | Shared TypeScript packages (types, services, constants, editor, i18n) |
+| `docs/team-ops` | Design, stage notes and the deployment guide of everything Ultra Plane adds |
+| `.github/workflows/build-images-ghcr.yml` | Builds the Docker images and pushes them to GitHub Container Registry |
 
-Getting started with Plane is simple. Choose the setup that works best for you:
+## Run it
 
-- **Plane Cloud**
-  Sign up for a free account on [Plane Cloud](https://app.plane.so)—it's the fastest way to get up and running without worrying about infrastructure.
+**Locally** (see also [CONTRIBUTING.md](./CONTRIBUTING.md)):
 
-- **Self-host Plane**
-  Prefer full control over your data and infrastructure? Install and run Plane on your own servers. Follow our detailed [deployment guides](https://developers.plane.so/self-hosting/overview) to get started.
+```bash
+pnpm install
+pnpm dev            # web on :3000, admin on :3001
+cd apps/api && uv sync
+```
 
-| Installation methods | Docs link                                                                                                                                                                               |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Docker               | [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://developers.plane.so/self-hosting/methods/docker-compose)         |
-| Kubernetes           | [![Kubernetes](https://img.shields.io/badge/kubernetes-%23326ce5.svg?style=for-the-badge&logo=kubernetes&logoColor=white)](https://developers.plane.so/self-hosting/methods/kubernetes) |
+**On a server** with Docker Compose: images are built by the workflow above (push to the `ultra-plane` branch) and
+pulled as `ghcr.io/<owner>/plane-fork-<app>:<tag>`; the existing database and storage volumes are kept. Take a
+backup first, test the migrations on a copy of the data, then switch the `image:` lines.
+The step by step guide, with the rollback notes, is [docs/team-ops/DEPLOY.md](./docs/team-ops/DEPLOY.md).
 
-`Instance admins` can configure instance settings with [God mode](https://developers.plane.so/self-hosting/govern/instance-admin).
+Team Ops is on by default; set `TEAM_OPS_ENABLED=0` on the api, worker and beat containers to switch its API and
+background jobs off. Set `TEAM_OPS_SECRET_KEY` (a Fernet key) to protect the Hub secrets, and keep a copy of it
+outside the server.
 
-## 🌟 Features
+## Tests
 
-- **Work Items**
-  Efficiently create and manage tasks with a robust rich text editor that supports file uploads. Enhance organization and tracking by adding sub-properties and referencing related issues.
+```bash
+# backend (Django / pytest), Team Ops only
+cd apps/api && python -m pytest plane/tests/contract/app -k team_ops --nomigrations
+# frontend packages
+pnpm check:types && pnpm check:lint
+```
 
-- **Cycles**
-  Maintain your team’s momentum with Cycles. Track progress effortlessly using burn-down charts and other insightful tools.
+## Documentation
 
-- **Modules**
-  Simplify complex projects by dividing them into smaller, manageable modules.
+Everything Ultra Plane adds is described in [docs/team-ops](./docs/team-ops): the [architecture](./docs/team-ops/ARCHITECTURE.md),
+one document per stage, and the [deployment guide](./docs/team-ops/DEPLOY.md).
 
-- **Views**
-  Customize your workflow by creating filters to display only the most relevant issues. Save and share these views with ease.
+## Security
 
-- **Pages**
-  Capture and organize ideas using Plane Pages, complete with AI capabilities and a rich text editor. Format text, insert images, add hyperlinks, or convert your notes into actionable items.
+Please report a vulnerability privately to the repository owner instead of opening a public issue.
+Hub files are stored privately and served by short-lived signed links, secrets are encrypted at rest, and a
+secret's value can be read only by its publisher and the people they chose, administrators included.
 
-- **Analytics**
-  Access real-time insights across all your Plane data. Visualize trends, remove blockers, and keep your projects moving forward.
+## License and origin
 
-## 🛠️ Local development
-
-See [CONTRIBUTING](./CONTRIBUTING.md)
-
-## ⚙️ Built with
-
-[![React Router](https://img.shields.io/badge/-React%20Router-CA4245?logo=react-router&style=for-the-badge&logoColor=white)](https://reactrouter.com/)
-[![Django](https://img.shields.io/badge/Django-092E20?style=for-the-badge&logo=django&logoColor=green)](https://www.djangoproject.com/)
-[![Node JS](https://img.shields.io/badge/node.js-339933?style=for-the-badge&logo=Node.js&logoColor=white)](https://nodejs.org/en)
-
-## 📸 Screenshots
-
-  <p>
-    <a href="https://plane.so" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-work-items.webp"
-        alt="Plane Views"
-        width="100%"
-      />
-    </a>
-  </p>
-  <p>
-    <a href="https://plane.so" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-cycles.webp"
-        width="100%"
-      />
-    </a>
-  </p>
-  <p>
-    <a href="https://plane.so" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-modules.webp"
-        alt="Plane Cycles and Modules"
-        width="100%"
-      />
-    </a>
-  </p>
-  <p>
-    <a href="https://plane.so" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-views.webp"
-        alt="Plane Analytics"
-        width="100%"
-      />
-    </a>
-  </p>
-   <p>
-    <a href="https://plane.so" target="_blank">
-      <img
-        src="https://media.docs.plane.so/GitHub-readme/github-analytics.webp"
-        alt="Plane Pages"
-        width="100%"
-      />
-    </a>
-  </p>
-</p>
-
-## 📝 Documentation
-
-Explore Plane's [product documentation](https://docs.plane.so/) and [developer documentation](https://developers.plane.so/) to learn about features, setup, and usage.
-
-## ❤️ Community
-
-Join the Plane community on [GitHub Discussions](https://github.com/orgs/makeplane/discussions) and our [Forum](https://forum.plane.so). We follow a [Code of conduct](https://github.com/makeplane/plane/blob/master/CODE_OF_CONDUCT.md) in all our community channels.
-
-Feel free to ask questions, report bugs, participate in discussions, share ideas, request features, or showcase your projects. We’d love to hear from you!
-
-## 🛡️ Security
-
-If you discover a security vulnerability in Plane, please report it responsibly instead of opening a public issue. We take all legitimate reports seriously and will investigate them promptly. See [Security policy](https://github.com/makeplane/plane/blob/master/SECURITY.md) for more info.
-
-To disclose any security issues, please email us at security@plane.so.
-
-## 🤝 Contributing
-
-There are many ways you can contribute to Plane:
-
-- Report [bugs](https://github.com/makeplane/plane/issues/new?assignees=srinivaspendem%2Cpushya22&labels=%F0%9F%90%9Bbug&projects=&template=--bug-report.yaml&title=%5Bbug%5D%3A+) or submit [feature requests](https://github.com/makeplane/plane/issues/new?assignees=srinivaspendem%2Cpushya22&labels=%E2%9C%A8feature&projects=&template=--feature-request.yaml&title=%5Bfeature%5D%3A+).
-- Review the [documentation](https://docs.plane.so/) and submit [pull requests](https://github.com/makeplane/docs) to improve it—whether it's fixing typos or adding new content.
-- Talk or write about Plane or any other ecosystem integration and [let us know](https://forum.plane.so)!
-- Show your support by upvoting [popular feature requests](https://github.com/makeplane/plane/issues).
-
-Please read [CONTRIBUTING.md](https://github.com/makeplane/plane/blob/master/CONTRIBUTING.md) for details on the process for submitting pull requests to us.
-
-### Repo activity
-
-![Plane Repo Activity](https://repobeats.axiom.co/api/embed/2523c6ed2f77c082b7908c33e2ab208981d76c39.svg "Repobeats analytics image")
-
-### We couldn't have done this without you.
-
-<a href="https://github.com/makeplane/plane/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=makeplane/plane" />
-</a>
-
-## License
-
-This project is licensed under the [GNU Affero General Public License v3.0](https://github.com/makeplane/plane/blob/master/LICENSE.txt).
+Ultra Plane is free software under the [GNU Affero General Public License v3.0](./LICENSE.txt), the same license as
+Plane. It is a derivative of [Plane](https://github.com/makeplane/plane), Copyright (c) 2023-present Plane Software,
+Inc. and contributors; the original copyright notices in the source files are kept. Because it is served over a
+network, the AGPL requires that its users be able to obtain the corresponding source code of the version they use.
