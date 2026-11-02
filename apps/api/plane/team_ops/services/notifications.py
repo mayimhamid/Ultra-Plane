@@ -4,9 +4,13 @@
 
 """Notifications of Team Ops. They live in their own table so the core inbox is never touched."""
 
+# Django imports
+from django.db import transaction
+
 # Module imports
 from plane.db.models import WorkspaceMember
 from plane.team_ops.models import OpsNotification, OpsTeamMember
+from plane.team_ops.services import push
 
 ADMIN_ROLE = 20
 
@@ -16,7 +20,7 @@ def notify(workspace, users, kind, title, body="", link="", actor=None):
     ids = {getattr(user, "id", user) for user in users}
     if actor is not None:
         ids.discard(actor.id)
-    OpsNotification.objects.bulk_create(
+    created = OpsNotification.objects.bulk_create(
         [
             OpsNotification(
                 workspace=workspace,
@@ -30,7 +34,25 @@ def notify(workspace, users, kind, title, body="", link="", actor=None):
             for user_id in ids
         ]
     )
+    _push_later(created)
     return len(ids)
+
+
+def _push_later(created):
+    """Hand the new notifications to the push worker once they are saved; a failure here never blocks the caller."""
+    if not created or not push.has_subscribers(row.user_id for row in created):
+        return
+    from plane.team_ops.tasks import deliver_push_task
+
+    notification_ids = [str(row.id) for row in created]
+
+    def enqueue():
+        try:
+            deliver_push_task.delay(notification_ids)
+        except Exception:  # the broker is down: the notification is still in the app
+            pass
+
+    transaction.on_commit(enqueue)
 
 
 def managers_of(workspace, user):

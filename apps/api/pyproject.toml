@@ -79,6 +79,8 @@ dependencies = [
     "drf-spectacular==0.29.0",
     # html sanitizer
     "nh3==0.2.18",
+    # web push (browser and phone notifications of Team Ops)
+    "pywebpush==2.5.0",
 ]
 
 [dependency-groups]

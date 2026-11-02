@@ -7,6 +7,7 @@ from celery import shared_task
 
 # Module imports
 from plane.team_ops.services.admin_access import sync_admin_access
+from plane.team_ops.services.push import deliver
 from plane.team_ops.services.weekly_plan import extend_weekly_plans
 from plane.team_ops.services.workday import freeze_unanswered_timers
 
@@ -27,3 +28,9 @@ def freeze_unanswered_timers_task():
 def sync_admin_access_task():
     """Keep every workspace admin on every project of their workspace, so they can see all of it."""
     return sync_admin_access()
+
+
+@shared_task
+def deliver_push_task(notification_ids):
+    """Send new notifications to the phones and browsers their owners turned push on for."""
+    return deliver(notification_ids)

@@ -29,6 +29,7 @@ import { NowCard } from "./now-card";
 import { ParallelTasks } from "./parallel-tasks";
 import type { TPickedTask } from "./project-task-picker";
 import { SessionsList } from "./sessions-list";
+import { PushPrompt } from "../notifications/push-prompt";
 import { TeamNow } from "./team-now";
 import { TimeByTask } from "./time-by-task";
 import { WeekChart } from "./week-chart";
@@ -194,6 +195,7 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
         {mode ? <DayModeChip mode={mode} /> : null}
       </header>
 
+      <PushPrompt workspaceSlug={workspaceSlug} />
       <Alerts items={unread} onRead={markRead} workspaceSlug={workspaceSlug} />
 
       {day.isLoading ? <p className="text-body-sm-regular text-tertiary">Loading your day...</p> : null}

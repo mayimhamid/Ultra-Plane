@@ -16,6 +16,7 @@ from .hub import HubAttachment, HubChannel, HubMention, HubMessage, HubReadState
 from .flow import Flow, FlowStage, FlowStageModule
 from .hub_content import HubDoc, HubSecret, HubSecretAccess, HubSecretLog
 from .leave_request import LeaveRequest
+from .push import PushSubscription
 from .workday import FreezeCredit, OpsNotification, WeekPlanConfirmation, WorkApproval, WorkDay, WorkInterruption
 from .work_report import WorkReport
 from .time_entry import ActiveTimer, TimeEntry, MAX_ENTRY_SECONDS
@@ -45,6 +46,7 @@ __all__ = [
     "LeaveRequest",
     "FreezeCredit",
     "OpsNotification",
+    "PushSubscription",
     "WeekPlanConfirmation",
     "WorkApproval",
     "WorkDay",
