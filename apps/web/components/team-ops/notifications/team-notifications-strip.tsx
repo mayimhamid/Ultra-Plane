@@ -25,11 +25,11 @@ export const TeamNotificationsStrip = observer(function TeamNotificationsStrip({
   const [open, setOpen] = useState(false);
   const { notifications, unread, markRead } = useOpsNotifications(workspaceSlug);
   const items = notifications ?? [];
-  if (items.length === 0) return <PushPrompt workspaceSlug={workspaceSlug} />;
+  if (items.length === 0) return <PushPrompt workspaceSlug={workspaceSlug} mode="settings" />;
 
   return (
     <>
-      <PushPrompt workspaceSlug={workspaceSlug} />
+      <PushPrompt workspaceSlug={workspaceSlug} mode="settings" />
       <section aria-label="Team notifications" className="border-b border-subtle bg-surface-1">
         <button
           type="button"

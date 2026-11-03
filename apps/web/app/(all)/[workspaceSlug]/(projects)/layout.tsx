@@ -5,13 +5,15 @@
  */
 
 import { observer } from "mobx-react";
-import { Outlet } from "react-router";
+import { Outlet, useParams } from "react-router";
+import { PushPrompt } from "@/components/team-ops/notifications/push-prompt";
 import { ProjectsAppPowerKProvider } from "@/components/power-k/projects-app-provider";
 // plane web components
 import { ProjectAppSidebar } from "./_sidebar";
 import { ExtendedProjectSidebar } from "./extended-project-sidebar";
 
 function WorkspaceLayout() {
+  const { workspaceSlug } = useParams();
   return (
     <>
       <ProjectsAppPowerKProvider />
@@ -21,7 +23,10 @@ function WorkspaceLayout() {
           <ProjectAppSidebar />
           <ExtendedProjectSidebar />
           <main className="relative flex h-full w-full flex-col overflow-hidden bg-surface-1">
-            <Outlet />
+            {workspaceSlug ? <PushPrompt workspaceSlug={workspaceSlug} mode="alert" /> : null}
+            <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+              <Outlet />
+            </div>
           </main>
         </div>
       </div>

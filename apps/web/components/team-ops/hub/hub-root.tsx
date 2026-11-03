@@ -135,6 +135,8 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
     ? null
     : (list.find((channel) => channel.id === requestedChannel) ?? fallback);
 
+  // On a phone the list of channels and the chat are two screens: the list until something is chosen
+  const hasChoice = Boolean(requestedChannel || requestedSection);
   const openChannel = (id: string) => setSearchParams({ channel: id });
   const openSection = (next: TSection) => setSearchParams({ section: next });
 
@@ -162,8 +164,14 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
   );
 
   return (
-    <div className="flex h-[calc(100vh-var(--header-height,3.5rem))] min-h-96 w-full">
-      <aside aria-label="Hub" className="flex w-64 shrink-0 flex-col gap-4 overflow-y-auto border-r border-subtle p-3">
+    <div className="flex h-full min-h-96 w-full">
+      <aside
+        aria-label="Hub"
+        className={cn(
+          "w-full shrink-0 flex-col gap-4 overflow-y-auto border-subtle p-3 md:flex md:w-64 md:border-r",
+          hasChoice ? "hidden" : "flex"
+        )}
+      >
         <Group title="Inbox">
           <SideButton active={section === "mentions"} onClick={() => openSection("mentions")} badge={unreadMentions}>
             {SECTION_LABEL.mentions}
@@ -195,15 +203,24 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
           <p className="px-3 text-body-xs-regular text-tertiary">Channels appear when you join a team or a project.</p>
         ) : null}
       </aside>
-      <section className="min-w-0 flex-1">
-        {section === "mentions" ? <MentionsView workspaceSlug={workspaceSlug} onOpenChannel={openChannel} /> : null}
-        {section === "docs" ? <DocsView workspaceSlug={workspaceSlug} /> : null}
-        {section === "files" ? <FilesView workspaceSlug={workspaceSlug} /> : null}
-        {section === "secrets" ? <SecretsView workspaceSlug={workspaceSlug} /> : null}
-        {!section && active ? (
-          <ChannelView key={active.id} workspaceSlug={workspaceSlug} channel={active} onRead={() => void refresh()} />
-        ) : null}
-        {!section && !active ? <p className="p-6 text-body-sm-regular text-tertiary">Choose a channel.</p> : null}
+      <section className={cn("min-w-0 flex-1 flex-col md:flex", hasChoice ? "flex" : "hidden")}>
+        <button
+          type="button"
+          onClick={() => setSearchParams({})}
+          className="flex items-center gap-1.5 border-b border-subtle px-3 py-2.5 text-left text-body-sm-medium text-accent-primary md:hidden"
+        >
+          <span aria-hidden>&larr;</span> Hub
+        </button>
+        <div className="min-h-0 flex-1">
+          {section === "mentions" ? <MentionsView workspaceSlug={workspaceSlug} onOpenChannel={openChannel} /> : null}
+          {section === "docs" ? <DocsView workspaceSlug={workspaceSlug} /> : null}
+          {section === "files" ? <FilesView workspaceSlug={workspaceSlug} /> : null}
+          {section === "secrets" ? <SecretsView workspaceSlug={workspaceSlug} /> : null}
+          {!section && active ? (
+            <ChannelView key={active.id} workspaceSlug={workspaceSlug} channel={active} onRead={() => void refresh()} />
+          ) : null}
+          {!section && !active ? <p className="p-6 text-body-sm-regular text-tertiary">Choose a channel.</p> : null}
+        </div>
       </section>
     </div>
   );

@@ -99,6 +99,13 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
     }
   };
 
+  // On a phone the list of documents and one document are two screens
+  const showDetail = Boolean(draft || open);
+  const backToList = () => {
+    setOpen(null);
+    setDraft(null);
+  };
+
   const edit = (doc: THubDoc) =>
     setDraft({
       id: doc.id,
@@ -125,7 +132,12 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
         />
       </header>
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-80 shrink-0 flex-col gap-2 overflow-y-auto border-r border-subtle p-3">
+        <aside
+          className={cn(
+            "w-full shrink-0 flex-col gap-2 overflow-y-auto border-subtle p-3 md:flex md:w-80 md:border-r",
+            showDetail ? "hidden" : "flex"
+          )}
+        >
           <InputField
             type="text"
             size="lg"
@@ -186,7 +198,14 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
             ))}
           </ul>
         </aside>
-        <section className="min-w-0 flex-1 overflow-y-auto p-4">
+        <section className={cn("min-w-0 flex-1 overflow-y-auto p-4 md:block", showDetail ? "block" : "hidden")}>
+          <button
+            type="button"
+            onClick={backToList}
+            className="mb-3 flex items-center gap-1.5 text-body-sm-medium text-accent-primary md:hidden"
+          >
+            <span aria-hidden>&larr;</span> Documents
+          </button>
           {draft ? (
             <div className="flex max-w-3xl flex-col gap-3">
               <InputField

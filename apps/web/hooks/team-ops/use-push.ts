@@ -13,6 +13,9 @@ const WORKER = "/team-ops-sw.js";
 // subscriptions already told to the server in this page load, so opening several pages does not repeat it
 const told = new Set<string>();
 
+/** The event Chrome and Edge give when the app can be installed. */
+type TInstallEvent = Event & { prompt: () => Promise<void> };
+
 /** The server key is base64url; the browser wants raw bytes. */
 export const keyToBytes = (key: string): Uint8Array => {
   const padded = key + "=".repeat((4 - (key.length % 4)) % 4);
@@ -61,7 +64,8 @@ const messageOf = (error: unknown, fallback: string) =>
 
 /**
  * Notifications on this browser or phone. `enable` asks the person's permission, subscribes the browser and tells
- * the server; `disable` undoes it. On an iPhone this only works once the app is added to the Home Screen.
+ * the server; `disable` undoes it. On an iPhone this only works once the app is added to the Home Screen
+ * (`needsInstall`); Chrome and Edge can install the app with one tap (`canInstall`, `install`).
  */
 export const usePushNotifications = (workspaceSlug: string) => {
   const { data: config, mutate } = useSWR(
@@ -75,6 +79,7 @@ export const usePushNotifications = (workspaceSlug: string) => {
   const [permission, setPermission] = useState<NotificationPermission>("default");
   const [endpoint, setEndpoint] = useState<string | null>(null);
   const [needsInstall, setNeedsInstall] = useState(false);
+  const [installEvent, setInstallEvent] = useState<TInstallEvent | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,6 +95,21 @@ export const usePushNotifications = (workspaceSlug: string) => {
       .then((registration) => registration?.pushManager.getSubscription())
       .then((subscription) => setEndpoint(subscription?.endpoint ?? null))
       .catch(() => setEndpoint(null));
+  }, []);
+
+  // Chrome and Edge tell the page when the app can be installed; keep the event for an Install button
+  useEffect(() => {
+    const onInstallable = (event: Event) => {
+      event.preventDefault();
+      setInstallEvent(event as TInstallEvent);
+    };
+    const onInstalled = () => setInstallEvent(null);
+    window.addEventListener("beforeinstallprompt", onInstallable);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onInstallable);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
   }, []);
 
   // The person may have signed in as someone else on this browser: tell the server who it belongs to now
@@ -175,10 +195,18 @@ export const usePushNotifications = (workspaceSlug: string) => {
     }
   }, [workspaceSlug]);
 
+  const install = useCallback(async () => {
+    if (!installEvent) return;
+    await installEvent.prompt();
+    setInstallEvent(null);
+  }, [installEvent]);
+
   return {
     config,
     supported,
     needsInstall,
+    canInstall: installEvent !== null,
+    install,
     permission,
     isOn: endpoint !== null && permission === "granted",
     busy,

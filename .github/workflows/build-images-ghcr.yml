@@ -4,6 +4,12 @@ name: Build images for the server (ghcr)
 # cannot build them itself. It runs when this file or the api, web or package code is pushed to the ultra-plane
 # branch, or by hand
 # (Actions -> "Build images for the server (ghcr)" -> Run workflow, once the file is on the default branch).
+#
+# After the images are built, the `deploy` job puts them on the server over SSH (deploy/server/deploy.sh: backup,
+# pull, migrations, recreate, check). It runs on its own only when the repository variable AUTO_DEPLOY is "true";
+# otherwise start the workflow by hand and tick "Deploy to the server". It uses the secrets of the `mg-sfactory`
+# environment (DEPLOY_PATH, DEPLOY_KNOWN_HOSTS, SSH_HOST, SSH_PORT, SSH_USER, SSH_PRIVATE_KEY); add required
+# reviewers to that environment if a person should approve every deployment.
 
 on:
   push:
@@ -15,6 +21,10 @@ on:
         description: "Image tag"
         required: true
         default: "teamops-1"
+      deploy:
+        description: "Deploy to the server after the build"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -73,3 +83,64 @@ jobs:
             ghcr.io/${{ steps.owner.outputs.name }}/plane-fork-${{ matrix.name }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    name: Deploy to the server
+    needs: build
+    if: ${{ (github.event_name == 'push' && vars.AUTO_DEPLOY == 'true') || (github.event_name == 'workflow_dispatch' && inputs.deploy) }}
+    runs-on: ubuntu-latest
+    environment: mg-sfactory
+    permissions:
+      contents: read
+    # one deployment at a time; a second one waits instead of running over the first
+    concurrency:
+      group: deploy-mg-sfactory
+      cancel-in-progress: false
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check the settings
+        run: |
+          for name in SSH_HOST SSH_PORT SSH_USER DEPLOY_PATH; do
+            [ -n "${!name}" ] || { echo "::error::The secret $name is missing in the mg-sfactory environment."; exit 1; }
+          done
+          [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || { echo "::error::SSH_PORT must be a number."; exit 1; }
+          [[ "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "::error::DEPLOY_PATH must be an absolute path."; exit 1; }
+
+      - name: Prepare SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          [ -n "$SSH_PRIVATE_KEY" ] && [ -n "$DEPLOY_KNOWN_HOSTS" ] || { echo "::error::SSH_PRIVATE_KEY or DEPLOY_KNOWN_HOSTS is missing."; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          {
+            echo "Host server"
+            echo "  HostName $SSH_HOST"
+            echo "  Port $SSH_PORT"
+            echo "  User $SSH_USER"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            echo "  IdentitiesOnly yes"
+            echo "  StrictHostKeyChecking yes"
+            echo "  UserKnownHostsFile ~/.ssh/known_hosts"
+            echo "  ServerAliveInterval 30"
+          } > ~/.ssh/config
+
+      - name: Copy the deploy scripts
+        run: scp deploy/server/plane-compose.sh deploy/server/post-deploy-check.sh deploy/server/deploy.sh "server:$DEPLOY_PATH/"
+
+      - name: Deploy
+        run: ssh server "cd '$DEPLOY_PATH' && chmod +x plane-compose.sh post-deploy-check.sh deploy.sh && PLANE_DIR='$DEPLOY_PATH' bash ./deploy.sh"
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
