@@ -6,15 +6,16 @@ name: Build images for the server (ghcr)
 # (Actions -> "Build images for the server (ghcr)" -> Run workflow, once the file is on the default branch).
 #
 # After the images are built, the `deploy` job puts them on the server over SSH (deploy/server/deploy.sh: backup,
-# pull, migrations, recreate, check). It runs on its own only when the repository variable AUTO_DEPLOY is "true";
-# otherwise start the workflow by hand and tick "Deploy to the server". It uses the secrets of the `mg-sfactory`
+# pull, migrations, recreate, check). It runs on its own after every push that builds the images; to stop that, set
+# the repository variable AUTO_DEPLOY to "false" (then start the workflow by hand and tick "Deploy to the server").
+# It uses the secrets of the `mg-sfactory`
 # environment (DEPLOY_PATH, DEPLOY_KNOWN_HOSTS, SSH_HOST, SSH_PORT, SSH_USER, SSH_PRIVATE_KEY); add required
 # reviewers to that environment if a person should approve every deployment.
 
 on:
   push:
     branches: [ultra-plane]
-    paths: [".github/workflows/build-images-ghcr.yml", "apps/api/**", "apps/web/**", "packages/**"]
+    paths: [".github/workflows/build-images-ghcr.yml", "apps/api/**", "apps/web/**", "packages/**", "deploy/server/**"]
   workflow_dispatch:
     inputs:
       tag:
@@ -87,7 +88,7 @@ jobs:
   deploy:
     name: Deploy to the server
     needs: build
-    if: ${{ (github.event_name == 'push' && vars.AUTO_DEPLOY == 'true') || (github.event_name == 'workflow_dispatch' && inputs.deploy) }}
+    if: ${{ (github.event_name == 'push' && vars.AUTO_DEPLOY != 'false') || (github.event_name == 'workflow_dispatch' && inputs.deploy) }}
     runs-on: ubuntu-latest
     environment: mg-sfactory
     permissions:

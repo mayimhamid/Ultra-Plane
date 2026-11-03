@@ -83,10 +83,10 @@ The workflow `.github/workflows/build-images-ghcr.yml` builds the five images, a
 
 It needs these **secrets in the GitHub environment `mg-sfactory`** (Settings, Environments): `SSH_HOST`, `SSH_PORT`, `SSH_USER`, `SSH_PRIVATE_KEY` (a key that is allowed to log in and run `docker`), `DEPLOY_KNOWN_HOSTS` (the output of `ssh-keyscan -p <port> <host>`, so the server is checked and never trusted blindly) and `DEPLOY_PATH` (the absolute path of the Plane compose directory on the server; **it must be the Plane directory**, and `deploy.sh` stops if it is not). The workflow fails with a clear message when one of them is missing. The server's SSH port must be reachable from GitHub's runners.
 
-Two ways to start it:
+It starts in two ways:
 
+- **On every push** to `ultra-plane` that changes the api, the web app, the packages or `deploy/server`: the images are built and then deployed, without anyone starting it. To switch this off, set the repository variable `AUTO_DEPLOY` to `false` (Settings, Secrets and variables, Actions, Variables); a push then only builds the images.
 - **By hand:** Actions, *Build images for the server (ghcr)*, *Run workflow*, tick **Deploy to the server**.
-- **On every push** to `ultra-plane` that changes the api, the web app or the packages: set the repository variable `AUTO_DEPLOY` to `true` (Settings, Secrets and variables, Actions, Variables). Without it a push only builds the images.
 
 To have a person approve every deployment, add **Required reviewers** to the `mg-sfactory` environment: the `deploy` job then waits for approval after the images are built. Only one deployment runs at a time. If a deployment fails after the migrations, `deploy.sh` prints the backup folder; see "Rollback" below. The first time, install the scripts by hand as described in "Always pass the settings file" or let the first deployment copy them.
 
