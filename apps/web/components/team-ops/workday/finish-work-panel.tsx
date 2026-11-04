@@ -154,7 +154,7 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
           <ul className="flex flex-col gap-1">
             {files.map((file, index) => (
               <li
-                key={`${file.name}-${index}`}
+                key={`${file.name}-${file.size}-${file.lastModified}`}
                 className="flex items-center justify-between gap-2 text-body-xs-regular"
               >
                 <span className="truncate text-primary">{file.name}</span>

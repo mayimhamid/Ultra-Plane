@@ -37,6 +37,7 @@ export const ProjectTaskPicker = observer(function ProjectTaskPicker(props: Prop
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const search = useRef<HTMLDivElement>(null);
   // hooks
   const { joinedProjectIds, getPartialProjectById } = useProject();
   const debouncedQuery = useDebounce(query, 250);
@@ -64,6 +65,11 @@ export const ProjectTaskPicker = observer(function ProjectTaskPicker(props: Prop
     setQuery("");
     setIsOpen(false);
   };
+
+  // Put the cursor in the search box when the list opens
+  useEffect(() => {
+    if (isOpen) search.current?.querySelector("input")?.focus();
+  }, [isOpen]);
 
   // Close the list on a click outside it or on Escape
   useEffect(() => {
@@ -129,16 +135,17 @@ export const ProjectTaskPicker = observer(function ProjectTaskPicker(props: Prop
         </button>
         {isOpen && projectId ? (
           <div className="absolute z-20 mt-1 flex w-full flex-col gap-1 rounded-md border border-subtle bg-surface-1 p-2 shadow-raised-200">
-            <InputField
-              type="text"
-              size="lg"
-              orientation="vertical"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search the work items of this project"
-              aria-label="Search work items"
-              autoFocus
-            />
+            <div ref={search}>
+              <InputField
+                type="text"
+                size="lg"
+                orientation="vertical"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search the work items of this project"
+                aria-label="Search work items"
+              />
+            </div>
             <ul role="listbox" aria-label="Work items" className="max-h-72 overflow-y-auto py-1">
               {results.length === 0 ? (
                 <li className="px-3 py-2 text-13 text-tertiary">
