@@ -94,7 +94,15 @@ def get_allowed_hosts() -> list[str]:
     # Include every configured base URL; WEB_URL and APP_BASE_URL may differ
     # (e.g. WEB_URL points at the API host, APP_BASE_URL at the web app), and
     # both need to be allowed for redirects to either origin to pass safety checks.
-    for setting in (settings.WEB_URL, settings.APP_BASE_URL, settings.ADMIN_BASE_URL, settings.SPACE_BASE_URL):
+    # Every CORS origin is one of the addresses the site is served on (see request_origin in plane.utils.host).
+    cors_origins = getattr(settings, "CORS_ALLOWED_ORIGINS", None) or []
+    for setting in (
+        settings.WEB_URL,
+        settings.APP_BASE_URL,
+        settings.ADMIN_BASE_URL,
+        settings.SPACE_BASE_URL,
+        *cors_origins,
+    ):
         if setting:
             host = urlparse(setting).netloc
             if host and host not in allowed_hosts:
