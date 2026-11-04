@@ -7,6 +7,8 @@
 import { Outlet, redirect } from "react-router";
 // plane imports
 import { cn } from "@plane/utils";
+// components
+import { AppUpdater } from "@/components/team-ops/pwa/app-updater";
 // local
 import { ensureTrailingSlash } from "./compat/next/helper";
 import { AppProvider } from "./provider";
@@ -27,12 +29,18 @@ export const clientMiddleware: Route.ClientMiddlewareFunction[] = [trailingSlash
 // server build — see the note in app/root.tsx.
 export default function AppShellLayout() {
   return (
-    <AppProvider>
-      <div className={cn("relative flex h-screen w-full flex-col overflow-hidden bg-canvas", "desktop-app-container")}>
-        <main className="relative h-full w-full overflow-hidden">
-          <Outlet />
-        </main>
-      </div>
-    </AppProvider>
+    <>
+      <AppProvider>
+        <div
+          className={cn("relative flex h-screen w-full flex-col overflow-hidden bg-canvas", "desktop-app-container")}
+        >
+          <main className="relative h-full w-full overflow-hidden">
+            <Outlet />
+          </main>
+        </div>
+      </AppProvider>
+      {/* Outside the provider: a tab that cannot start (e.g. a broken release) must still be offered the fix. */}
+      <AppUpdater />
+    </>
   );
 }

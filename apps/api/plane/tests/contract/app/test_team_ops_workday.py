@@ -466,6 +466,29 @@ class TestHubFiles:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert not storage.files and not HubMessage.objects.exists()
 
+    @pytest.mark.parametrize(
+        "name,content,sent_as,stored_as",
+        [
+            ("notes.md", b"# Notes", "", "text/markdown"),  # what Windows browsers send for .md
+            ("notes.md", b"# Notes", "application/octet-stream", "text/markdown"),
+            ("notes.md", b"# Notes", "text/x-markdown", "text/markdown"),
+            ("data.json", b"{}", "application/json", "application/json"),
+            ("archive.zip", b"PK", "application/x-zip-compressed", "application/zip"),
+            ("drawing.dwg", b"AC1027", "", "application/octet-stream"),
+        ],
+    )
+    def test_any_ordinary_type_is_accepted(
+        self, member_client, workspace, project, storage, name, content, sent_as, stored_as
+    ):
+        channel_id = self._channel(member_client, workspace)
+        upload = SimpleUploadedFile(name, content, content_type=sent_as)
+        response = self._post(member_client, workspace, channel_id, [upload])
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        stored = HubAttachment.objects.get()
+        assert stored.name == name and stored.content_type == stored_as
+        link = member_client.get(url(workspace, f"hub/files/{response.data['attachments'][0]['id']}/")).data["url"]
+        assert "disposition=attachment" in link  # only real images are shown in the page
+
     def test_too_large_files_are_refused(self, member_client, workspace, project, storage):
         channel_id = self._channel(member_client, workspace)
         with mock.patch("plane.team_ops.services.hub_files.MAX_UPLOAD_BYTES", 10):

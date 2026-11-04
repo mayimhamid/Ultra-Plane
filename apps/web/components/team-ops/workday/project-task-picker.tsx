@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import useSWR from "swr";
 import { InputField } from "@makeplane/propel/components/input-field";
@@ -13,6 +13,7 @@ import type { TIssueSearchResponse } from "@plane/types";
 // hooks
 import { useProject } from "@/hooks/store/use-project";
 import useDebounce from "@/hooks/use-debounce";
+import { useDismiss } from "@/hooks/team-ops/use-dismiss";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
 
@@ -71,22 +72,9 @@ export const ProjectTaskPicker = observer(function ProjectTaskPicker(props: Prop
     if (isOpen) search.current?.querySelector("input")?.focus();
   }, [isOpen]);
 
-  // Close the list on a click outside it or on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-    const onPointer = (event: PointerEvent) => {
-      if (box.current && !box.current.contains(event.target as Node)) setIsOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [isOpen]);
+  // Close the list on a click outside it, on Escape, or when the focus leaves it
+  const close = useCallback(() => setIsOpen(false), []);
+  useDismiss(box, isOpen, close);
 
   if (value) {
     return (

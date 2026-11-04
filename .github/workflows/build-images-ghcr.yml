@@ -35,6 +35,12 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     runs-on: ubuntu-latest
+    # A newer push makes an older build pointless: cancel it and build the new code. The old run's deploy
+    # then never starts (it needs this job). A deploy that is already running is never cancelled (see below),
+    # because stopping it halfway through the migrations could leave the database half updated.
+    concurrency:
+      group: build-${{ github.ref }}-${{ matrix.name }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -93,7 +99,7 @@ jobs:
     environment: mg-sfactory
     permissions:
       contents: read
-    # one deployment at a time; a second one waits instead of running over the first
+    # One deployment at a time and never cancelled: a newer one waits until the running one is finished.
     concurrency:
       group: deploy-mg-sfactory
       cancel-in-progress: false

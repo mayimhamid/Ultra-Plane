@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import useSWR from "swr";
 import { Icon } from "@makeplane/propel/components/icon";
 import { IconButton } from "@makeplane/propel/components/icon-button";
@@ -14,6 +14,7 @@ import { useTranslation } from "@plane/i18n";
 import type { TIssueSearchResponse } from "@plane/types";
 // hooks
 import useDebounce from "@/hooks/use-debounce";
+import { useDismiss } from "@/hooks/team-ops/use-dismiss";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
 
@@ -40,6 +41,9 @@ export function WorkItemPicker(props: Props) {
   // states
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setIsOpen(false), []);
+  useDismiss(box, isOpen, close);
   // hooks
   const { t } = useTranslation();
   const debouncedQuery = useDebounce(query, 300);
@@ -75,7 +79,7 @@ export function WorkItemPicker(props: Props) {
   const results = data?.issue ?? [];
 
   return (
-    <div className="relative">
+    <div ref={box} className="relative">
       <InputField
         type="text"
         size="lg"
@@ -85,6 +89,7 @@ export function WorkItemPicker(props: Props) {
           setQuery(event.target.value);
           setIsOpen(true);
         }}
+        onFocus={() => setIsOpen(true)}
         placeholder={t("team_ops.work_item.placeholder")}
         aria-label={t("team_ops.work_item.placeholder")}
         disabled={disabled}

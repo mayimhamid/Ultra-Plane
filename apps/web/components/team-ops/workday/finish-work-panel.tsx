@@ -142,7 +142,7 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
             Attach files
           </label>
           <span className="text-caption-sm-regular text-tertiary">
-            Images, PDF, text, CSV, Word, Excel, PowerPoint. Up to {MAX_FILES} files of {MAX_FILE_MB} MB.
+            Any file type (Markdown, images, PDF, Office, archives...). Up to {MAX_FILES} files of {MAX_FILE_MB} MB.
           </span>
         </div>
         {fileError ? (

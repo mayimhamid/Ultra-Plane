@@ -7,7 +7,77 @@
 /** Mirrors the server limits so a bad file is caught before the timer is touched. */
 export const MAX_FILES = 10;
 export const MAX_FILE_MB = 20;
-export const FILE_ACCEPT = ".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.md,.csv,.docx,.xlsx,.pptx";
+/** Every type may be picked; the few that run code are refused (the server checks the same list). */
+export const FILE_ACCEPT = "";
+
+/** Mirrors `BLOCKED_EXTENSIONS` on the server. */
+export const BLOCKED_EXTENSIONS = new Set([
+  "exe",
+  "msi",
+  "msp",
+  "bat",
+  "cmd",
+  "com",
+  "scr",
+  "pif",
+  "cpl",
+  "dll",
+  "sys",
+  "drv",
+  "ocx",
+  "ps1",
+  "psm1",
+  "psd1",
+  "vbs",
+  "vbe",
+  "js",
+  "jse",
+  "mjs",
+  "cjs",
+  "wsf",
+  "wsh",
+  "hta",
+  "lnk",
+  "reg",
+  "inf",
+  "jar",
+  "app",
+  "apk",
+  "dmg",
+  "pkg",
+  "deb",
+  "rpm",
+  "sh",
+  "bash",
+  "zsh",
+  "csh",
+  "command",
+  "run",
+  "bin",
+  "html",
+  "htm",
+  "xhtml",
+  "shtml",
+  "mht",
+  "mhtml",
+  "svg",
+  "svgz",
+  "xml",
+  "xsl",
+  "xslt",
+  "php",
+  "phtml",
+  "asp",
+  "aspx",
+  "jsp",
+  "cgi",
+  "pl",
+  "py",
+  "rb",
+  "swf",
+]); // prettier-ignore
+
+const extensionOf = (name: string) => (name.includes(".") ? (name.split(".").pop() ?? "").toLowerCase() : "");
 
 export type TFinishFormValues = {
   summary: string;
@@ -32,8 +102,15 @@ export const finishBlocker = (values: TFinishFormValues): string | null => {
 };
 
 /** Checks files chosen for upload against the limits; returns the message to show, or `null` when they are fine. */
-export const fileLimitError = (files: { size: number }[]): string | null => {
+export const fileLimitError = (files: { size: number; name?: string }[]): string | null => {
   if (files.length > MAX_FILES) return `At most ${MAX_FILES} files.`;
+  for (const file of files) {
+    if (file.name === undefined) continue;
+    const extension = extensionOf(file.name);
+    if (!extension) return `"${file.name}" needs a name with an extension, e.g. notes.md.`;
+    if (BLOCKED_EXTENSIONS.has(extension))
+      return `For safety, .${extension} files cannot be shared. Put them in a .zip first.`;
+  }
   if (files.some((file) => file.size > MAX_FILE_MB * 1024 * 1024)) return `A file can be at most ${MAX_FILE_MB} MB.`;
   return null;
 };

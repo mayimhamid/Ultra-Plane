@@ -166,6 +166,7 @@ class TestPushDelivery:
         assert sent["vapid_claims"] == {"sub": "mailto:ops@example.com"}
         assert '"title": "Ada tagged you"' in sent["data"]
         assert f'"url": "/{workspace.slug}/team-ops/hub/"' in sent["data"]
+        assert sent["headers"] == {"Urgency": "high"}  # delivered at once to a locked phone or a closed app
 
     def test_nothing_is_queued_when_nobody_turned_push_on(self, workspace, member, admin, keys, sender):
         with self.deliver_now() as delay:

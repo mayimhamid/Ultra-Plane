@@ -87,6 +87,8 @@ def _send(subscription, data):
             vapid_private_key=os.environ.get("TEAM_OPS_VAPID_PRIVATE_KEY", "").strip(),
             vapid_claims={"sub": _subject()},
             ttl=24 * 3600,
+            # High urgency: phones in power saving (and iOS with the app closed) deliver it at once
+            headers={"Urgency": "high"},
         )
     except WebPushException as error:
         status = getattr(getattr(error, "response", None), "status_code", None)
@@ -117,14 +119,31 @@ def _send(subscription, data):
     return True
 
 
+def _service(endpoint):
+    """`apple`, `google`, `mozilla`, `microsoft` or the host: which push service a device uses."""
+    host = endpoint.split("/")[2] if "://" in endpoint else "?"
+    for name, marker in (("apple", "apple.com"), ("google", "googleapis.com"), ("mozilla", "mozilla.com")):
+        if host.endswith(marker):
+            return name
+    return "microsoft" if "notify.windows.com" in host else host
+
+
 def send_to_user(user_id, data):
     """Send `data` to every device of a person. Returns how many accepted it."""
     if not is_enabled():
         return 0
-    sent = 0
+    sent, results = 0, []
     for subscription in PushSubscription.objects.filter(user_id=user_id):
-        if _send(subscription, data):
-            sent += 1
+        ok = _send(subscription, data)
+        sent += int(ok)
+        results.append(f"{_service(subscription.endpoint)}={'ok' if ok else 'failed'}")
+    # One line per notification, so "did it reach the iPhone?" can be answered from the worker log.
+    logger.info(
+        "Team Ops push %s to user %s: %s",
+        data.get("kind", "?"),
+        user_id,
+        ", ".join(results) or "no devices",
+    )
     return sent
 
 

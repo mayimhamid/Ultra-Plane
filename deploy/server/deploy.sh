@@ -85,15 +85,21 @@ $compose up -d --force-recreate api worker beat-worker web admin space live \
 say "Waiting for the site"
 port="$(grep -E '^LISTEN_HTTP_PORT=' plane.env | tail -1 | cut -d= -f2- | tr -d '"')"
 port="${port:-80}"
+# The API needs ~30 s to start; until then the proxy answers 502. That is expected, so the tries are quiet.
 ok=0
+started=$SECONDS
 for _ in $(seq 1 40); do
-  if curl -fsS -o /dev/null -m 5 "http://127.0.0.1:$port/api/instances/" && curl -fsS -o /dev/null -m 5 "http://127.0.0.1:$port/"; then
+  if curl -fs -o /dev/null -m 5 "http://127.0.0.1:$port/api/instances/" && curl -fs -o /dev/null -m 5 "http://127.0.0.1:$port/"; then
     ok=1
     break
   fi
   sleep 3
 done
-[ "$ok" = 1 ] || die "the site does not answer on port $port after two minutes. Backup: $backup"
+if [ "$ok" != 1 ]; then
+  echo "last answer: $(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:$port/api/instances/")"
+  die "the site does not answer on port $port after two minutes. Backup: $backup"
+fi
+echo "the site answers (after $((SECONDS - started)) s)"
 
 say "Done"
 echo "deployed; backup of the data before this deployment: $backup"

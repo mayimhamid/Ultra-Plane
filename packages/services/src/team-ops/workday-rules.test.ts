@@ -140,8 +140,9 @@ describe("buildHeatGrid", () => {
   });
 });
 
+const at = (day: number, hour: number, minute = 0) => new Date(2027, 0, day, hour, minute).toISOString();
+
 describe("weeklyChart", () => {
-  const at = (day: number, hour: number, minute = 0) => new Date(2027, 0, day, hour, minute).toISOString();
   const sessions = [
     { started_at: at(2, 9), finished_at: at(2, 11), duration_seconds: 7200, location: "ONSITE" },
     { started_at: at(2, 15), finished_at: at(2, 16), duration_seconds: 3600, location: "REMOTE" },
@@ -178,5 +179,23 @@ describe("controlRange", () => {
   it("starts the week on the day itself when it is a Saturday", () => {
     expect(saturdayOf("2027-01-02")).toBe("2027-01-02");
     expect(saturdayOf("2027-01-08")).toBe("2027-01-02");
+  });
+});
+
+describe("fileLimitError and file types", () => {
+  it("accepts any ordinary type, Markdown included", () => {
+    expect(
+      fileLimitError([
+        { size: 5, name: "notes.md" },
+        { size: 5, name: "data.json" },
+        { size: 5, name: "a.zip" },
+      ])
+    ).toBeNull();
+  });
+
+  it("refuses files that run code, and names without an extension", () => {
+    expect(fileLimitError([{ size: 5, name: "setup.EXE" }])).toMatch(/\.exe files cannot be shared/);
+    expect(fileLimitError([{ size: 5, name: "page.html" }])).toMatch(/\.html/);
+    expect(fileLimitError([{ size: 5, name: "README" }])).toMatch(/needs a name with an extension/);
   });
 });
