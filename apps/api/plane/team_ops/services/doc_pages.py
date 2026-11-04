@@ -5,10 +5,21 @@
 """Doc Hub documents that belong to a project live as Plane Pages, so they are written in Plane's own editor."""
 
 # Django imports
+from django.db.models import Q
 from django.utils.html import escape
 
 # Module imports
-from plane.db.models import Page, ProjectPage
+from plane.db.models import Page, ProjectMember, ProjectPage
+from plane.team_ops.models import HubDoc
+
+
+def visible_docs(workspace, user, is_admin):
+    """The documents of a workspace that `user` may read: no project, a project they belong to, or their own."""
+    queryset = HubDoc.objects.filter(workspace=workspace).select_related("author", "project", "page")
+    if is_admin:
+        return queryset
+    mine = ProjectMember.objects.filter(member=user, is_active=True).values("project_id")
+    return queryset.filter(Q(project__isnull=True) | Q(project_id__in=mine) | Q(author=user))
 
 
 def _html(text):

@@ -8,6 +8,9 @@ A channel has no member list of its own. Its members are the members of its team
 joining or leaving a team or a project is all it takes to gain or lose access to its conversation.
 """
 
+# Python imports
+import re
+
 # Django imports
 from django.db import transaction
 from django.db.models import Count, Q
@@ -30,6 +33,14 @@ from plane.team_ops.services.access import calendar_user_ids
 from plane.team_ops.services.notifications import notify
 
 MAX_BODY = 5000
+
+# "@everyone" tags every member of the channel. It must stand on its own, so "mail@everyone.com" does not count.
+EVERYONE = re.compile(r"(?<![\w@.])@everyone(?!\w)(?![.-]\w)", re.IGNORECASE)
+
+
+def tags_everyone(body):
+    """True when the text of a message tags everyone in the channel with `@everyone`."""
+    return bool(EVERYONE.search(body or ""))
 
 
 def channel_member_ids(channel):
@@ -185,6 +196,11 @@ def post_message(
     if parent is not None and parent.parent_id:
         parent = parent.parent  # threads are one level deep
     tagged = resolve_mentions(channel, author, set(user_ids), set(team_ids))
+    everyone = tags_everyone(body)
+    if everyone:
+        for member_id in channel_member_ids(channel):
+            tagged.setdefault(member_id, None)
+        tagged.pop(author.id, None)
     with transaction.atomic():
         message = HubMessage.objects.create(
             channel=channel, author=author, body=body, parent=parent, kind=kind, session=session
@@ -237,7 +253,7 @@ def post_message(
             channel.workspace,
             tagged,
             "ATTENTION" if attention else "MENTION",
-            f"{author.display_name} {'needs your attention' if attention else 'tagged you'} in {name}",
+            f"{author.display_name} {'needs your attention' if attention else 'tagged everyone' if everyone else 'tagged you'} in {name}",
             body[:300],
             link=f"team-ops/hub?channel={channel.id}",
             actor=author,

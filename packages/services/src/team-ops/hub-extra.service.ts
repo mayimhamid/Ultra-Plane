@@ -85,10 +85,11 @@ export class HubExtraService extends APIService {
       .catch(fail);
   }
 
-  /** Shares files with everyone in the workspace. */
-  async uploadFiles(workspaceSlug: string, files: File[]): Promise<TLibraryFile[]> {
+  /** Puts files on a document (`docId`), or shares them with everyone in the workspace. */
+  async uploadFiles(workspaceSlug: string, files: File[], docId?: string): Promise<TLibraryFile[]> {
     const form = new FormData();
     files.forEach((file) => form.append("files", file));
+    if (docId) form.append("doc", docId);
     return this.post(`${this.base(workspaceSlug)}/library/`, form, MULTIPART)
       .then((response) => response?.data?.results)
       .catch(fail);

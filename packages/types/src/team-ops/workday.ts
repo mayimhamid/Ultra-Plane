@@ -249,8 +249,12 @@ export type THubDoc = {
   excerpt: string;
   /** The Plane Page the document is written in (documents of a project). */
   page: string | null;
+  /** How many files are kept with the document. */
+  file_count: number;
   /** Only in the full document. */
   body?: string;
+  /** Only in the full document: the files kept with it. */
+  files?: TLibraryFile[];
 };
 
 export type THubDocPayload = { title: string; body: string; tags: string[]; project: string | null };

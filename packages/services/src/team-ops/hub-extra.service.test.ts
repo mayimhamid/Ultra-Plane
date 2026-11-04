@@ -51,6 +51,26 @@ describe("HubExtraService", () => {
     expect(config).toEqual({ headers: { "Content-Type": "multipart/form-data" } });
   });
 
+  it("puts files on a document by sending its id", async () => {
+    const post = vi.spyOn(service, "post").mockResolvedValue({ data: { results: [{ id: "f1" }] } } as never);
+    const file = new File(["%PDF-1.4"], "a.pdf", { type: "application/pdf" });
+
+    await service.uploadFiles("acme", [file], "d1");
+
+    const [path, body] = post.mock.calls[0];
+    expect(path).toBe(`${HUB}/library/`);
+    expect((body as FormData).get("doc")).toBe("d1");
+    expect((body as FormData).getAll("files")).toHaveLength(1);
+  });
+
+  it("sends no document with files that are shared with the workspace", async () => {
+    const post = vi.spyOn(service, "post").mockResolvedValue({ data: { results: [] } } as never);
+
+    await service.uploadFiles("acme", [new File(["x"], "a.txt")]);
+
+    expect((post.mock.calls[0][1] as FormData).has("doc")).toBe(false);
+  });
+
   it("reveals a secret through POST and returns only the value", async () => {
     const post = vi.spyOn(service, "post").mockResolvedValue({ data: { value: "s3cr3t" } } as never);
 

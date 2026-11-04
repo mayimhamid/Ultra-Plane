@@ -165,7 +165,7 @@ class HubMention(BaseModel):
 
 
 class HubAttachment(BaseModel):
-    """A file in the private object storage, attached to a message or to a work session."""
+    """A file in the private object storage, attached to a message, a work session or a document of the Doc Hub."""
 
     workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_hub_attachments")
     uploaded_by = models.ForeignKey(
@@ -175,11 +175,13 @@ class HubAttachment(BaseModel):
     session = models.ForeignKey(
         WorkSession, on_delete=models.CASCADE, null=True, blank=True, related_name="attachments"
     )
+    # A file kept with a document: it is read by whoever may read that document.
+    doc = models.ForeignKey("team_ops.HubDoc", on_delete=models.CASCADE, null=True, blank=True, related_name="files")
     storage_key = models.CharField(max_length=512, unique=True)
     name = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)
     size = models.PositiveIntegerField()
-    # A file shared with everyone in the workspace from the Files section.
+    # A file shared with everyone in the workspace without belonging to a document (older files).
     library = models.BooleanField(default=False)
 
     class Meta:
@@ -188,7 +190,7 @@ class HubAttachment(BaseModel):
         db_table = "tops_hub_attachment"
         constraints = [
             models.CheckConstraint(
-                condition=Q(message__isnull=False) | Q(session__isnull=False) | Q(library=True),
+                condition=Q(message__isnull=False) | Q(session__isnull=False) | Q(doc__isnull=False) | Q(library=True),
                 name="tops_hub_attachment_has_owner",
             )
         ]

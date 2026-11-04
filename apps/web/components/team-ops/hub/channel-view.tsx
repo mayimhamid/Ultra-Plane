@@ -259,6 +259,7 @@ function Message({ message, isOwn, isReply, isFollowUp, tokens, onReply, onEdit,
 type TOption =
   | { kind: "person"; id: string; label: string; person: THubPerson }
   | { kind: "team"; id: string; label: string }
+  | { kind: "everyone"; id: string; label: string }
   | { kind: "project"; id: string; label: string; identifier: string };
 
 type TMenu = { trigger: "@" | "/"; start: number; query: string };
@@ -315,6 +316,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
 
   // People, teams and projects that are picked out in message text.
   const sharedTokens: TToken[] = [
+    { text: "@everyone", color: "var(--background-color-accent-primary)" },
     ...(teams ?? []).map((team) => ({ text: `@${team.name}`, color: "var(--background-color-accent-primary)" })),
     ...projects.map((project) => ({
       text: `/${project.identifier}`,
@@ -344,7 +346,12 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
     const matchingTeams: TOption[] = (teams ?? [])
       .filter((team) => team.name.toLowerCase().includes(query))
       .map((team) => ({ kind: "team", id: team.id, label: team.name }));
-    return [...matchingPeople, ...matchingTeams].slice(0, 8);
+    // "@everyone" tags the whole channel; it is found by typing "every" or "all".
+    const everyone: TOption[] =
+      query === "" || "everyone".startsWith(query) || "all".startsWith(query)
+        ? [{ kind: "everyone", id: "everyone", label: "everyone" }]
+        : [];
+    return [...everyone, ...matchingPeople, ...matchingTeams].slice(0, 8);
   })();
 
   const textarea = () => composer.current?.querySelector("textarea") ?? null;
@@ -583,7 +590,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
                 className="absolute right-0 bottom-full left-0 z-20 mb-2 max-h-72 overflow-y-auto rounded-lg border border-subtle bg-surface-1 p-1 shadow-raised-200"
               >
                 <li className="px-3 pt-1 pb-1.5 text-caption-sm-medium text-tertiary">
-                  {menu?.trigger === "/" ? "Mention a project" : "Tag a person or a team"}
+                  {menu?.trigger === "/" ? "Mention a project" : "Tag a person, a team or everyone"}
                 </li>
                 {options.map((option, index) => (
                   <li key={`${option.kind}-${option.id}`} role="option" aria-selected={index === active}>
@@ -599,7 +606,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
                       )}
                     >
                       {option.kind === "person" ? <PersonAvatar person={option.person} size="sm" /> : null}
-                      {option.kind === "team" ? (
+                      {option.kind === "team" || option.kind === "everyone" ? (
                         <span className="inline-flex size-6 items-center justify-center rounded-full bg-accent-subtle text-accent-primary">
                           <Users className="size-3.5" aria-hidden />
                         </span>
@@ -614,7 +621,13 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
                       ) : null}
                       <span className="min-w-0 flex-1 truncate text-body-sm-medium text-primary">{option.label}</span>
                       <span className="text-caption-sm-regular text-tertiary">
-                        {option.kind === "project" ? `/${option.identifier}` : option.kind === "team" ? "Team" : ""}
+                        {option.kind === "project"
+                          ? `/${option.identifier}`
+                          : option.kind === "team"
+                            ? "Team"
+                            : option.kind === "everyone"
+                              ? `Everyone in this channel (${(hub.channel?.members ?? []).length})`
+                              : ""}
                       </span>
                     </button>
                   </li>
@@ -627,7 +640,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
               value={body}
               rows={2}
               maxLength={5000}
-              placeholder="Write a message. @ tags a person or team, / a project. Enter sends, Shift+Enter for a new line."
+              placeholder="Write a message. @ tags a person, a team or @everyone, / a project. Enter sends, Shift+Enter for a new line."
               onChange={(event) => {
                 setBody(event.target.value);
                 watchCaret(event.target.value, event.target.selectionStart ?? event.target.value.length);

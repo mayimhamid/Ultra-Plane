@@ -15,7 +15,7 @@ from plane.app.permissions import allow_permission
 from plane.app.views.base import BaseAPIView
 from plane.db.models import User, Workspace
 from plane.team_ops.models import HubAttachment, HubMention, HubMessage
-from plane.team_ops.services import hub, hub_files
+from plane.team_ops.services import doc_pages, hub, hub_files
 from plane.team_ops.services.access import CALENDAR_ROLES, CalendarAccess, calendar_user_ids
 from plane.team_ops.services.time_entry import parse_uuid
 
@@ -209,7 +209,13 @@ class HubAttachmentDownloadEndpoint(BaseAPIView):
         )
         if attachment is None:
             raise NotFound("File not found.")
-        if attachment.library:
+        if attachment.doc_id:
+            access = CalendarAccess(request.user, workspace)
+            if not access.is_calendar_user or not (
+                doc_pages.visible_docs(workspace, request.user, access.is_admin).filter(pk=attachment.doc_id).exists()
+            ):
+                raise NotFound("File not found.")
+        elif attachment.library:
             if request.user.id not in calendar_user_ids(workspace):
                 raise NotFound("File not found.")
         elif attachment.message_id:

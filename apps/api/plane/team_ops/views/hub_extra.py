@@ -74,7 +74,7 @@ def _tags(value):
     return cleaned
 
 
-def _doc_payload(doc, full=False):
+def _doc_payload(doc, full=False, files=None):
     data = {
         "id": doc.id,
         "title": doc.title,
@@ -87,18 +87,25 @@ def _doc_payload(doc, full=False):
         "excerpt": doc_pages.text_of(doc)[:200],
         # The Page that holds the text; the document is written there
         "page": doc.page_id,
+        "file_count": len(files or []),
     }
     if full:
         data["body"] = doc_pages.text_of(doc)
+        data["files"] = [_file_payload(item, "Document") for item in files or []]
     return data
 
 
+def _files_of(docs):
+    """The files of each document, one query for all of them: `{doc id: [attachment, ...]}`."""
+    grouped = {}
+    attachments = HubAttachment.objects.filter(doc__in=docs).select_related("uploaded_by").order_by("created_at")
+    for attachment in attachments:
+        grouped.setdefault(attachment.doc_id, []).append(attachment)
+    return grouped
+
+
 def _visible_docs(workspace, user, is_admin):
-    queryset = HubDoc.objects.filter(workspace=workspace).select_related("author", "project", "page")
-    if is_admin:
-        return queryset
-    mine = ProjectMember.objects.filter(member=user, is_active=True).values("project_id")
-    return queryset.filter(Q(project__isnull=True) | Q(project_id__in=mine) | Q(author=user))
+    return doc_pages.visible_docs(workspace, user, is_admin)
 
 
 def _project_of(workspace, user, is_admin, raw):
@@ -132,7 +139,8 @@ class HubDocListEndpoint(BaseAPIView):
             wanted = params["tag"].strip().lower()
             docs = [doc for doc in docs if wanted in doc.tags]
         tags = sorted({tag for doc in docs for tag in doc.tags})
-        return Response({"results": [_doc_payload(doc) for doc in docs], "tags": tags})
+        grouped = _files_of(docs)
+        return Response({"results": [_doc_payload(doc, files=grouped.get(doc.id)) for doc in docs], "tags": tags})
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug):
@@ -155,7 +163,7 @@ class HubDocListEndpoint(BaseAPIView):
             project=_project_of(workspace, request.user, is_admin, data.get("project")),
         )
         doc_pages.link_page(doc)
-        return Response(_doc_payload(doc, full=True), status=status.HTTP_201_CREATED)
+        return Response(_doc_payload(doc, full=True, files=[]), status=status.HTTP_201_CREATED)
 
 
 class HubDocDetailEndpoint(BaseAPIView):
@@ -173,7 +181,7 @@ class HubDocDetailEndpoint(BaseAPIView):
         workspace, doc, _ = self._doc(request, slug, pk)
         if workspace is None:
             return _forbidden()
-        return Response(_doc_payload(doc, full=True))
+        return Response(_doc_payload(doc, full=True, files=_files_of([doc]).get(doc.id)))
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def patch(self, request, slug, pk):
@@ -199,7 +207,7 @@ class HubDocDetailEndpoint(BaseAPIView):
         doc.save()
         doc_pages.rename_page(doc)
         doc_pages.link_page(doc)
-        return Response(_doc_payload(doc, full=True))
+        return Response(_doc_payload(doc, full=True, files=_files_of([doc]).get(doc.id)))
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def delete(self, request, slug, pk):
@@ -208,6 +216,8 @@ class HubDocDetailEndpoint(BaseAPIView):
             return _forbidden()
         if doc.author_id != request.user.id and not is_admin:
             raise ParseError(detail="You can only delete your own documents.")
+        for attachment in HubAttachment.objects.filter(doc=doc):
+            attachment.delete()
         doc.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -230,14 +240,19 @@ def _file_payload(attachment, source):
 class HubFileLibraryEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def get(self, request, slug):
-        """Files shared with the whole workspace, and files from the channels the caller can read."""
+        """Files shared with the workspace without a document, and files from the channels the caller can read.
+
+        The files of a document are listed with that document.
+        """
         workspace, _ = _member(request, slug)
         if workspace is None:
             return _forbidden()
         channels = {channel.id: channel for channel in hub.channels_of(workspace, request.user)}
         queryset = (
             HubAttachment.objects.filter(workspace=workspace)
-            .filter(Q(library=True) | Q(message__channel_id__in=list(channels), message__is_deleted=False))
+            .filter(
+                Q(library=True, doc__isnull=True) | Q(message__channel_id__in=list(channels), message__is_deleted=False)
+            )
             .select_related("uploaded_by", "message")
             .order_by("-created_at")[:300]
         )
@@ -252,35 +267,57 @@ class HubFileLibraryEndpoint(BaseAPIView):
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug):
-        """Share files with everyone in the workspace."""
-        workspace, _ = _member(request, slug)
+        """Put files on a document (`doc`: its author or an admin), or share them with the whole workspace."""
+        workspace, is_admin = _member(request, slug)
         if workspace is None:
             return _forbidden()
+        doc = None
+        if request.data.get("doc"):
+            doc_id = parse_uuid(request.data["doc"], "doc")
+            doc = _visible_docs(workspace, request.user, is_admin).filter(pk=doc_id).first()
+            if doc is None:
+                raise NotFound("Document not found.")
+            if doc.author_id != request.user.id and not is_admin:
+                raise ParseError(detail="Only the author of a document can add files to it.")
         files = request.FILES.getlist("files")
         if not files or len(files) > hub_files.MAX_FILES_PER_MESSAGE:
             raise ParseError(detail=f"Send 1 to {hub_files.MAX_FILES_PER_MESSAGE} files.")
         for upload in files:
             hub_files.validate_upload(upload)
         stored = [
-            hub_files.store_attachment(workspace=workspace, user=request.user, upload=upload, library=True)
+            hub_files.store_attachment(
+                workspace=workspace, user=request.user, upload=upload, library=doc is None, doc=doc
+            )
             for upload in files
         ]
-        return Response(
-            {"results": [_file_payload(item, "Library") for item in stored]}, status=status.HTTP_201_CREATED
-        )
+        source = "Document" if doc else "Library"
+        return Response({"results": [_file_payload(item, source) for item in stored]}, status=status.HTTP_201_CREATED)
 
 
 class HubFileLibraryDetailEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def delete(self, request, slug, pk):
-        """Remove a library file: its uploader or an admin."""
+        """Remove a shared file or a file of a document: its uploader, the author of the document, or an admin."""
         workspace, is_admin = _member(request, slug)
         if workspace is None:
             return _forbidden()
-        attachment = HubAttachment.objects.filter(pk=pk, workspace=workspace, library=True).first()
+        attachment = (
+            HubAttachment.objects.filter(pk=pk, workspace=workspace)
+            .filter(Q(library=True) | Q(doc__isnull=False))
+            .select_related("doc")
+            .first()
+        )
         if attachment is None:
             raise NotFound("File not found.")
-        if attachment.uploaded_by_id != request.user.id and not is_admin:
+        if (
+            attachment.doc_id
+            and not _visible_docs(workspace, request.user, is_admin).filter(pk=attachment.doc_id).exists()
+        ):
+            raise NotFound("File not found.")
+        owns = attachment.uploaded_by_id == request.user.id or (
+            attachment.doc_id and attachment.doc.author_id == request.user.id
+        )
+        if not owns and not is_admin:
             raise ParseError(detail="You can only remove your own files.")
         attachment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

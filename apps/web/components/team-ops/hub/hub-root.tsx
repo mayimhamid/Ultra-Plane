@@ -216,9 +216,7 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
         </button>
         <div className="min-h-0 flex-1">
           {section === "mentions" ? <MentionsView workspaceSlug={workspaceSlug} onOpenChannel={openChannel} /> : null}
-          {section === "docs" || section === "files" ? (
-            <DocHubView workspaceSlug={workspaceSlug} initialTab={section === "files" ? "files" : "docs"} />
-          ) : null}
+          {section === "docs" || section === "files" ? <DocHubView workspaceSlug={workspaceSlug} /> : null}
           {section === "secrets" ? <SecretsView workspaceSlug={workspaceSlug} /> : null}
           {!section && active ? (
             <ChannelView key={active.id} workspaceSlug={workspaceSlug} channel={active} onRead={() => void refresh()} />
