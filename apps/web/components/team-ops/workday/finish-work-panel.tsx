@@ -18,12 +18,15 @@ type Props = {
   teams: TOpsTeam[];
   /** Colleagues who can be tagged one by one. */
   people: THubPerson[];
-  onFinish: (payload: TFinishWorkPayload) => Promise<void>;
+  onFinish: (payload: TFinishWorkPayload) => Promise<unknown>;
+  /** Close the panel; the timer keeps running. */
   onCancel: () => void;
+  /** Drop the work: the timer stops and nothing is saved. */
+  onDiscard: () => Promise<void>;
 };
 
 /** The report that closes a piece of work: what was done, the document (or its absence) and hand-offs. */
-export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, onCancel }: Props) {
+export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, onCancel, onDiscard }: Props) {
   // states
   const [summary, setSummary] = useState("");
   const [documentText, setDocumentText] = useState("");
@@ -34,6 +37,8 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [userIds, setUserIds] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [isDiscarding, setIsDiscarding] = useState(false);
   const [fileError, setFileError] = useState("");
   const input = useRef<HTMLInputElement>(null);
 
@@ -72,6 +77,15 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const discard = async () => {
+    setIsDiscarding(true);
+    try {
+      await onDiscard();
+    } finally {
+      setIsDiscarding(false);
     }
   };
 
@@ -219,18 +233,57 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
         ) : null}
       </div>
 
+      {confirmDiscard ? (
+        <div
+          role="alertdialog"
+          aria-label="Cancel this work"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-danger-strong bg-danger-subtle p-3"
+        >
+          <p className="text-body-sm-regular text-primary">
+            Cancel this work? The timer stops and <span className="tabular-nums">{elapsedLabel}</span> of {title} is not
+            saved. This cannot be undone.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="md"
+              stretch="auto"
+              label="No, go back"
+              onClick={() => setConfirmDiscard(false)}
+              disabled={isDiscarding}
+            />
+            <Button
+              variant="danger"
+              size="md"
+              stretch="auto"
+              label="Yes, cancel work"
+              loading={isDiscarding}
+              onClick={discard}
+            />
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-body-xs-regular text-tertiary" aria-live="polite">
           {blocker ?? "Ready to finish."}
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="ghost"
+            size="md"
+            stretch="auto"
+            label="Cancel work"
+            onClick={() => setConfirmDiscard(true)}
+            disabled={isSaving || isDiscarding || confirmDiscard}
+          />
           <Button
             variant="secondary"
             size="md"
             stretch="auto"
             label="Keep working"
             onClick={onCancel}
-            disabled={isSaving}
+            disabled={isSaving || isDiscarding}
           />
           <Button
             variant="primary"

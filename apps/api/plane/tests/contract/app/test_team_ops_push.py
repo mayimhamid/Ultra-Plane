@@ -279,3 +279,29 @@ class TestPushWithRealKeys:
         assert push.send_to_user(member.id, {"title": "x"}) == 1
 
         assert PushSubscription.objects.count() == 2
+
+
+@pytest.mark.parametrize(
+    "configured, expected",
+    [
+        ("https://plane.5.160.42.168.sslip.io:4433", "https://plane.5.160.42.168.sslip.io"),
+        ("https://plane.example.com:4433/some/path/", "https://plane.example.com"),
+        ("https://plane.example.com", "https://plane.example.com"),
+        ("mailto:ops@example.com", "mailto:ops@example.com"),
+        ("ops@example.com", "mailto:ops@example.com"),
+        ('"mailto:ops@example.com"', "mailto:ops@example.com"),
+        ("", "mailto:admin@localhost"),
+    ],
+)
+def test_the_vapid_subject_is_one_the_push_library_accepts(configured, expected):
+    """A subject with a port made every push fail; the library's own check must accept what we send."""
+    from unittest import mock
+
+    from py_vapid import _check_sub
+
+    from plane.team_ops.services import push as push_service
+
+    with mock.patch.dict("os.environ", {"TEAM_OPS_VAPID_SUBJECT": configured}):
+        subject = push_service._subject()
+    assert subject == expected
+    assert _check_sub(subject)

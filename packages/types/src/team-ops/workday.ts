@@ -214,7 +214,7 @@ export type TTeamStatusRow = {
 
 export type TOpsNotification = {
   id: string;
-  kind: "MENTION" | "ATTENTION" | "FREEZE" | "NEWS" | "DIRECT" | "SECRET" | "FLOW";
+  kind: "MENTION" | "ATTENTION" | "FREEZE" | "NEWS" | "DIRECT" | "SECRET" | "FLOW" | "REPLY";
   title: string;
   body: string;
   link: string;

@@ -129,9 +129,26 @@ class CalendarAccess:
             return None
         return timezone.localdate() - timedelta(days=self.settings.member_edit_past_days)
 
-    def can_edit_date(self, day):
+    def can_edit_date(self, day, user_id=None):
+        """`user_id` is whose day it is. People may still fill in the past days of this week for themselves
+        until they confirm the week's plan, e.g. a Saturday they did not open the site."""
         earliest = self.earliest_editable_date()
-        return earliest is None or day >= earliest
+        if earliest is None or day >= earliest:
+            return True
+        return user_id == self.user.id and self._in_open_week(day)
+
+    def _in_open_week(self, day):
+        from plane.team_ops.models import WeekPlanConfirmation
+        from plane.team_ops.services.workday import week_start_of
+        from plane.team_ops.services.weekly_plan import today_in_timezone
+
+        today = today_in_timezone(self.user.user_timezone)
+        start = week_start_of(today)
+        if not start <= day <= today:
+            return False
+        return not WeekPlanConfirmation.objects.filter(
+            workspace=self.workspace, user=self.user, week_start=start
+        ).exists()
 
     def describe(self):
         """The caller's effective rights, as the settings endpoint reports them."""

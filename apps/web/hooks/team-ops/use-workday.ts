@@ -80,6 +80,7 @@ export const useWorkdayState = (workspaceSlug: string) => {
       apply(workdayService.overrideDay(workspaceSlug, mode, sessions)),
     setBreak: (action: "start" | "end") => apply(workdayService.setBreak(workspaceSlug, action)),
     checkIn: () => apply(workdayService.checkIn(workspaceSlug)),
+    discardWork: (timer?: string) => apply(workdayService.discardWork(workspaceSlug, timer)),
   };
 };
 

@@ -213,6 +213,23 @@ def post_message(
             link=link,
             actor=author,
         )
+    # The author of the message replied to hears about it, unless they wrote the reply or are tagged anyway.
+    if (
+        parent is not None
+        and channel.kind not in (HubChannel.Kind.DM, HubChannel.Kind.NEWS)  # those already tell everyone
+        and parent.author_id != author.id
+        and parent.author_id not in tagged
+        and parent.author_id in channel_member_ids(channel)
+    ):
+        notify(
+            channel.workspace,
+            [parent.author_id],
+            "REPLY",
+            f"{author.display_name} replied to you in {channel_name(channel, author)}",
+            body[:300],
+            link=link,
+            actor=author,
+        )
     if tagged:
         name = channel_name(channel, author)
         attention = kind == HubMessage.Kind.ATTENTION

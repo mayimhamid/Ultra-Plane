@@ -26,7 +26,7 @@ from plane.team_ops.models import MAX_ENTRY_SECONDS, ActiveTimer, TimeEntry, Wor
 from plane.team_ops.services.notifications import managers_of, notify
 
 RUNNING, BREAK, FROZEN = "RUNNING", "BREAK", "FROZEN"
-CHECK_IN_SECONDS = int(os.environ.get("TEAM_OPS_CHECK_IN_MINUTES", 30)) * 60
+CHECK_IN_SECONDS = int(os.environ.get("TEAM_OPS_CHECK_IN_MINUTES", 60)) * 60
 # How long the person has to answer a check-in before the time stops counting.
 GRACE_SECONDS = int(os.environ.get("TEAM_OPS_CHECK_IN_GRACE_MINUTES", 5)) * 60
 
@@ -94,6 +94,16 @@ def refresh(timer, now=None):
         f"The timer on {task} is frozen since {due:%H:%M} UTC. That time is not counted.",
         link="team-ops/workday",
         actor=timer.user,
+    )
+    # The person is told too, so a phone in the pocket says why the clock stopped.
+    notify(
+        timer.workspace,
+        [timer.user_id],
+        "FREEZE",
+        "Your timer is frozen",
+        f"The check-in on {task} was not answered, so the time stopped counting at {due:%H:%M} UTC. "
+        'Open Workday and press "I am back".',
+        link="team-ops/workday",
     )
     return timer
 
@@ -211,6 +221,23 @@ def stop_timer(workspace, user, timer_id=None):
         result = StopResult(entry, capped, timer.location, timer.break_seconds, timer.frozen_seconds, timer.is_parallel)
         timer.delete(soft=False)
     return result
+
+
+def discard_timer(workspace, user, timer_id=None):
+    """Stop the timer without logging anything: no time entry, no finished work, no report line.
+
+    `timer_id` names a parallel timer; without it the main timer is dropped. The breaks and freezes of the
+    main timer go with it, so they are not attached to the next piece of work.
+    """
+    with transaction.atomic():
+        timer = _lock_parallel(workspace, user, timer_id) if timer_id else _lock(workspace, user)
+        if timer is None:
+            raise ParseError(detail="No timer is running.")
+        if not timer.is_parallel:
+            WorkInterruption.objects.filter(
+                workspace=workspace, user=user, session__isnull=True, started_at__gte=timer.started_at
+            ).delete()
+        timer.delete(soft=False)
 
 
 def stop_active_timer(workspace, user):

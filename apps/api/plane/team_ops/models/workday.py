@@ -75,6 +75,7 @@ class OpsNotification(BaseModel):
         DIRECT = "DIRECT", "Direct message"
         SECRET = "SECRET", "Secret shared"
         FLOW = "FLOW", "Added to a flow"
+        REPLY = "REPLY", "Reply"
 
     workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_notifications")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_ops_notifications")

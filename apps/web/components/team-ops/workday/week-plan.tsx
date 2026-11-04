@@ -53,7 +53,8 @@ function DayTile({
   onChoose: (mode: "ONSITE" | "REMOTE" | "OFF") => void;
 }) {
   const open = day.expected && !day.past && day.mode === null;
-  const editable = !locked && !day.past && day.mode !== "LEAVE";
+  // Until the week is confirmed every day can be set, also days already gone (e.g. a missed Saturday).
+  const editable = !locked && day.mode !== "LEAVE";
   return (
     <li
       className={cn(
@@ -67,7 +68,7 @@ function DayTile({
         <p className="text-caption-sm-regular text-tertiary">{dayDate.format(parse(day.date))}</p>
       </div>
       <p className="text-caption-sm-medium text-secondary">
-        {day.mode ? MODE_LABEL[day.mode] : day.expected ? (day.past ? "—" : "Not planned") : "Not a work day"}
+        {day.mode ? MODE_LABEL[day.mode] : day.expected ? "Not planned" : "Not a work day"}
       </p>
       {editable ? (
         <div className="flex flex-wrap gap-1">
@@ -137,7 +138,7 @@ export function WeekPlan({ workspaceSlug, userId, week, onChanged, onConfirm }: 
         <p className="text-body-xs-regular text-secondary">
           {week.confirmed
             ? "Saturday to Friday. It is locked and your manager can see it. To change it, use the red section at the bottom of the page."
-            : "Say which days you work, and where, for the rest of this week, then confirm. It is required, your manager sees it, and after you confirm it is locked. You can do it on any day of the week."}
+            : "Say which days you work, and where, for every day of this week (days already gone too), then confirm. It is required, your manager sees it, and after you confirm it is locked. You can do it on any day of the week."}
         </p>
       </div>
       <ol className="flex flex-wrap gap-2">

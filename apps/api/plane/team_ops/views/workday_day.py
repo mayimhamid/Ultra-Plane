@@ -133,6 +133,18 @@ class WorkdayBreakEndpoint(BaseAPIView):
         return Response(workday.day_state(workspace, request.user))
 
 
+class WorkdayDiscardEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        """Cancel the running work without saving it. `timer` names a parallel task; without it, the main one."""
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        timer_id = parse_uuid(request.data.get("timer"), "timer") if request.data.get("timer") else None
+        timers.discard_timer(workspace, request.user, timer_id)
+        return Response(workday.day_state(workspace, request.user))
+
+
 class WorkdayCheckInEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug):

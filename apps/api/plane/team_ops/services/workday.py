@@ -196,16 +196,14 @@ def start_work(workspace, user, issue, location):
         raise TimerAlreadyRunning
 
 
-MAX_PARALLEL = 3
-
-
 def start_parallel(workspace, user, issue, location=None):
-    """A second task worked at the same time as the main one. It needs a main task, and has no pauses or check-ins."""
+    """Another task worked at the same time as the main one; there is no limit on how many.
+
+    It needs a main task, and has no pauses or check-ins.
+    """
     main = ActiveTimer.objects.filter(workspace=workspace, user=user, is_parallel=False).first()
     if main is None:
         raise ParseError(detail="Start a main task first.")
-    if ActiveTimer.objects.filter(workspace=workspace, user=user, is_parallel=True).count() >= MAX_PARALLEL:
-        raise ParseError(detail=f"At most {MAX_PARALLEL} parallel tasks.")
     if location and location not in LOCATIONS:
         raise ParseError(detail="Say whether you work on this task remotely or onsite.")
     now = timezone.now()

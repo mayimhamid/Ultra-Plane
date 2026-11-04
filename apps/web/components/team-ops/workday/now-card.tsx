@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Button } from "@makeplane/propel/components/button";
 import { Icon } from "@makeplane/propel/components/icon";
 import { PlayOutline } from "@makeplane/propel/icons";
@@ -23,7 +24,12 @@ type Props = {
   onBreak: (action: "start" | "end") => Promise<void>;
   onCheckIn: () => Promise<void>;
   onFinish: () => void;
+  /** Tasks worked at the same time: the card turns purple and shows them inside, not in a box of their own. */
+  hasParallel?: boolean;
+  children?: ReactNode;
 };
+
+const PURPLE = "#8b5cf6";
 
 /** Seconds since the timer data was read, so the clock moves between refreshes without trusting the computer's time. */
 export const useSecondsSince = (stamp: unknown) => {
@@ -48,7 +54,17 @@ const PLACES: { value: TWorkPlace; label: string }[] = [
 const placeLabel = (place: string) => (place === "ONSITE" ? "Onsite" : place === "REMOTE" ? "Remote" : "");
 
 /** The heart of the page: start a task, work on it, rest, answer "still working?", and finish. */
-export function NowCard({ workspaceSlug, mode, timer, onStart, onBreak, onCheckIn, onFinish }: Props) {
+export function NowCard({
+  workspaceSlug,
+  mode,
+  timer,
+  onStart,
+  onBreak,
+  onCheckIn,
+  onFinish,
+  hasParallel = false,
+  children,
+}: Props) {
   // states
   const [task, setTask] = useState<TPickedTask | null>(null);
   const [place, setPlace] = useState<TWorkPlace | null>(null);
@@ -124,8 +140,10 @@ export function NowCard({ workspaceSlug, mode, timer, onStart, onBreak, onCheckI
     <section
       className={cn(
         "flex flex-col gap-4 rounded-lg border p-5",
-        timer.state === "FROZEN" ? "border-danger-strong bg-danger-subtle" : "border-accent-strong bg-surface-1"
+        timer.state === "FROZEN" ? "border-danger-strong bg-danger-subtle" : "border-accent-strong bg-surface-1",
+        hasParallel && timer.state !== "FROZEN" && "border-2"
       )}
+      style={hasParallel && timer.state !== "FROZEN" ? { borderColor: PURPLE } : undefined}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
@@ -217,6 +235,7 @@ export function NowCard({ workspaceSlug, mode, timer, onStart, onBreak, onCheckI
           Next check-in in {Math.ceil(phase.secondsToDue / 60)} min.
         </p>
       ) : null}
+      {children}
     </section>
   );
 }

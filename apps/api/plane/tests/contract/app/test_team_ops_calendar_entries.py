@@ -70,6 +70,18 @@ def make_entry(workspace, user, day, mode="ONSITE", source="MANUAL", **extra):
     )
 
 
+def confirm_this_week(workspace, user):
+    """Past days of the current week stay open until the week is confirmed; these tests are about after that."""
+    from django.utils import timezone
+
+    from plane.team_ops.models import WeekPlanConfirmation
+    from plane.team_ops.services.workday import week_start_of
+
+    WeekPlanConfirmation.objects.get_or_create(
+        workspace=workspace, user=user, week_start=week_start_of(today()), defaults={"confirmed_at": timezone.now()}
+    )
+
+
 def set_policy(workspace, **fields):
     row, _ = CalendarSettings.objects.get_or_create(workspace=workspace)
     for name, value in fields.items():
@@ -410,7 +422,8 @@ class TestEntryAccess:
 @pytest.mark.contract
 class TestPastDates:
     @pytest.mark.django_db
-    def test_members_cannot_change_the_past_but_can_change_today_and_the_future(self, member_client, workspace):
+    def test_members_cannot_change_the_past_but_can_change_today_and_the_future(self, member_client, workspace, member):
+        confirm_this_week(workspace, member)
         yesterday = today() - timedelta(days=1)
 
         denied = put_day(member_client, workspace, yesterday)
@@ -422,7 +435,8 @@ class TestPastDates:
         assert member_client.delete(entry_url(workspace, yesterday)).status_code == 403
 
     @pytest.mark.django_db
-    def test_the_window_is_configurable_and_admins_have_none(self, member_client, admin_client, workspace):
+    def test_the_window_is_configurable_and_admins_have_none(self, member_client, admin_client, workspace, member):
+        confirm_this_week(workspace, member)
         set_policy(workspace, member_edit_past_days=3)
 
         assert put_day(member_client, workspace, today() - timedelta(days=3)).status_code == 201
@@ -431,6 +445,7 @@ class TestPastDates:
 
     @pytest.mark.django_db
     def test_a_member_cannot_rewrite_the_past_through_a_range(self, member_client, workspace, member):
+        confirm_this_week(workspace, member)
         start = today() - timedelta(days=2)
         old = make_entry(workspace, member, start, "ONSITE")
 
@@ -567,6 +582,7 @@ class TestBulkApply:
 
     @pytest.mark.django_db
     def test_past_days_are_skipped_and_reported(self, member_client, workspace, member):
+        confirm_this_week(workspace, member)
         start = today() - timedelta(days=2)
 
         response = member_client.post(

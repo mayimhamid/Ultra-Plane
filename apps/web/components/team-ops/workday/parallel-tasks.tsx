@@ -27,10 +27,7 @@ type Props = {
 function ParallelRow({ timer, onFinish }: { timer: TWorkdayTimer; onFinish: () => void }) {
   const since = useSecondsSince(timer.server_time);
   return (
-    <li
-      className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-surface-1 px-4 py-3"
-      style={{ borderColor: PURPLE }}
-    >
+    <li className="flex flex-wrap items-center justify-between gap-3 border-t pt-3" style={{ borderColor: PURPLE }}>
       <div className="min-w-0">
         <p className="text-caption-sm-regular" style={{ color: PURPLE }}>
           Parallel
@@ -47,7 +44,7 @@ function ParallelRow({ timer, onFinish }: { timer: TWorkdayTimer; onFinish: () =
   );
 }
 
-/** A second (or third) task worked at the same time as the main one. Its time is counted apart, in purple. */
+/** Tasks worked at the same time as the main one, as many as needed. Each has its own clock, in purple. */
 export function ParallelTasks({ workspaceSlug, defaultPlace, parallel, onStart, onFinish }: Props) {
   const [adding, setAdding] = useState(false);
   const [task, setTask] = useState<TPickedTask | null>(null);
@@ -91,7 +88,7 @@ export function ParallelTasks({ workspaceSlug, defaultPlace, parallel, onStart, 
             <Button variant="secondary" size="md" stretch="auto" label="Cancel" onClick={() => setAdding(false)} />
           </div>
         </div>
-      ) : parallel.length < 3 ? (
+      ) : (
         <button
           type="button"
           className="self-start text-body-sm-medium hover:underline"
@@ -100,7 +97,7 @@ export function ParallelTasks({ workspaceSlug, defaultPlace, parallel, onStart, 
         >
           + Add a parallel task
         </button>
-      ) : null}
+      )}
     </section>
   );
 }

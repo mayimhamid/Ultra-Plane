@@ -208,21 +208,21 @@ class TestCheckIn:
     def test_a_timely_check_in_keeps_the_time(self, member_client, workspace, member, issue):
         set_mode(member_client, workspace, "REMOTE")
         start(member_client, workspace, issue)
-        age({"user": member}, 31)  # due, but inside the grace period
+        age({"user": member}, 61)  # due, but inside the grace period
         assert member_client.get(w(workspace)).data["timer"]["state"] == "RUNNING"
         response = member_client.post(w(workspace, "check-in/"), format="json")
         assert response.data["timer"]["state"] == "RUNNING"
-        assert response.data["timer"]["worked_seconds"] >= 30 * 60
+        assert response.data["timer"]["worked_seconds"] >= 60 * 60
         assert not WorkInterruption.objects.exists()
 
     def test_a_missed_check_in_freezes_from_when_it_fell_due(self, member_client, workspace, member, issue, admin):
         set_mode(member_client, workspace, "REMOTE")
         start(member_client, workspace, issue)
-        age({"user": member}, 50)
+        age({"user": member}, 80)
         timer = member_client.get(w(workspace)).data["timer"]
         assert timer["state"] == "FROZEN"
-        # 50 minutes passed, but the time counted stops at the 30 minute mark
-        assert 29 * 60 <= timer["worked_seconds"] <= 31 * 60
+        # 80 minutes passed, but the time counted stops at the 60 minute mark
+        assert 59 * 60 <= timer["worked_seconds"] <= 61 * 60
         freeze = WorkInterruption.objects.get()
         assert freeze.kind == "FREEZE" and freeze.ended_at is None
         assert OpsNotification.objects.filter(user=admin, kind="FREEZE").count() == 1
@@ -231,14 +231,14 @@ class TestCheckIn:
         make_team(workspace, "Dev", leads=[lead], members=[member])
         set_mode(member_client, workspace, "REMOTE")
         start(member_client, workspace, issue)
-        age({"user": member}, 50)
+        age({"user": member}, 80)
         member_client.get(w(workspace))
         assert OpsNotification.objects.filter(user=lead, kind="FREEZE").exists()
 
     def test_the_manager_is_told_once(self, member_client, workspace, member, issue, admin):
         set_mode(member_client, workspace, "REMOTE")
         start(member_client, workspace, issue)
-        age({"user": member}, 50)
+        age({"user": member}, 80)
         for _ in range(3):
             member_client.get(w(workspace))
         assert OpsNotification.objects.filter(user=admin, kind="FREEZE").count() == 1
@@ -246,7 +246,7 @@ class TestCheckIn:
     def test_checking_in_ends_the_freeze_and_time_counts_again(self, member_client, workspace, member, issue):
         set_mode(member_client, workspace, "REMOTE")
         start(member_client, workspace, issue)
-        age({"user": member}, 50)
+        age({"user": member}, 80)
         member_client.get(w(workspace))
         response = member_client.post(w(workspace, "check-in/"), format="json")
         assert response.data["timer"]["state"] == "RUNNING"
@@ -256,27 +256,27 @@ class TestCheckIn:
     def test_the_freeze_is_recorded_in_the_finished_work(self, member_client, workspace, member, issue):
         set_mode(member_client, workspace, "REMOTE")
         start(member_client, workspace, issue)
-        age({"user": member}, 50)
+        age({"user": member}, 80)
         member_client.get(w(workspace))
         member_client.post(w(workspace, "check-in/"), format="json")
         response = finish(member_client, workspace)
         session = response.data["session"]
         assert response.status_code == status.HTTP_201_CREATED
         assert 19 * 60 <= session["frozen_seconds"] <= 21 * 60
-        assert 29 * 60 <= session["duration_seconds"] <= 31 * 60  # 50 minutes minus the 20 frozen
+        assert 59 * 60 <= session["duration_seconds"] <= 61 * 60  # 80 minutes minus the 20 frozen
         assert session["location"] == "REMOTE"
         assert WorkInterruption.objects.get().session_id == WorkSession.objects.get().id
 
     def test_finishing_while_frozen_does_not_count_the_freeze(self, member_client, workspace, member, issue):
         set_mode(member_client, workspace, "REMOTE")
         start(member_client, workspace, issue)
-        age({"user": member}, 90)
+        age({"user": member}, 120)
         session = finish(member_client, workspace).data["session"]
-        assert 29 * 60 <= session["duration_seconds"] <= 31 * 60
+        assert 59 * 60 <= session["duration_seconds"] <= 61 * 60
         assert session["frozen_seconds"] >= 59 * 60
 
     def test_the_background_job_freezes_without_anyone_looking(self, workspace, member, issue, admin):
-        then = timezone.now() - timedelta(minutes=60)
+        then = timezone.now() - timedelta(minutes=90)
         ActiveTimer.objects.create(
             workspace=workspace, user=member, issue=issue, started_at=then, last_confirmed_at=then, location="REMOTE"
         )
@@ -313,7 +313,7 @@ class TestMonitoringAndNotifications:
     def test_managers_see_who_is_doing_what(self, admin_client, member_client, workspace, member, issue):
         set_mode(member_client, workspace, "REMOTE")
         start(member_client, workspace, issue)
-        age({"user": member}, 50)
+        age({"user": member}, 80)
         rows = {r["user"]["id"]: r for r in admin_client.get(w(workspace, "team/")).data["results"]}
         row = rows[member.id]
         assert row["state"] == "FROZEN" and row["mode"] == "REMOTE" and row["work_item"] == "WD-1"
@@ -324,11 +324,13 @@ class TestMonitoringAndNotifications:
     def test_notifications_list_and_read(self, admin_client, member_client, workspace, member, issue, admin):
         set_mode(member_client, workspace, "REMOTE")
         start(member_client, workspace, issue)
-        age({"user": member}, 50)
+        age({"user": member}, 80)
         member_client.get(w(workspace))
         listing = admin_client.get(url(workspace, "notifications/")).data
         assert listing["unread"] == 1 and listing["results"][0]["kind"] == "FREEZE"
-        assert member_client.get(url(workspace, "notifications/")).data["unread"] == 0  # only your own
+        # each person sees only their own: the member just the note that their timer froze
+        mine = member_client.get(url(workspace, "notifications/")).data
+        assert mine["unread"] == 1 and mine["results"][0]["title"] == "Your timer is frozen"
         admin_client.post(url(workspace, "notifications/"), {}, format="json")
         assert admin_client.get(url(workspace, "notifications/")).data["unread"] == 0
 
@@ -496,3 +498,122 @@ class TestWeekConfirmation:
             {"from": str(timezone.now().date()), "to": str(timezone.now().date())},
         ).data
         assert next(r for r in data["results"] if r["user"]["id"] == member.id)["week_confirmed"] is False
+
+
+@pytest.mark.contract
+class TestDiscardWork:
+    """Cancel: the running work is dropped without saving anything."""
+
+    def discard(self, client, workspace, **body):
+        return client.post(w(workspace, "discard/"), body, format="json")
+
+    def test_cancel_drops_the_timer_and_saves_nothing(self, member_client, workspace, member, issue):
+        from plane.team_ops.models import TimeEntry, WorkReport
+
+        set_mode(member_client, workspace, "REMOTE")
+        start(member_client, workspace, issue)
+        age({"user": member}, 20, confirmed=True)
+        response = self.discard(member_client, workspace)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["timer"] is None
+        assert not ActiveTimer.objects.filter(user=member).exists()
+        assert not TimeEntry.objects.filter(user=member).exists()
+        assert not WorkSession.objects.filter(user=member).exists()
+        assert not WorkReport.objects.filter(user=member).exists()
+
+    def test_breaks_of_the_cancelled_work_do_not_move_to_the_next_one(self, member_client, workspace, member, issue):
+        set_mode(member_client, workspace, "REMOTE")
+        start(member_client, workspace, issue)
+        member_client.post(w(workspace, "break/"), {"action": "start"}, format="json")
+        assert WorkInterruption.objects.filter(user=member).exists()
+        self.discard(member_client, workspace)
+        assert not WorkInterruption.objects.filter(user=member).exists()
+        start(member_client, workspace, issue)
+        assert finish(member_client, workspace).status_code == status.HTTP_201_CREATED
+        assert WorkSession.objects.get(user=member).break_seconds == 0
+
+    def test_a_parallel_task_can_be_cancelled_alone(self, member_client, workspace, member, issue):
+        set_mode(member_client, workspace, "REMOTE")
+        start(member_client, workspace, issue)
+        member_client.post(w(workspace, "parallel/"), {"issue": str(issue.id)}, format="json")
+        parallel = ActiveTimer.objects.get(user=member, is_parallel=True)
+        response = self.discard(member_client, workspace, timer=str(parallel.id))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["parallel"] == []
+        assert response.data["timer"] is not None
+
+    def test_nothing_to_cancel(self, member_client, workspace):
+        assert self.discard(member_client, workspace).status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_someone_elses_parallel_task_cannot_be_cancelled(
+        self, member_client, admin_client, workspace, admin, issue
+    ):
+        set_mode(admin_client, workspace, "REMOTE")
+        start(admin_client, workspace, issue)
+        admin_client.post(w(workspace, "parallel/"), {"issue": str(issue.id)}, format="json")
+        theirs = ActiveTimer.objects.get(user=admin, is_parallel=True)
+        response = self.discard(member_client, workspace, timer=str(theirs.id))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert ActiveTimer.objects.filter(pk=theirs.pk).exists()
+
+    def test_guests_cannot_cancel(self, guest_client, workspace):
+        assert self.discard(guest_client, workspace).status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.contract
+class TestRoundSeven:
+    """Check-in every hour, any number of parallel tasks, the person hears about their own freeze, and past days
+    of an unconfirmed week can still be planned."""
+
+    def test_no_check_in_before_an_hour(self, member_client, workspace, member, issue):
+        set_mode(member_client, workspace, "REMOTE")
+        start(member_client, workspace, issue)
+        age({"user": member}, 50)
+        assert member_client.get(w(workspace)).data["timer"]["state"] == "RUNNING"
+
+    def test_the_person_is_told_their_timer_froze(self, member_client, workspace, member, issue):
+        set_mode(member_client, workspace, "REMOTE")
+        start(member_client, workspace, issue)
+        age({"user": member}, 80)
+        member_client.get(w(workspace))
+        own = OpsNotification.objects.get(user=member, kind="FREEZE")
+        assert own.title == "Your timer is frozen" and own.actor_id is None
+
+    def test_any_number_of_parallel_tasks(self, member_client, workspace, member, issue):
+        set_mode(member_client, workspace, "REMOTE")
+        start(member_client, workspace, issue)
+        for _ in range(6):
+            response = member_client.post(w(workspace, "parallel/"), {"issue": str(issue.id)}, format="json")
+            assert response.status_code == status.HTTP_201_CREATED
+        assert ActiveTimer.objects.filter(user=member, is_parallel=True).count() == 6
+
+    def _past_day_of_week(self):
+        today = timezone.now().date()
+        start_day = week_start_of(today)
+        return start_day if start_day < today else None
+
+    def _put(self, client, workspace, day):
+        return client.put(
+            url(workspace, f"calendar/entries/{day.isoformat()}/"), {"work_mode": "ONSITE"}, format="json"
+        )
+
+    def test_a_missed_day_of_an_unconfirmed_week_can_be_planned(self, member_client, workspace, member):
+        day = self._past_day_of_week()
+        if day is None:
+            pytest.skip("Today is the first day of the week.")
+        WeekPlanConfirmation.objects.filter(user=member).delete()
+        CalendarEntry.objects.filter(user=member, work_date=day).delete()
+        response = self._put(member_client, workspace, day)
+        assert response.status_code in (status.HTTP_200_OK, status.HTTP_201_CREATED), response.data
+        assert CalendarEntry.objects.get(user=member, work_date=day).work_mode == "ONSITE"
+
+    def test_after_confirming_the_past_days_are_closed_again(self, member_client, workspace, member):
+        day = self._past_day_of_week()
+        if day is None:
+            pytest.skip("Today is the first day of the week.")
+        assert self._put(member_client, workspace, day).status_code == status.HTTP_403_FORBIDDEN
+
+    def test_days_before_this_week_stay_closed(self, member_client, workspace, member):
+        WeekPlanConfirmation.objects.filter(user=member).delete()
+        day = week_start_of(timezone.now().date()) - timedelta(days=1)
+        assert self._put(member_client, workspace, day).status_code == status.HTTP_403_FORBIDDEN

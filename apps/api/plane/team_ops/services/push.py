@@ -13,6 +13,7 @@ Without them the feature is off and nothing is sent.
 import json
 import logging
 import os
+from urllib.parse import urlparse
 
 # Django imports
 from django.utils import timezone
@@ -37,7 +38,18 @@ def is_enabled():
 
 
 def _subject():
-    return os.environ.get("TEAM_OPS_VAPID_SUBJECT", "").strip() or "mailto:admin@localhost"
+    """The VAPID `sub` claim. The push library accepts only `mailto:<email>` or `https://<host>` (no port, no
+    path), and refuses every send otherwise, so a site address such as `https://host:4433/` is cut down to
+    `https://host` and a bare email gets `mailto:`."""
+    value = os.environ.get("TEAM_OPS_VAPID_SUBJECT", "").strip().strip("\"'")
+    if not value:
+        return "mailto:admin@localhost"
+    if value.lower().startswith("mailto:"):
+        return value
+    if "@" in value and "://" not in value:
+        return f"mailto:{value}"
+    host = urlparse(value if "://" in value else f"https://{value}").hostname
+    return f"https://{host}" if host else "mailto:admin@localhost"
 
 
 def url_of(workspace, link):
@@ -89,9 +101,15 @@ def _send(subscription, data):
             subscription.save(update_fields=["failures", "updated_at"])
         logger.warning("Team Ops push failed (%s) for subscription %s", status, subscription.id)
         return False
-    except Exception:
+    except Exception as error:
         # the push service could not be reached: not the device fault, so keep it and try the next one
-        logger.warning("Team Ops push could not reach the push service for subscription %s", subscription.id)
+        logger.warning(
+            "Team Ops push could not reach the push service %s for subscription %s: %s: %s",
+            subscription.endpoint.split("/")[2] if "://" in subscription.endpoint else "?",
+            subscription.id,
+            type(error).__name__,
+            str(error)[:300],
+        )
         return False
     subscription.failures = 0
     subscription.last_success_at = timezone.now()

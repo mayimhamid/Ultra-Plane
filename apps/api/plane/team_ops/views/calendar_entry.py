@@ -88,7 +88,7 @@ class CalendarEntryDetailEndpoint(BaseAPIView):
         target, error = _target(request, access, workspace, data.get("user"), edit=True)
         if error:
             return error
-        if not access.can_edit_date(day):
+        if not access.can_edit_date(day, target.id):
             return _past_date(access)
 
         result = set_days(
@@ -111,7 +111,7 @@ class CalendarEntryDetailEndpoint(BaseAPIView):
         target, error = _target(request, access, workspace, request.query_params.get("user"), edit=True)
         if error:
             return error
-        if not access.can_edit_date(day):
+        if not access.can_edit_date(day, target.id):
             return _past_date(access)
 
         if not reset_day(workspace=workspace, user=target, day=day, changed_by=request.user):
@@ -134,7 +134,7 @@ class CalendarEntryBulkEndpoint(BaseAPIView):
         if error:
             return error
 
-        editable = [day for day in data["days"] if access.can_edit_date(day)]
+        editable = [day for day in data["days"] if access.can_edit_date(day, target.id)]
         skipped = [day for day in data["days"] if day not in editable]
         if not editable:
             return _past_date(access, skipped)

@@ -190,6 +190,15 @@ export class WorkdayService extends APIService {
       });
   }
 
+  /** Cancels the running work without saving it; `timer` names a parallel task, otherwise the main one. */
+  async discardWork(workspaceSlug: string, timer?: string): Promise<TWorkdayState> {
+    return this.post(`${this.base(workspaceSlug)}/workday/discard/`, timer ? { timer } : {})
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
   /** "Yes, I am still working." Also ends a freeze. */
   async checkIn(workspaceSlug: string): Promise<TWorkdayState> {
     return this.post(`${this.base(workspaceSlug)}/workday/check-in/`, {})

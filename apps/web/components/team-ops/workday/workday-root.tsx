@@ -161,7 +161,8 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
   const checkIn = async () => {
     await day.checkIn().catch(fail("Could not confirm"));
   };
-  const finish = async (payload: TFinishWorkPayload) => {
+  /** `true` when the work was saved; on failure the panel stays open so the report is not lost. */
+  const finish = async (payload: TFinishWorkPayload): Promise<boolean> => {
     try {
       const { capped } = await daily.finishWork(payload);
       await everything();
@@ -171,8 +172,23 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
         title: "Work finished",
         message: capped ? "The timer ran for more than a day, so one day was logged." : "It is in today's report.",
       });
+      return true;
     } catch (error) {
       fail("Could not finish")(error);
+      return false;
+    }
+  };
+
+  // Cancel: the timer stops and nothing is saved. `timer` names a parallel task.
+  const discard = async (timerId?: string) => {
+    try {
+      await day.discardWork(timerId);
+      await everything();
+      if (timerId) setParallelFinishing(null);
+      else setIsFinishing(false);
+      setToast({ type: "success", title: "Work cancelled", message: "The timer stopped and nothing was saved." });
+    } catch (error) {
+      fail("Could not cancel")(error);
     }
   };
 
@@ -230,6 +246,7 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
           people={(people ?? []).filter((person) => person.id !== currentUser?.id)}
           onFinish={finish}
           onCancel={() => setIsFinishing(false)}
+          onDiscard={() => discard()}
         />
       ) : null}
 
@@ -240,32 +257,24 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
           teams={teams ?? []}
           people={(people ?? []).filter((person) => person.id !== currentUser?.id)}
           onFinish={async (payload) => {
-            await finish({ ...payload, timer: parallelFinishing.id });
-            setParallelFinishing(null);
+            if (await finish({ ...payload, timer: parallelFinishing.id })) setParallelFinishing(null);
           }}
           onCancel={() => setParallelFinishing(null)}
+          onDiscard={() => discard(parallelFinishing.id)}
         />
       ) : null}
 
       {mode && !(timer && isFinishing) ? (
-        <div
-          className={cn("flex flex-col gap-3", parallelActive && "rounded-xl border-2 p-3")}
-          style={parallelActive ? { borderColor: "#8b5cf6" } : undefined}
+        <NowCard
+          workspaceSlug={workspaceSlug}
+          mode={mode}
+          timer={timer}
+          onStart={start}
+          onBreak={rest}
+          onCheckIn={checkIn}
+          onFinish={() => setIsFinishing(true)}
+          hasParallel={parallelActive}
         >
-          {parallelActive ? (
-            <p className="px-1 text-body-sm-medium" style={{ color: "#8b5cf6" }}>
-              {1 + (state?.parallel.length ?? 0)} tasks at the same time. Each has its own clock.
-            </p>
-          ) : null}
-          <NowCard
-            workspaceSlug={workspaceSlug}
-            mode={mode}
-            timer={timer}
-            onStart={start}
-            onBreak={rest}
-            onCheckIn={checkIn}
-            onFinish={() => setIsFinishing(true)}
-          />
           {timer && !parallelFinishing ? (
             <ParallelTasks
               workspaceSlug={workspaceSlug}
@@ -277,7 +286,7 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
               onFinish={setParallelFinishing}
             />
           ) : null}
-        </div>
+        </NowCard>
       ) : null}
 
       {mode ? (

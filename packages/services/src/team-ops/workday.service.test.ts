@@ -126,3 +126,23 @@ describe("WorkdayService tasks", () => {
     expect(get).toHaveBeenCalledWith(`${BASE}/projects/p1/modules/m1/relations/`);
   });
 });
+
+describe("WorkdayService discardWork", () => {
+  it("cancels the main task without a body, and a parallel one by its timer", async () => {
+    const service = new WorkdayService("http://api.test");
+    const post = vi.spyOn(service, "post").mockResolvedValue({ data: { timer: null, parallel: [] } } as never);
+
+    await expect(service.discardWork("acme")).resolves.toEqual({ timer: null, parallel: [] });
+    expect(post).toHaveBeenLastCalledWith(`${BASE}/workday/discard/`, {});
+
+    await service.discardWork("acme", "t1");
+    expect(post).toHaveBeenLastCalledWith(`${BASE}/workday/discard/`, { timer: "t1" });
+  });
+
+  it("passes the server's error on", async () => {
+    const service = new WorkdayService("http://api.test");
+    vi.spyOn(service, "post").mockRejectedValue({ response: { data: { error: "No timer is running." } } });
+
+    await expect(service.discardWork("acme")).rejects.toEqual({ error: "No timer is running." });
+  });
+});

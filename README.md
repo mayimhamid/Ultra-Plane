@@ -12,7 +12,7 @@ own Django app (`plane.team_ops`, tables `tops_*`) so the core stays intact and 
 
 | Area | What it does |
 | --- | --- |
-| **Workday** | One page for the day: Onsite or Remote (hybrid is worked out by itself), a required weekly plan that is confirmed and locked, a timer on a work item with a rest pause, a 30-minute "still working?" check-in, parallel tasks, a finish report with a document or an explicit "no document", attention tags to teams and people, and a contribution graph. |
+| **Workday** | One page for the day: Onsite or Remote (hybrid is worked out by itself), a required weekly plan that is confirmed and locked, a timer on a work item with a rest pause, a 60-minute "still working?" check-in, any number of parallel tasks, a finish report with a document or an explicit "no document", attention tags to teams and people, and a contribution graph. |
 | **Time and calendar** | Time tracking per work item, a work calendar with teams and holidays, weekly work reports, leave requests and Teamspaces. |
 | **Hub** | News, a General channel, team and project channels, private messages, a Doc Hub (documents of a project are kept as Plane Pages), a Files library and encrypted Secrets with an access log. |
 | **Teamflow** | A flow is an optional part of a project, split into phases. Each phase holds modules; its progress is the progress of its modules. Hand-offs between teams are tracked and shown as a chart. |

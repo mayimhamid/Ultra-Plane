@@ -341,6 +341,37 @@ class TestHubMessages:
         )
         assert across.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_a_reply_tells_the_author_of_the_message(self, member_client, workspace, member, colleague, project):
+        from plane.team_ops.models import OpsNotification
+
+        wd = self._channel(member_client, workspace, "WD")
+        root = member_client.post(url(workspace, f"hub/channels/{wd}/messages/"), {"body": "root"}, format="json").data
+        other = make_client(colleague)
+        other.post(
+            url(workspace, f"hub/channels/{wd}/messages/"), {"body": "ok", "parent": str(root["id"])}, format="json"
+        )
+        told = OpsNotification.objects.get(user=member)
+        assert told.kind == "REPLY" and "replied to you" in told.title
+        # replying to yourself tells no one
+        member_client.post(
+            url(workspace, f"hub/channels/{wd}/messages/"), {"body": "me", "parent": str(root["id"])}, format="json"
+        )
+        assert OpsNotification.objects.count() == 1
+
+    def test_a_reply_that_also_tags_the_author_tells_them_once(
+        self, member_client, workspace, member, colleague, project
+    ):
+        from plane.team_ops.models import OpsNotification
+
+        wd = self._channel(member_client, workspace, "WD")
+        root = member_client.post(url(workspace, f"hub/channels/{wd}/messages/"), {"body": "root"}, format="json").data
+        make_client(colleague).post(
+            url(workspace, f"hub/channels/{wd}/messages/"),
+            {"body": "@member ok", "parent": str(root["id"]), "users": [str(member.id)]},
+            format="json",
+        )
+        assert list(OpsNotification.objects.filter(user=member).values_list("kind", flat=True)) == ["MENTION"]
+
     def test_an_empty_message_is_rejected(self, member_client, workspace, project):
         channel_id = self._channel(member_client, workspace, "WD")
         response = member_client.post(

@@ -153,19 +153,6 @@ class TestParallelTasks:
         states = dict(ActiveTimer.objects.values_list("is_parallel", "state"))
         assert states == {False: "FROZEN", True: "RUNNING"}
 
-    def test_at_most_three(self, member_client, workspace, issues):
-        day(member_client, workspace)
-        start(member_client, workspace, issues[0])
-        for _ in range(3):
-            assert (
-                member_client.post(w(workspace, "parallel/"), {"issue": str(issues[1].id)}, format="json").status_code
-                == 201
-            )
-        assert (
-            member_client.post(w(workspace, "parallel/"), {"issue": str(issues[1].id)}, format="json").status_code
-            == 400
-        )
-
     def test_someone_elses_timer_cannot_be_finished(self, member_client, workspace, colleague, issues):
         day(member_client, workspace)
         start(member_client, workspace, issues[0])

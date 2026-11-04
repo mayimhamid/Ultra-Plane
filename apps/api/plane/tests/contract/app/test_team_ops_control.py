@@ -87,7 +87,7 @@ class TestTeamControl:
         assert data["totals"]["seconds"] == 7200
 
     def test_freezes_and_pauses_are_counted(self, admin_client, workspace, member, issue):
-        then = timezone.now() - timedelta(minutes=60)
+        then = timezone.now() - timedelta(minutes=90)
         ActiveTimer.objects.create(
             workspace=workspace, user=member, issue=issue, started_at=then, last_confirmed_at=then, location="REMOTE"
         )
@@ -147,7 +147,7 @@ class TestTeamControl:
         assert admin_client.get(c(workspace, "team/"), {"from": "2020-01-01", "to": "2026-01-01"}).status_code == 400
 
     def test_interruption_history(self, admin_client, workspace, member, issue, lead_client):
-        then = timezone.now() - timedelta(minutes=60)
+        then = timezone.now() - timedelta(minutes=90)
         ActiveTimer.objects.create(
             workspace=workspace, user=member, issue=issue, started_at=then, last_confirmed_at=then
         )
