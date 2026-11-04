@@ -223,7 +223,7 @@ class HubAttachmentDownloadEndpoint(BaseAPIView):
             if session.user_id != request.user.id and not access.can_view_user(session.user_id):
                 if not hub.is_member(same_project, request.user):
                     raise NotFound("File not found.")
-        url = hub_files.download_url(attachment)
+        url = hub_files.download_url(attachment, request=request)
         if not url:
             raise ParseError(detail="The file is not available.")
         return Response({"url": url, "name": attachment.name, "expires_in": hub_files.DOWNLOAD_LINK_SECONDS})

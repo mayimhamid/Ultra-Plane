@@ -13,12 +13,15 @@ import mimetypes
 import os
 import re
 import uuid
+from types import SimpleNamespace
+from urllib.parse import urlparse
 
 # Third party imports
 from rest_framework.exceptions import ParseError
 
 # Module imports
 from plane.team_ops.models import HubAttachment
+from plane.utils.host import request_origin
 
 MAX_UPLOAD_BYTES = int(os.environ.get("TEAM_OPS_MAX_UPLOAD_BYTES", 20 * 1024 * 1024))
 MAX_FILES_PER_MESSAGE = 10
@@ -82,11 +85,29 @@ SIGNATURES = {
 }
 
 
-def get_storage():
-    """The object storage client. Separate so tests can replace it."""
+def get_storage(request=None):
+    """The object storage client. Separate so tests can replace it.
+
+    With a `request` (MinIO only) links are signed for the address the person is using, and the proxy in front of
+    Plane sends them on to the storage. Without one they are signed for the storage's own internal address, which
+    is fine for the server itself and useless in a browser.
+    """
     from plane.settings.storage import S3Storage
 
-    return S3Storage()
+    return S3Storage(request=request)
+
+
+def public_request(request):
+    """What `S3Storage` needs to sign a link for the address the person is on: its scheme and host.
+
+    When that address is one of the site's configured origins its own scheme is used, so a proxy that hands the
+    request over as plain http cannot turn the link into an http one.
+    """
+    origin = request_origin(request)
+    if origin:
+        parsed = urlparse(origin)
+        return SimpleNamespace(scheme=parsed.scheme, get_host=lambda: parsed.netloc)
+    return request
 
 
 def clean_name(name):
@@ -164,9 +185,13 @@ def store_attachment(*, workspace, user, upload, message=None, session=None, lib
     )
 
 
-def download_url(attachment):
-    """A signed link that works for a few minutes. Images may show inline; everything else downloads."""
-    return get_storage().generate_presigned_url(
+def download_url(attachment, request=None):
+    """A signed link that works for a few minutes. Images may show inline; everything else downloads.
+
+    Pass the `request` so the link points at the address the person opened the site on.
+    """
+    storage = get_storage(public_request(request)) if request is not None else get_storage()
+    return storage.generate_presigned_url(
         attachment.storage_key,
         expiration=DOWNLOAD_LINK_SECONDS,
         disposition="inline" if attachment.content_type.startswith("image/") else "attachment",
