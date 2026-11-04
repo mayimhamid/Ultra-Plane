@@ -9,7 +9,7 @@ import { observer } from "mobx-react";
 import { useTranslation } from "@plane/i18n";
 // components
 import { PageHead } from "@/components/core/page-title";
-import { TeamNotificationsStrip } from "@/components/team-ops/notifications";
+import { PushPrompt } from "@/components/team-ops/notifications/push-prompt";
 import { NotificationsRoot } from "@/components/workspace-notifications";
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
@@ -30,7 +30,7 @@ function WorkspaceDashboardPage({ params }: Route.ComponentProps) {
     <>
       <PageHead title={pageTitle} />
       <div className="flex h-full min-h-0 flex-col">
-        <TeamNotificationsStrip workspaceSlug={workspaceSlug} />
+        <PushPrompt workspaceSlug={workspaceSlug} mode="settings" />
         <div className="min-h-0 flex-1">
           <NotificationsRoot workspaceSlug={workspaceSlug} />
         </div>

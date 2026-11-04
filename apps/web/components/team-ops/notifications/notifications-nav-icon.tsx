@@ -11,6 +11,7 @@ import { InboxOutline } from "@makeplane/propel/icons";
 import { cn } from "@plane/utils";
 // hooks
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
+import { useHubChannels } from "@/hooks/team-ops/use-hub";
 import { useOpsUnread } from "@/hooks/team-ops/use-ops-unread";
 
 /** The Notifications item of the sidebar: Plane's and Team Ops' unread notifications as one red dot. */
@@ -22,10 +23,14 @@ export const NotificationsNavIcon = observer(function NotificationsNavIcon({ cla
     workspaceSlug ? () => getUnreadNotificationsCount(workspaceSlug.toString()) : null
   );
   const opsUnread = useOpsUnread(workspaceSlug?.toString());
+  const { channels, unreadMentions } = useHubChannels(workspaceSlug?.toString() ?? "");
+  const hubUnread = (channels ?? []).reduce((sum, channel) => sum + (channel.unread || 0), 0) + unreadMentions;
   const total =
+    hubUnread +
     (unreadNotificationsCount.mention_unread_notifications_count > 0
       ? unreadNotificationsCount.mention_unread_notifications_count
-      : unreadNotificationsCount.total_unread_notifications_count) + opsUnread;
+      : unreadNotificationsCount.total_unread_notifications_count) +
+    opsUnread;
   return (
     <span className="relative inline-flex">
       <InboxOutline className={cn("size-4 flex-shrink-0", className)} />

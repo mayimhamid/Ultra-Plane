@@ -137,7 +137,11 @@ export const IssuesHeader = observer(function IssuesHeader() {
               toggleCreateIssueModal(true, EIssuesStoreType.PROJECT);
             }}
           >
-            <div className="block sm:hidden">{t("issue.label", { count: 1 })}</div>
+            {/* Phones: a "+" so the header fits next to Import. */}
+            <div className="block px-1 text-16 sm:hidden" aria-hidden>
+              +
+            </div>
+            <span className="sr-only sm:hidden">{t("issue.add.label")}</span>
             <div className="hidden sm:block">{t("issue.add.label")}</div>
           </Button>
         )}

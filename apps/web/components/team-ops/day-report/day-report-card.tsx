@@ -408,7 +408,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
 
               <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
                 {row.spread ? (
-                  <label className="flex w-28 flex-col gap-0.5">
+                  <label className="flex min-w-32 flex-1 flex-col gap-0.5 sm:max-w-40 sm:flex-none">
                     <span className="text-caption-sm-medium text-tertiary">How long</span>
                     <input
                       type="text"
@@ -427,7 +427,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
                   </label>
                 ) : (
                   <>
-                    <label className="flex w-28 flex-col gap-0.5">
+                    <label className="flex min-w-32 flex-1 flex-col gap-0.5 sm:max-w-40 sm:flex-none">
                       <span className="text-caption-sm-medium text-tertiary">From</span>
                       <input
                         type="time"
@@ -438,7 +438,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
                         className={cn(field, "border-subtle")}
                       />
                     </label>
-                    <label className="flex w-28 flex-col gap-0.5">
+                    <label className="flex min-w-32 flex-1 flex-col gap-0.5 sm:max-w-40 sm:flex-none">
                       <span className="text-caption-sm-medium text-tertiary">To</span>
                       <input
                         type="time"

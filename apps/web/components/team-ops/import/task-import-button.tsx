@@ -56,7 +56,7 @@ function Panel({ title, onClose, children }: { title: string; onClose: () => voi
 
 /** "Import" (a JSON or CSV file, checked and previewed before anything is created) and the AI prompt builder. */
 export function TaskImportButtons({ workspaceSlug, target, projectId, userId, personName, onDone }: Props) {
-  const [open, setOpen] = useState<"import" | "prompt" | "help" | null>(null);
+  const [open, setOpen] = useState<"import" | "prompt" | "help" | "choose" | null>(null);
   const [items, setItems] = useState<TImportItem[] | null>(null);
   const [rows, setRows] = useState<TImportRow[]>([]);
   const [ok, setOk] = useState(false);
@@ -141,7 +141,38 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
 
   return (
     <>
-      <div className="flex gap-1">
+      {/* Phones: one button that offers the three (the header has no room for three). */}
+      <button
+        type="button"
+        disabled={disabled}
+        aria-label="Import tasks"
+        onClick={() => setOpen("choose")}
+        className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-subtle text-secondary hover:bg-layer-1 disabled:opacity-50 sm:hidden"
+      >
+        <FileUp className="size-4" aria-hidden />
+      </button>
+      {open === "choose" ? (
+        <Panel title="Add many tasks" onClose={close}>
+          <div className="flex flex-col gap-2">
+            {[
+              { key: "import" as const, icon: FileUp, label: "Import a file or an AI answer", color: "#2563eb" },
+              { key: "prompt" as const, icon: Brain, label: "Build a prompt for ChatGPT or Claude", color: "#9333ea" },
+              { key: "help" as const, icon: CircleHelp, label: "How it works", color: "#64748b" },
+            ].map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setOpen(item.key)}
+                className="flex min-h-12 items-center gap-3 rounded-lg border border-subtle px-3 text-left text-body-sm-medium text-primary hover:bg-layer-1"
+              >
+                <item.icon className="size-5" style={{ color: item.color }} aria-hidden />
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </Panel>
+      ) : null}
+      <div className="hidden gap-1 sm:flex">
         <button
           type="button"
           disabled={disabled}

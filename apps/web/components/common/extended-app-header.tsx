@@ -27,6 +27,12 @@ export const ExtendedAppHeader = observer(function ExtendedAppHeader(props: { he
   return (
     <>
       {sidebarCollapsed && shouldShowSidebarToggleButton && <AppSidebarToggleButton />}
+      {/* Phones always get the sidebar button: without it there is no way to reach the menu there. */}
+      {sidebarCollapsed && !shouldShowSidebarToggleButton && (
+        <div className="md:hidden">
+          <AppSidebarToggleButton />
+        </div>
+      )}
       <div className="w-full">{header}</div>
     </>
   );

@@ -24,6 +24,7 @@ import { AppliedFilters } from "./filters/applied-filter";
 import { NotificationSidebarHeader } from "./header";
 import { NotificationsLoader } from "./loader";
 import { NotificationCardListRoot } from "../notification-card/root";
+import { HubNotifications } from "@/components/team-ops/notifications/hub-notifications";
 
 export const NotificationsSidebarRoot = observer(function NotificationsSidebarRoot() {
   const { workspaceSlug } = useParams();
@@ -58,7 +59,7 @@ export const NotificationsSidebarRoot = observer(function NotificationsSidebarRo
     <div
       className={cn(
         "relative z-[10] h-full flex-shrink-0 border-0 border-subtle bg-surface-1 transition-all max-md:overflow-hidden md:border-r",
-        currentSelectedNotificationId ? "w-0 md:w-3/12" : "w-full md:w-3/12"
+        currentSelectedNotificationId ? "w-0 md:w-[22rem]" : "w-full md:w-[22rem]"
       )}
     >
       <div className="relative flex h-full w-full flex-col">
@@ -94,6 +95,11 @@ export const NotificationsSidebarRoot = observer(function NotificationsSidebarRo
             </div>
           ))}
         </Header>
+
+        {/* Team Ops: the Hub and the team notifications sit at the top of the list. */}
+        <div className="max-h-[45%] flex-shrink-0 overflow-y-auto overscroll-contain">
+          <HubNotifications workspaceSlug={workspaceSlug.toString()} />
+        </div>
 
         {/* applied filters */}
         <AppliedFilters workspaceSlug={workspaceSlug.toString()} />

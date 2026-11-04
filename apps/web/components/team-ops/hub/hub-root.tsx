@@ -256,6 +256,7 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
             <SelectField
               size="lg"
               label="New message"
+              hint="Choose a person to start a private chat"
               options={(people ?? []).map((person) => ({ value: person.id, label: person.display_name }))}
               value={undefined}
               onValueChange={(value) => void startDirect(value)}

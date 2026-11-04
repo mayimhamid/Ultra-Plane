@@ -166,10 +166,11 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
       <nav aria-label="Choose the day" className="flex flex-wrap items-center gap-2">
         <button
           type="button"
+          aria-label="Previous day"
           onClick={() => goTo(shift(date, -1))}
           className="min-h-10 rounded-md border border-subtle px-3 text-body-sm-medium text-secondary hover:bg-layer-1"
         >
-          ← Previous day
+          ←<span className="hidden sm:inline"> Previous day</span>
         </button>
         <input
           type="date"
@@ -177,15 +178,16 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
           max={today}
           aria-label="Day"
           onChange={(event) => event.target.value && goTo(event.target.value)}
-          className="h-10 rounded-md border border-subtle bg-layer-1 px-3 text-body-sm-regular text-primary"
+          className="h-10 min-w-0 flex-1 rounded-md border border-subtle bg-layer-1 px-3 text-body-sm-regular text-primary sm:flex-none"
         />
         <button
           type="button"
           disabled={date >= today}
           onClick={() => goTo(shift(date, 1))}
+          aria-label="Next day"
           className="min-h-10 rounded-md border border-subtle px-3 text-body-sm-medium text-secondary hover:bg-layer-1 disabled:opacity-40"
         >
-          Next day →
+          <span className="hidden sm:inline">Next day </span>→
         </button>
         {date !== today ? (
           <button

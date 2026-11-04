@@ -13,6 +13,8 @@ import { Breadcrumbs } from "@plane/blocks/breadcrumb";
 import { Header } from "@plane/blocks/layout";
 // components
 import { BreadcrumbLink } from "@/components/common/breadcrumb-link";
+import { AppSidebarToggleButton } from "@/components/sidebar/sidebar-toggle-button";
+import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useAppRouter } from "@/hooks/use-app-router";
 // local imports
 import { NotificationSidebarHeaderOptions } from "./options";
@@ -27,11 +29,13 @@ export const NotificationSidebarHeader = observer(function NotificationSidebarHe
   const { workspaceSlug } = props;
   const { t } = useTranslation();
   const router = useAppRouter();
+  const { sidebarCollapsed } = useAppTheme();
 
   if (!workspaceSlug) return <></>;
   return (
     <Header className="my-auto bg-surface-1">
       <Header.LeftItem>
+        {sidebarCollapsed ? <AppSidebarToggleButton /> : null}
         {/* Phones show the inbox full screen: a way back to where the person came from. */}
         <button
           type="button"
