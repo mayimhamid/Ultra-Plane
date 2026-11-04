@@ -306,7 +306,6 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
 
   // Scrolling: the newest message stays in view while reading the end; reading older ones is not disturbed.
   const scroller = useRef<HTMLDivElement>(null);
-  const top = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const olderAnchor = useRef<{ height: number; top: number } | null>(null);
   const lastMessage = hub.messages?.[hub.messages.length - 1];
@@ -331,25 +330,20 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
     olderAnchor.current = null;
   }, [firstId]);
 
-  // Older messages load when the reader scrolls to the top, one page at a time.
-  const { hasMore, loadOlder } = hub;
-  useEffect(() => {
-    const box = scroller.current;
-    const sentinel = top.current;
-    if (!box || !sentinel || !hasMore) return;
-    const watcher = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        olderAnchor.current = { height: box.scrollHeight, top: box.scrollTop };
-        void loadOlder().catch(() => {
-          olderAnchor.current = null;
-        });
-      },
-      { root: box, rootMargin: "200px 0px 0px 0px" }
-    );
-    watcher.observe(sentinel);
-    return () => watcher.disconnect();
-  }, [hasMore, loadOlder]);
+  // Older messages load when the reader scrolls near the top, one page at a time.
+  const loadOlderIfAtTop = (box: HTMLDivElement) => {
+    if (box.scrollTop > 200 || !hub.hasMore || hub.isLoadingOlder || olderAnchor.current) return;
+    olderAnchor.current = { height: box.scrollHeight, top: box.scrollTop };
+    void hub
+      .loadOlder()
+      .then((added) => {
+        if (!added) olderAnchor.current = null;
+        return added;
+      })
+      .catch(() => {
+        olderAnchor.current = null;
+      });
+  };
 
   const people = (hub.channel?.members ?? []).filter((person) => person.id !== currentUser?.id);
   const projects = joinedProjectIds
@@ -517,11 +511,11 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
         onScroll={(event) => {
           const box = event.currentTarget;
           nearBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+          loadOlderIfAtTop(box);
         }}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3"
         aria-live="polite"
       >
-        <div ref={top} aria-hidden className="h-px" />
         {hub.hasMore ? (
           <p className="py-2 text-center text-caption-sm-regular text-tertiary">
             {hub.isLoadingOlder ? "Loading older messages..." : "Scroll up for older messages"}

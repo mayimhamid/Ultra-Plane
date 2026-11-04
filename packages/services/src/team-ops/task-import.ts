@@ -112,9 +112,10 @@ export const buildImportPrompt = (options: {
           '- "start_date" and "due_date" (YYYY-MM-DD, optional).',
           '- "priority": one of "urgent", "high", "medium", "low", "none".',
           `- "assignees": a list of emails, only from: ${quote(context.people.map((p) => `${p.email} (${p.display_name})`))}.`,
-          `- "module" (optional): exactly one of ${quote(context.modules)}.`,
-          `- "state" (optional): exactly one of ${quote(context.states)}.`,
-          `- "labels" (optional list): only from ${quote(context.labels)}.`,
+          // Only the lists the project has; an empty one would only confuse the assistant.
+          ...(context.modules.length ? [`- "module" (optional): exactly one of ${quote(context.modules)}.`] : []),
+          ...(context.states.length ? [`- "state" (optional): exactly one of ${quote(context.states)}.`] : []),
+          ...(context.labels.length ? [`- "labels" (optional list): only from ${quote(context.labels)}.`] : []),
         ];
   const where =
     target === "micro"
