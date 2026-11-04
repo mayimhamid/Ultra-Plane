@@ -1,0 +1,98 @@
+/*
+ * Touch screens (phones, tablets, the installed app). Plane's screens were drawn for a mouse: small rows,
+ * actions that only appear on hover, and text fields that make iOS zoom in. These rules change sizes and
+ * visibility only; every button and menu stays where it is.
+ */
+
+html {
+  /* No 300 ms tap delay and no double-tap zoom on buttons. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (pointer: coarse) {
+  /* iOS zooms the whole page into any text field under 16px, and stays zoomed. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  /* Rows of menus, dropdowns and pickers big enough for a finger. */
+  [role="option"],
+  [role="menuitem"],
+  [role="menuitemradio"],
+  [role="menuitemcheckbox"],
+  [cmdk-item] {
+    min-height: 40px;
+  }
+
+  /* Actions that a mouse reveals by hovering are always shown: a finger cannot hover. */
+  [class*="group-hover:opacity-100"],
+  [class*="group-hover/"][class*=":opacity-100"] {
+    opacity: 1 !important;
+  }
+  [class*="group-hover:visible"] {
+    visibility: visible !important;
+  }
+  [class*="group-hover:flex"] {
+    display: flex !important;
+  }
+  [class*="group-hover:inline-flex"] {
+    display: inline-flex !important;
+  }
+  [class*="group-hover:block"] {
+    display: block !important;
+  }
+  [class*="group-hover:pointer-events-auto"] {
+    pointer-events: auto !important;
+  }
+}
+
+@media (pointer: coarse) and (max-width: 767px) {
+  /* Popovers and dropdown panels never run off the side of a phone screen. */
+  [data-headlessui-state] > [role="listbox"],
+  [role="menu"],
+  [role="dialog"]:not([aria-modal="true"]) {
+    max-width: calc(100vw - 16px);
+  }
+
+  /* Wide tables and boards scroll smoothly sideways instead of jamming the page. */
+  .overflow-x-auto,
+  .overflow-auto,
+  .horizontal-scrollbar {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+}
+
+@media (pointer: coarse) {
+  /* The State, Priority, Dates, Assignees... chips on work items in lists and boards. */
+  .touch-properties {
+    row-gap: 8px;
+  }
+  .touch-properties .h-5 {
+    height: 32px;
+  }
+  .touch-properties button {
+    min-height: 32px;
+    padding-inline: 8px;
+  }
+}
+
+/* In the utilities layer: Plane's utility classes there (left-1/2, -translate-x-1/2, w-[574px]) win otherwise. */
+@layer utilities {
+  @media (max-width: 639px) {
+    /* The command search opens across the phone screen, not as a wide panel centred on the small box. */
+    .top-nav-search > div > div:nth-child(2).opacity-100 {
+      position: fixed !important;
+      top: 4px !important;
+      left: 8px !important;
+      right: 8px !important;
+      width: auto !important;
+      transform: none !important;
+      translate: none !important;
+      transition: opacity 150ms ease !important;
+    }
+  }
+}

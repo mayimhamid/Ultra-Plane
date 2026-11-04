@@ -5,20 +5,14 @@
  */
 
 import { observer } from "mobx-react";
-import Link from "next/link";
 import useSWR from "swr";
 import { Badge } from "@makeplane/propel/components/badge";
 import { cn } from "@plane/utils";
 // hooks
 import { controlService } from "@/hooks/team-ops/use-control";
 import { useOpsNotifications } from "@/hooks/team-ops/use-workday";
-
-const dateFormat = new Intl.DateTimeFormat("en-US", {
-  day: "numeric",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-});
+// components
+import { NotificationItem } from "../notifications/notification-item";
 
 /** The caller's own notifications. Click one to open it; the small button marks it read or unread. */
 export const NotificationsBox = observer(function NotificationsBox({
@@ -49,29 +43,18 @@ export const NotificationsBox = observer(function NotificationsBox({
       {(notifications ?? []).length === 0 ? (
         <p className="text-body-sm-regular text-tertiary">Nothing yet.</p>
       ) : (
-        <ul className="flex max-h-64 flex-col divide-y divide-subtle overflow-y-auto">
-          {(notifications ?? []).slice(0, 15).map((item) => (
-            <li key={item.id} className="flex items-start justify-between gap-3 py-2">
-              <div className="min-w-0">
-                <Link
-                  href={item.link ? `/${workspaceSlug}/${item.link.replace(/^\/+/, "")}/` : "#"}
-                  onClick={() => !item.read && void markRead(item.id)}
-                  className={cn(
-                    "text-body-sm-regular hover:underline",
-                    item.read ? "text-secondary" : "font-medium text-primary"
-                  )}
-                >
-                  {item.title}
-                </Link>
-                <p className="text-caption-sm-regular text-tertiary">{dateFormat.format(new Date(item.created_at))}</p>
-              </div>
-              <button
-                type="button"
-                className="shrink-0 text-caption-sm-medium text-tertiary hover:text-primary"
-                onClick={() => void markRead(item.id, !item.read ? true : false)}
-              >
-                {item.read ? "Mark unread" : "Mark read"}
-              </button>
+        <ul className="flex max-h-80 flex-col divide-y divide-subtle overflow-y-auto">
+          {(notifications ?? []).slice(0, 20).map((item) => (
+            <li key={item.id}>
+              <NotificationItem
+                workspaceSlug={workspaceSlug}
+                item={item}
+                onOpen={() => !item.read && void markRead(item.id)}
+                action={{
+                  label: item.read ? "Mark unread" : "Mark read",
+                  onClick: () => void markRead(item.id, !item.read),
+                }}
+              />
             </li>
           ))}
         </ul>

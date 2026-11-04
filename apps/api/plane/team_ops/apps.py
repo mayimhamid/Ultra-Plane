@@ -23,9 +23,14 @@ class TeamOpsConfig(AppConfig):
             "task": "plane.team_ops.tasks.extend_weekly_plans_task",
             "schedule": crontab(hour=0, minute=30),  # UTC 00:30
         }
+        # Every minute, so the "still working?" reminder goes out when the check-in falls due.
         app.conf.beat_schedule["team-ops-freeze-unanswered-timers"] = {
             "task": "plane.team_ops.tasks.freeze_unanswered_timers_task",
-            "schedule": crontab(minute="*/5"),
+            "schedule": crontab(minute="*"),
+        }
+        app.conf.beat_schedule["team-ops-notify-new-assignments"] = {
+            "task": "plane.team_ops.tasks.notify_new_assignments_task",
+            "schedule": crontab(minute="*"),
         }
         app.conf.beat_schedule["team-ops-sync-admin-access"] = {
             "task": "plane.team_ops.tasks.sync_admin_access_task",

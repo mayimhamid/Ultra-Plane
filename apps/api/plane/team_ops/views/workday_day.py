@@ -71,6 +71,29 @@ class WorkdayStartEndpoint(BaseAPIView):
         return Response(workday.day_state(workspace, request.user), status=status.HTTP_201_CREATED)
 
 
+class WorkdayMeetingEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        """`action` is `start` (a meeting: no work item, no notes) or `end` (its time is logged)."""
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        action = request.data.get("action")
+        if action == "start":
+            try:
+                workday.start_meeting(workspace, request.user)
+            except workday.TimerAlreadyRunning:
+                return Response(
+                    {"error": "Finish or cancel the running task first.", **workday.day_state(workspace, request.user)},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            return Response(workday.day_state(workspace, request.user), status=status.HTTP_201_CREATED)
+        if action == "end":
+            workday.end_meeting(workspace, request.user)
+            return Response(workday.day_state(workspace, request.user))
+        raise ParseError(detail="Unknown action.")
+
+
 class WorkdayWeekConfirmEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug):

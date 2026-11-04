@@ -25,6 +25,31 @@ export const latestRelease = async (): Promise<string | null> => {
   return (await response.text()).match(RELEASE)?.[0] ?? null;
 };
 
+type TManifestRoute = { id: string; parentId?: string; module?: string; imports?: string[]; css?: string[] };
+
+/**
+ * The code of the screens people use every day (Team Ops, the workspace home, projects and work items) and of
+ * every layout above them. Fetched once per release in the background, so these screens open like an app.
+ */
+export const everydayFiles = (): string[] => {
+  const manifest = (window as unknown as { __reactRouterManifest?: { routes?: Record<string, TManifestRoute> } })
+    .__reactRouterManifest;
+  const routes = manifest?.routes ?? {};
+  const wanted = Object.values(routes).filter((route) =>
+    /team-ops|\(home\)\/page|\(projects\)\/page|\/issues|browse/i.test(route.id)
+  );
+  const files = new Set<string>();
+  const add = (route: TManifestRoute | undefined) => {
+    for (let current = route; current; current = current.parentId ? routes[current.parentId] : undefined) {
+      [current.module, ...(current.imports ?? []), ...(current.css ?? [])].forEach((file) => file && files.add(file));
+    }
+  };
+  wanted.forEach(add);
+  return [...files];
+};
+
+const WARMED_KEY = "ultra-plane-warmed-release";
+
 /** Empties the app's caches (in the worker and here), so the reload gets every file of the new release. */
 const clearCaches = async () => {
   const controller = navigator.serviceWorker?.controller;
@@ -60,6 +85,26 @@ export function AppUpdater() {
   useEffect(() => {
     if (!import.meta.env.PROD || !("serviceWorker" in navigator) || !window.isSecureContext) return;
     navigator.serviceWorker.register(WORKER).catch(() => undefined);
+    // Once the page has settled, fetch the everyday screens ahead of time (once per release).
+    const release = currentRelease();
+    const warm = async () => {
+      const registration = await navigator.serviceWorker.ready;
+      let warmed: string | null = null;
+      try {
+        warmed = window.localStorage.getItem(WARMED_KEY);
+      } catch {
+        // storage blocked: warm every time, the worker skips files it already has
+      }
+      if (!release || warmed === release) return;
+      registration.active?.postMessage({ type: "WARM", urls: everydayFiles() });
+      try {
+        window.localStorage.setItem(WARMED_KEY, release);
+      } catch {
+        // ignore
+      }
+    };
+    const timeout = window.setTimeout(() => void warm(), 4000);
+    return () => window.clearTimeout(timeout);
   }, []);
 
   const check = useCallback(async () => {

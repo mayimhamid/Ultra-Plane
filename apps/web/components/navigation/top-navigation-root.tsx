@@ -55,15 +55,15 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
       })}
     >
       {/* Workspace Menu */}
-      <div className="flex-1 shrink-0">
+      <div className="min-w-fit flex-1 shrink-0">
         <WorkspaceMenuRoot variant="top-navigation" />
       </div>
       {/* Power K Search */}
-      <div className="shrink-0">
+      <div className="top-nav-search min-w-0 shrink [&>div]:min-w-0 [&>div>div:first-child]:max-w-full">
         <TopNavPowerK />
       </div>
       {/* Additional Actions */}
-      <div className="flex flex-1 shrink-0 items-center justify-end gap-1">
+      <div className="flex min-w-fit flex-1 shrink-0 items-center justify-end gap-1">
         <Tooltip label="Inbox" side="bottom">
           <AppSidebarItem
             variant="link"
@@ -82,7 +82,9 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
           />
         </Tooltip>
         <HelpMenuRoot />
-        <StarUsOnGitHubLink />
+        <div className="hidden sm:contents">
+          <StarUsOnGitHubLink />
+        </div>
         <div className="flex size-8 items-center justify-center rounded-md hover:bg-layer-1-hover">
           <UserMenuRoot />
         </div>

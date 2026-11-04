@@ -23,7 +23,15 @@ const LEVEL_COLOR = [
   "var(--background-color-accent-primary)",
 ];
 
-const ROW_LABELS = ["Sat", "", "Mon", "", "Wed", "", "Fri"];
+const ROW_LABELS = [
+  { key: "sat", label: "Sat" },
+  { key: "sun", label: "" },
+  { key: "mon", label: "Mon" },
+  { key: "tue", label: "" },
+  { key: "wed", label: "Wed" },
+  { key: "thu", label: "" },
+  { key: "fri", label: "Fri" },
+];
 const month = new Intl.DateTimeFormat("en-US", { month: "short" });
 const full = new Intl.DateTimeFormat("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 const parse = (key: string) => {
@@ -34,8 +42,11 @@ const parse = (key: string) => {
 /** A year of work, one square per day, like a contribution graph: darker blue means more tasks (or hours). */
 export function ContributionGraph({ workspaceSlug, userId }: Props) {
   const [metric, setMetric] = useState<THeatMetric>("tasks");
-  const { data } = useSWR(`TEAM_OPS_HEATMAP_${workspaceSlug}_${userId ?? "me"}`, () =>
-    workdayService.getHeatmap(workspaceSlug, userId)
+  // Today's square counts the running timer too, so it is refreshed every minute.
+  const { data } = useSWR(
+    `TEAM_OPS_HEATMAP_${workspaceSlug}_${userId ?? "me"}`,
+    () => workdayService.getHeatmap(workspaceSlug, userId),
+    { refreshInterval: 60_000 }
   );
   const grid = useMemo(() => (data ? buildHeatGrid(data.from, data.to, data.days, metric) : []), [data, metric]);
 
@@ -43,13 +54,19 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
   const totalSeconds = (data?.days ?? []).reduce((sum, day) => sum + day.seconds, 0);
   const activeDays = (data?.days ?? []).length;
 
-  // A month name goes above the first column that starts in that month.
-  const monthLabels = grid.map((week, index) => {
+  // Every week and every square gets a stable key from its dates.
+  const weeks = grid.map((week, index) => {
     const firstDay = week.find((cell) => cell !== null);
-    if (!firstDay) return "";
-    const date = parse(firstDay.date);
+    const anchor = firstDay?.date ?? `week-${index}`;
+    // A month name goes above the first column that starts in that month.
     const previous = index > 0 ? grid[index - 1].find((cell) => cell !== null) : null;
-    return !previous || parse(previous.date).getMonth() !== date.getMonth() ? month.format(date) : "";
+    const date = firstDay ? parse(firstDay.date) : null;
+    const label = date && (!previous || parse(previous.date).getMonth() !== date.getMonth()) ? month.format(date) : "";
+    return {
+      key: anchor,
+      label,
+      cells: week.map((cell, row) => ({ key: cell?.date ?? `${anchor}-pad-${row}`, cell })),
+    };
   });
 
   return (
@@ -87,17 +104,17 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
       <div className="overflow-x-auto pb-1">
         <div className="flex min-w-max gap-2">
           <div className="flex flex-col gap-[3px] pt-[18px]">
-            {ROW_LABELS.map((label, index) => (
-              <span key={index} className="h-[11px] text-[10px] leading-[11px] text-tertiary">
-                {label}
+            {ROW_LABELS.map((row) => (
+              <span key={row.key} className="h-[11px] text-[10px] leading-[11px] text-tertiary">
+                {row.label}
               </span>
             ))}
           </div>
           <div>
             <div className="flex gap-[3px]">
-              {monthLabels.map((label, index) => (
+              {weeks.map(({ key, label }) => (
                 <span
-                  key={index}
+                  key={key}
                   className="h-[15px] w-[11px] overflow-visible text-[10px] whitespace-nowrap text-tertiary"
                 >
                   {label}
@@ -105,12 +122,12 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
               ))}
             </div>
             <div className="mt-[3px] flex gap-[3px]">
-              {grid.map((week, weekIndex) => (
-                <div key={weekIndex} className="flex flex-col gap-[3px]">
-                  {week.map((cell, rowIndex) =>
+              {weeks.map((week) => (
+                <div key={week.key} className="flex flex-col gap-[3px]">
+                  {week.cells.map(({ key, cell }) =>
                     cell ? (
                       <div
-                        key={cell.date}
+                        key={key}
                         className="size-[11px] rounded-[2px]"
                         style={{ backgroundColor: LEVEL_COLOR[cell.level] }}
                         title={`${
@@ -120,7 +137,7 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
                         } on ${full.format(parse(cell.date))}`}
                       />
                     ) : (
-                      <div key={`empty-${rowIndex}`} className="size-[11px]" />
+                      <div key={key} className="size-[11px]" />
                     )
                   )}
                 </div>
@@ -132,8 +149,8 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
 
       <footer className="flex items-center justify-end gap-1 text-caption-sm-regular text-tertiary">
         Less
-        {LEVEL_COLOR.map((color, index) => (
-          <span key={index} className="size-[11px] rounded-[2px]" style={{ backgroundColor: color }} />
+        {LEVEL_COLOR.map((color) => (
+          <span key={color} className="size-[11px] rounded-[2px]" style={{ backgroundColor: color }} />
         ))}
         More
       </footer>

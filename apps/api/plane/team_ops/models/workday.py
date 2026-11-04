@@ -76,6 +76,9 @@ class OpsNotification(BaseModel):
         SECRET = "SECRET", "Secret shared"
         FLOW = "FLOW", "Added to a flow"
         REPLY = "REPLY", "Reply"
+        ASSIGN = "ASSIGN", "Assigned a task"
+        CHECKIN = "CHECKIN", "Check-in due"
+        LEAVE = "LEAVE", "Leave request"
 
     workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_notifications")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_ops_notifications")

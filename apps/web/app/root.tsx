@@ -26,10 +26,13 @@ import { LogoSpinner } from "@/components/common/logo-spinner";
 import { isStaleAssetError, recoverFromStaleAsset } from "@/lib/stale-asset-error";
 // local
 import { CustomErrorComponent } from "./error";
-// fonts
+// fonts (loaded for their side effect: the @font-face rules)
+// oxlint-disable-next-line import/no-unassigned-import
 import "@fontsource-variable/inter";
 import interVariableWoff2 from "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url";
+// oxlint-disable-next-line import/no-unassigned-import
 import "@fontsource/material-symbols-rounded";
+// oxlint-disable-next-line import/no-unassigned-import
 import "@fontsource/ibm-plex-mono";
 
 const APP_TITLE = "Plane | Simple, extensible, open-source project management tool.";
@@ -59,7 +62,8 @@ export function Layout({ children }: { children: ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#fff" />
+        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#191919" media="(prefers-color-scheme: dark)" />
         {/* Meta info for PWA */}
         <meta name="application-name" content="Plane" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -115,15 +119,31 @@ export default function Root() {
   return <Outlet />;
 }
 
+// Shown from the first byte of the page until the app has started: the app icon on the system's background,
+// like a phone app's launch screen, instead of a blank white page. Plain styles: it is part of index.html.
+const SPLASH_STYLE = `
+.up-splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:#fff}
+.up-splash img{width:72px;height:72px;border-radius:18px;box-shadow:0 6px 24px rgba(0,0,0,.12)}
+.up-splash span{width:28px;height:28px;border:3px solid rgba(63,118,255,.25);border-top-color:#3f76ff;border-radius:50%;animation:up-spin .8s linear infinite}
+@keyframes up-spin{to{transform:rotate(360deg)}}
+@media (prefers-color-scheme: dark){.up-splash{background:#191919}}
+`;
+
 export function HydrateFallback() {
   const { resolvedTheme } = useTheme();
 
-  // if we are on the server or the theme is not resolved, return an empty div
-  if (typeof window === "undefined" || resolvedTheme === undefined) return <div />;
-
+  if (typeof window !== "undefined" && resolvedTheme !== undefined) {
+    return (
+      <div className="relative flex h-screen w-full items-center justify-center bg-canvas">
+        <LogoSpinner />
+      </div>
+    );
+  }
   return (
-    <div className="relative flex h-screen w-full items-center justify-center bg-canvas">
-      <LogoSpinner />
+    <div className="up-splash" role="status" aria-label="Loading">
+      <style>{SPLASH_STYLE}</style>
+      <img src="/icons/icon-192x192.png" alt="" />
+      <span />
     </div>
   );
 }

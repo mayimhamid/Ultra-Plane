@@ -10,8 +10,7 @@ from zoneinfo import ZoneInfo
 
 # Django imports
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Sum
-from django.db.models.functions import TruncDate
+from django.db.models import Sum
 from django.utils import timezone
 
 # Third party imports
@@ -31,6 +30,7 @@ from plane.team_ops.services.policy import get_policy
 from plane.team_ops.services.timer import (
     CHECK_IN_SECONDS,
     GRACE_SECONDS,
+    MEETING,
     RUNNING,
     check_in_due_at,
     get_timer,
@@ -196,6 +196,43 @@ def start_work(workspace, user, issue, location):
         raise TimerAlreadyRunning
 
 
+def start_meeting(workspace, user):
+    """Start a meeting: a timer with no work item, no check-ins and nothing to report.
+
+    The place is today's answer (none on a hybrid day). Any task must be finished, cancelled or paused first.
+    """
+    day = get_day(workspace, user)
+    if day is None:
+        raise ParseError(detail="Say how you are working today first.")
+    now = timezone.now()
+    try:
+        with transaction.atomic():
+            if ActiveTimer.objects.filter(workspace=workspace, user=user, is_parallel=False).exists():
+                raise TimerAlreadyRunning
+            return ActiveTimer.objects.create(
+                workspace=workspace,
+                user=user,
+                issue=None,
+                started_at=now,
+                last_confirmed_at=now,
+                location=day.mode if day.mode in LOCATIONS else "",
+                activity=MEETING,
+                note="Meeting",
+            )
+    except IntegrityError:
+        raise TimerAlreadyRunning
+
+
+def end_meeting(workspace, user):
+    """End the running meeting and log its time (no work report)."""
+    from plane.team_ops.services.timer import stop_timer
+
+    timer = ActiveTimer.objects.filter(workspace=workspace, user=user, is_parallel=False).first()
+    if timer is None or timer.activity != MEETING:
+        raise ParseError(detail="No meeting is running.")
+    return stop_timer(workspace, user)
+
+
 def start_parallel(workspace, user, issue, location=None):
     """Another task worked at the same time as the main one; there is no limit on how many.
 
@@ -255,6 +292,7 @@ def timer_payload(timer, now=None):
     return {
         "id": timer.id,
         "is_parallel": timer.is_parallel,
+        "activity": timer.activity,
         "state": timer.state,
         "location": timer.location,
         "started_at": timer.started_at,
@@ -295,6 +333,22 @@ def day_totals(workspace, user, running=None):
         WorkInterruption.objects.filter(workspace=workspace, user=user, started_at__gte=start, started_at__lt=end)
     )
     now = timezone.now()
+    from plane.team_ops.models import TimeEntry
+
+    meeting = (
+        TimeEntry.objects.filter(
+            workspace=workspace,
+            user=user,
+            started_at__gte=start,
+            started_at__lt=end,
+            issue__isnull=True,
+            note="Meeting",
+            source=TimeEntry.Source.TIMER,
+        ).aggregate(seconds=Sum("duration_seconds"))["seconds"]
+        or 0
+    )
+    if running is not None and running.activity == MEETING:
+        meeting += worked_seconds(running, now)
 
     def length(item):
         return max(0, int(((item.ended_at or now) - item.started_at).total_seconds()))
@@ -303,6 +357,7 @@ def day_totals(workspace, user, running=None):
         "onsite_seconds": seconds.get("ONSITE", 0),
         "remote_seconds": seconds.get("REMOTE", 0),
         "parallel_seconds": parallel,
+        "meeting_seconds": meeting,
         "break_seconds": sum(length(i) for i in interruptions if i.kind == "BREAK"),
         "frozen_seconds": sum(length(i) for i in interruptions if i.kind == "FREEZE"),
         "interruptions": [
@@ -387,12 +442,41 @@ def team_status(workspace, user_ids, reference_user):
                 else None,
                 "work_item_name": timer.issue.name if timer and timer.issue_id else None,
                 "location": timer.location if timer else "",
+                "activity": timer.activity if timer else "",
                 "worked_today_seconds": done.get(user_id, 0) + (worked_seconds(timer, now) if timer else 0),
                 "frozen_today_seconds": freezes.get(user_id, 0),
             }
         )
     rows.sort(key=lambda row: row["user"]["display_name"].lower())
     return rows
+
+
+def remind_due_check_ins(now=None):
+    """Ask "still working?" on the phone as soon as a check-in falls due, once per check-in."""
+    from plane.team_ops.models import OpsNotification
+    from plane.team_ops.services.notifications import notify
+
+    now = now or timezone.now()
+    reminded = 0
+    timers = ActiveTimer.objects.filter(state=RUNNING, is_parallel=False).exclude(activity=MEETING)
+    for timer in timers.select_related("workspace", "user", "issue", "issue__project"):
+        due = check_in_due_at(timer)
+        if due is None or now < due:
+            continue
+        if OpsNotification.objects.filter(user=timer.user, kind="CHECKIN", created_at__gte=due).exists():
+            continue
+        minutes = max(1, GRACE_SECONDS // 60)
+        task = f"{timer.issue.project.identifier}-{timer.issue.sequence_id}" if timer.issue_id else "your task"
+        notify(
+            timer.workspace,
+            [timer.user_id],
+            "CHECKIN",
+            "Are you still working?",
+            f"Answer within {minutes} min or the timer on {task} freezes.",
+            link="team-ops/workday",
+        )
+        reminded += 1
+    return reminded
 
 
 def freeze_unanswered_timers():
@@ -414,24 +498,54 @@ def freeze_unanswered_timers():
 
 
 def heatmap(workspace, user, days=365):
-    """Per day (person's timezone) for the last `days` days: finished work, tasks it was on, seconds worked."""
+    """Per day (person's timezone) for the last `days` days: work done, tasks it was on, seconds worked.
+
+    Counts finished work, time logged by hand on the Time page (entries that are not part of finished work),
+    and today's running timers, so today's square fills while the person works.
+    """
+    from plane.team_ops.models import TimeEntry
+
     zone = _zone(user)
     today = today_in_timezone(user.user_timezone)
     first = today - timedelta(days=days - 1)
     start = day_window(first, zone)[0]
     end = day_window(today, zone)[1]
-    rows = (
-        WorkSession.objects.filter(workspace=workspace, user=user, finished_at__gte=start, finished_at__lt=end)
-        .annotate(day=TruncDate("finished_at", tzinfo=zone))
-        .values("day")
-        .annotate(sessions=Count("id"), tasks=Count("issue", distinct=True), seconds=Sum("duration_seconds"))
-        .order_by("day")
-    )
+    totals = {}
+
+    def add(day, sessions, issues, seconds):
+        entry = totals.setdefault(day, {"sessions": 0, "issues": set(), "seconds": 0})
+        entry["sessions"] += sessions
+        entry["issues"].update(issue for issue in issues if issue)
+        entry["seconds"] += seconds or 0
+
+    finished = WorkSession.objects.filter(
+        workspace=workspace, user=user, finished_at__gte=start, finished_at__lt=end
+    ).values_list("finished_at", "issue_id", "duration_seconds")
+    for finished_at, issue_id, seconds in finished:
+        add(finished_at.astimezone(zone).date(), 1, [issue_id or f"none-{finished_at}"], seconds)
+
+    logged = TimeEntry.objects.filter(
+        workspace=workspace, user=user, started_at__gte=start, started_at__lt=end, work_session__isnull=True
+    ).values_list("started_at", "issue_id", "duration_seconds")
+    for started_at, issue_id, seconds in logged:
+        add(started_at.astimezone(zone).date(), 1, [issue_id], seconds)
+
+    now = timezone.now()
+    for timer in ActiveTimer.objects.filter(workspace=workspace, user=user):
+        seconds = worked_seconds(timer, now)
+        if seconds > 0:
+            add(today, 0, [timer.issue_id], seconds)
+
     return {
         "from": first,
         "to": today,
         "days": [
-            {"date": row["day"], "sessions": row["sessions"], "tasks": row["tasks"], "seconds": row["seconds"] or 0}
-            for row in rows
+            {
+                "date": day,
+                "sessions": entry["sessions"],
+                "tasks": len(entry["issues"]),
+                "seconds": entry["seconds"],
+            }
+            for day, entry in sorted(totals.items())
         ],
     }

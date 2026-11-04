@@ -67,6 +67,7 @@ from plane.team_ops.views import (
     WorkdayBreakEndpoint,
     WorkdayCheckInEndpoint,
     WorkdayDiscardEndpoint,
+    WorkdayMeetingEndpoint,
     WorkdayDayEndpoint,
     WorkdayDayOverrideEndpoint,
     WorkdayParallelEndpoint,
@@ -227,6 +228,11 @@ urlpatterns = [
         "workspaces/<str:slug>/team-ops/workday/discard/",
         WorkdayDiscardEndpoint.as_view(),
         name="team-ops-workday-discard",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/workday/meeting/",
+        WorkdayMeetingEndpoint.as_view(),
+        name="team-ops-workday-meeting",
     ),
     path("workspaces/<str:slug>/team-ops/workday/team/", WorkdayTeamEndpoint.as_view(), name="team-ops-workday-team"),
     path(

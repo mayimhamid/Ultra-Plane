@@ -26,6 +26,7 @@ from plane.team_ops.models import MAX_ENTRY_SECONDS, ActiveTimer, TimeEntry, Wor
 from plane.team_ops.services.notifications import managers_of, notify
 
 RUNNING, BREAK, FROZEN = "RUNNING", "BREAK", "FROZEN"
+MEETING = "MEETING"
 CHECK_IN_SECONDS = int(os.environ.get("TEAM_OPS_CHECK_IN_MINUTES", 60)) * 60
 # How long the person has to answer a check-in before the time stops counting.
 GRACE_SECONDS = int(os.environ.get("TEAM_OPS_CHECK_IN_GRACE_MINUTES", 5)) * 60
@@ -36,8 +37,10 @@ def _confirmed(timer):
 
 
 def check_in_due_at(timer):
-    """When the next "still working?" falls due, or `None` while the timer is not running."""
-    return _confirmed(timer) + timedelta(seconds=CHECK_IN_SECONDS) if timer.state == RUNNING else None
+    """When the next "still working?" falls due, or `None` while the timer is not running. Meetings have none."""
+    if timer.state != RUNNING or timer.activity == MEETING:
+        return None
+    return _confirmed(timer) + timedelta(seconds=CHECK_IN_SECONDS)
 
 
 def worked_seconds(timer, now=None):
@@ -68,7 +71,7 @@ def _close_pause(timer, now):
 def refresh(timer, now=None):
     """Freeze the timer if its check-in was not answered in time. Safe to call as often as needed."""
     now = now or timezone.now()
-    if timer.state != RUNNING or timer.is_parallel:
+    if timer.state != RUNNING or timer.is_parallel or timer.activity == MEETING:
         return timer
     due = check_in_due_at(timer)
     if now < due + timedelta(seconds=GRACE_SECONDS):

@@ -15,6 +15,12 @@ from rest_framework.exceptions import ParseError
 from plane.team_ops.models import CalendarHoliday, LeaveRequest, WorkMode
 from plane.team_ops.services.day_resolution import iter_days
 from plane.team_ops.services.entry_writes import set_days
+from plane.team_ops.services.notifications import managers_of, notify
+
+
+def _period(start, end):
+    return f"{start:%d %b}" if end == start else f"{start:%d %b} to {end:%d %b}"
+
 
 # A request covers at most this many days, so one approval stays one small write.
 MAX_LEAVE_DAYS = 62
@@ -45,9 +51,19 @@ def create_request(*, workspace, settings_row, user, start, end, leave_type, not
     )
     if overlapping.exists():
         raise ParseError(detail="You already have a leave request for part of this period.")
-    return LeaveRequest.objects.create(
+    request = LeaveRequest.objects.create(
         workspace=workspace, user=user, start_date=start, end_date=end, leave_type=leave_type, note=note
     )
+    notify(
+        workspace,
+        managers_of(workspace, user),
+        "LEAVE",
+        f"{user.display_name} asks for leave",
+        _period(start, end) + (f": {note}" if note else ""),
+        link="team-ops/leave",
+        actor=user,
+    )
+    return request
 
 
 def can_decide(access, request):
@@ -91,6 +107,17 @@ def decide(*, request, access, approve, note):
         request.decided_at = timezone.now()
         request.decision_note = note
         request.save()
+    verdict = "approved" if approve else "not approved"
+    notify(
+        request.workspace,
+        [request.user_id],
+        "LEAVE",
+        f"Your leave was {verdict}",
+        f"{_period(request.start_date, request.end_date)}, decided by {access.user.display_name}"
+        + (f": {note}" if note else ""),
+        link="team-ops/leave",
+        actor=access.user,
+    )
     return request
 
 

@@ -190,6 +190,15 @@ export class WorkdayService extends APIService {
       });
   }
 
+  /** Starts a meeting (no work item, no notes) or ends it and logs its time. */
+  async meeting(workspaceSlug: string, action: "start" | "end"): Promise<TWorkdayState> {
+    return this.post(`${this.base(workspaceSlug)}/workday/meeting/`, { action })
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
   /** Cancels the running work without saving it; `timer` names a parallel task, otherwise the main one. */
   async discardWork(workspaceSlug: string, timer?: string): Promise<TWorkdayState> {
     return this.post(`${this.base(workspaceSlug)}/workday/discard/`, timer ? { timer } : {})

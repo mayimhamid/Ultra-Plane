@@ -9,7 +9,7 @@ from celery import shared_task
 from plane.team_ops.services.admin_access import sync_admin_access
 from plane.team_ops.services.push import deliver
 from plane.team_ops.services.weekly_plan import extend_weekly_plans
-from plane.team_ops.services.workday import freeze_unanswered_timers
+from plane.team_ops.services.workday import freeze_unanswered_timers, remind_due_check_ins
 
 
 @shared_task
@@ -19,8 +19,16 @@ def extend_weekly_plans_task():
 
 
 @shared_task
+def notify_new_assignments_task():
+    from plane.team_ops.services.assignments import notify_new_assignments
+
+    return notify_new_assignments()
+
+
+@shared_task
 def freeze_unanswered_timers_task():
-    """Freeze the timers whose "still working?" check-in was not answered, and tell the managers."""
+    """Remind people whose "still working?" check-in is due; freeze the unanswered ones and tell the managers."""
+    remind_due_check_ins()
     return freeze_unanswered_timers()
 
 

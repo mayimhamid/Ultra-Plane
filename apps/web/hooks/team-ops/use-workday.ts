@@ -81,6 +81,7 @@ export const useWorkdayState = (workspaceSlug: string) => {
     setBreak: (action: "start" | "end") => apply(workdayService.setBreak(workspaceSlug, action)),
     checkIn: () => apply(workdayService.checkIn(workspaceSlug)),
     discardWork: (timer?: string) => apply(workdayService.discardWork(workspaceSlug, timer)),
+    meeting: (action: "start" | "end") => apply(workdayService.meeting(workspaceSlug, action)),
   };
 };
 

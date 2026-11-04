@@ -24,12 +24,17 @@ type Props = {
   onBreak: (action: "start" | "end") => Promise<void>;
   onCheckIn: () => Promise<void>;
   onFinish: () => void;
+  /** Starts a meeting, or ends the running one and logs its time. */
+  onMeeting: (action: "start" | "end") => Promise<void>;
+  /** Stops the running task or meeting without saving anything. */
+  onDiscard: () => Promise<void>;
   /** Tasks worked at the same time: the card turns purple and shows them inside, not in a box of their own. */
   hasParallel?: boolean;
   children?: ReactNode;
 };
 
 const PURPLE = "#8b5cf6";
+const GREEN = "#16a34a";
 
 /** Seconds since the timer data was read, so the clock moves between refreshes without trusting the computer's time. */
 export const useSecondsSince = (stamp: unknown) => {
@@ -62,6 +67,8 @@ export function NowCard({
   onBreak,
   onCheckIn,
   onFinish,
+  onMeeting,
+  onDiscard,
   hasParallel = false,
   children,
 }: Props) {
@@ -69,6 +76,7 @@ export function NowCard({
   const [task, setTask] = useState<TPickedTask | null>(null);
   const [place, setPlace] = useState<TWorkPlace | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
   const sinceRead = useSecondsSince(timer?.server_time);
 
   const run = async (action: () => Promise<void>) => {
@@ -113,7 +121,7 @@ export function NowCard({
             ))}
           </fieldset>
         }
-        <div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="primary"
             size="lg"
@@ -124,6 +132,17 @@ export function NowCard({
             loading={isBusy}
             onClick={() => run(() => onStart(task!, chosen ?? undefined)).then(() => setTask(null))}
           />
+          <span className="text-caption-sm-regular text-tertiary">or</span>
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={() => void run(() => onMeeting("start"))}
+            className="inline-flex min-h-10 items-center gap-2 rounded-md border px-4 py-2 text-body-sm-medium text-white disabled:opacity-60"
+            style={{ backgroundColor: GREEN, borderColor: GREEN }}
+          >
+            <span aria-hidden className="size-2 rounded-full bg-white" />
+            Meeting
+          </button>
         </div>
       </section>
     );
@@ -135,6 +154,85 @@ export function NowCard({
     ? checkInPhase(timer.check_in_due_at, timer.check_in_grace_seconds, timer.server_time, sinceRead)
     : ({ phase: "none" } as const);
   const heading = `${timer.work_item ?? ""} ${timer.work_item_name ?? ""}`.trim();
+  const isMeeting = timer.activity === "MEETING";
+
+  // Cancel always asks first: the time is thrown away.
+  const cancelBox = isConfirmingCancel ? (
+    <div
+      role="alertdialog"
+      aria-label="Cancel this work"
+      className="flex flex-col gap-3 rounded-md border-2 border-danger-strong bg-danger-subtle p-4"
+    >
+      <p className="text-body-sm-medium text-danger-primary">
+        {isMeeting ? "Cancel this meeting?" : "Cancel this work?"} The timer stops and nothing is saved: no time, no
+        report.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="danger"
+          size="lg"
+          stretch="auto"
+          label="I am sure, cancel it"
+          loading={isBusy}
+          onClick={() => run(onDiscard).then(() => setIsConfirmingCancel(false))}
+        />
+        <Button
+          variant="secondary"
+          size="lg"
+          stretch="auto"
+          label={isMeeting ? "Keep the meeting" : "Keep working"}
+          disabled={isBusy}
+          onClick={() => setIsConfirmingCancel(false)}
+        />
+      </div>
+    </div>
+  ) : null;
+
+  const cancelButton = (
+    <Button
+      variant="danger-outline"
+      size="lg"
+      stretch="auto"
+      label="Cancel"
+      disabled={isBusy || isConfirmingCancel}
+      onClick={() => setIsConfirmingCancel(true)}
+    />
+  );
+
+  if (isMeeting) {
+    return (
+      <section
+        className="flex flex-col gap-4 rounded-lg border-2 p-5"
+        style={{ borderColor: GREEN, backgroundColor: "color-mix(in oklab, #16a34a 10%, transparent)" }}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-caption-sm-medium" style={{ color: GREEN }}>
+              <span aria-hidden className="size-2 animate-pulse rounded-full" style={{ backgroundColor: GREEN }} />
+              In a meeting{timer.location ? ` · ${placeLabel(timer.location)}` : ""}
+            </p>
+            <p className="text-body-md-medium text-primary">We are in a meeting</p>
+            <p className="font-mono text-32 font-semibold text-primary tabular-nums" aria-label="Meeting time">
+              {formatClock(worked)}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => void run(() => onMeeting("end"))}
+              className="inline-flex min-h-10 items-center rounded-md px-4 py-2 text-body-sm-medium text-white disabled:opacity-60"
+              style={{ backgroundColor: GREEN }}
+            >
+              End meeting
+            </button>
+            {cancelButton}
+          </div>
+        </div>
+        {cancelBox}
+      </section>
+    );
+  }
 
   return (
     <section
@@ -194,8 +292,11 @@ export function NowCard({
           {timer.state !== "BREAK" && timer.issue ? (
             <Button variant="primary" size="lg" stretch="auto" label="Finish work" onClick={onFinish} />
           ) : null}
+          {cancelButton}
         </div>
       </div>
+
+      {cancelBox}
 
       {timer.state === "BREAK" ? (
         <p className="text-body-sm-regular text-secondary">The timer is paused. Time on a break is not counted.</p>

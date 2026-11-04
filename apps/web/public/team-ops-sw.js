@@ -4,7 +4,9 @@
  *
  * Caching never holds a release back:
  * - /assets/* files have a content hash in their name, so a cached copy is always the right one (cache first).
- * - Pages are always asked from the network first; the cached page is only used offline.
+ * - Pages are asked from the network first. When it does not answer within a few seconds (a slow phone link)
+ *   or not at all, the cached page opens the app at once and the fresh copy is kept for next time.
+ * - The page can ask the worker to fetch the app's screens ahead of time (WARM), so they open instantly.
  * - API calls, sign-in and uploads are never cached.
  * The page itself checks for a new release and, when there is one, offers to update (see app-updater.tsx);
  * it then sends CLEAR_CACHE and reloads.
@@ -13,7 +15,9 @@
 const CACHE = "ultra-plane-v1";
 const SHELL = "/__app-shell__";
 // Old hashed files of earlier releases pile up; keep the newest ones only.
-const MAX_ASSETS = 400;
+const MAX_ASSETS = 1200;
+// How long a page may take before the cached copy is shown instead.
+const PAGE_TIMEOUT_MS = 3000;
 const NEVER = ["/api/", "/auth/", "/god-mode", "/spaces", "/live", "/uploads", "/team-ops-sw.js", "/sw.js"];
 
 self.addEventListener("install", () => {
@@ -30,7 +34,31 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// Fetches the files the page names (its screens' code) into the cache, a few at a time, skipping cached ones.
+const warm = async (urls) => {
+  const cache = await caches.open(CACHE);
+  const queue = urls.filter((url) => typeof url === "string" && url.startsWith("/assets/"));
+  const worker = async () => {
+    while (queue.length) {
+      const url = queue.shift();
+      if (await cache.match(url)) continue;
+      try {
+        const response = await fetch(url, { credentials: "same-origin" });
+        if (response.ok && response.type === "basic") await cache.put(url, response);
+      } catch (error) {
+        return; // offline: stop, the next visit tries again
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  await trim(cache);
+};
+
 self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "WARM" && Array.isArray(event.data.urls)) {
+    event.waitUntil(warm(event.data.urls.slice(0, 600)));
+    return;
+  }
   if (event.data && event.data.type === "CLEAR_CACHE") {
     event.waitUntil(
       caches
@@ -71,17 +99,23 @@ const staleWhileRevalidate = async (request) => {
   return hit || fresh;
 };
 
-const networkFirstPage = async (request) => {
+const networkFirstPage = async (event) => {
   const cache = await caches.open(CACHE);
-  try {
-    const response = await fetch(request);
+  const fresh = fetch(event.request).then(async (response) => {
     // The app is a single page: any page works as the shell to open offline.
     if (response.ok && response.type === "basic") await cache.put(SHELL, response.clone());
     return response;
+  });
+  // Keep the fresh copy coming in even when the cached one is shown.
+  event.waitUntil(fresh.catch(() => undefined));
+  const shell = await cache.match(SHELL);
+  if (!shell) return fresh;
+  const slow = new Promise((resolve) => setTimeout(() => resolve(null), PAGE_TIMEOUT_MS));
+  try {
+    const first = await Promise.race([fresh, slow]);
+    return first || shell;
   } catch (error) {
-    const shell = await cache.match(SHELL);
-    if (shell) return shell;
-    throw error;
+    return shell;
   }
 };
 
@@ -93,7 +127,7 @@ self.addEventListener("fetch", (event) => {
   if (NEVER.some((prefix) => url.pathname.startsWith(prefix))) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirstPage(request));
+    event.respondWith(networkFirstPage(event));
   } else if (url.pathname.startsWith("/assets/")) {
     event.respondWith(cacheFirst(request));
   } else if (/\.(png|svg|ico|webp|woff2?|json)$/.test(url.pathname) && !url.search) {

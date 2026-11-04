@@ -32,7 +32,11 @@ export function TeamNow({ rows }: { rows: TTeamStatusRow[] }) {
               <Badge variant={STATE[row.state].variant} size="sm" label={STATE[row.state].label} />
             </div>
             <p className="truncate text-body-xs-regular text-secondary">
-              {row.work_item ? `${row.work_item} ${row.work_item_name ?? ""}` : "—"}
+              {row.activity === "MEETING"
+                ? "In a meeting"
+                : row.work_item
+                  ? `${row.work_item} ${row.work_item_name ?? ""}`
+                  : "—"}
             </p>
             <p className="text-caption-sm-regular text-tertiary">
               {row.mode ? MODE[row.mode] : "Has not said how they work"} · {formatHm(row.worked_today_seconds)} today

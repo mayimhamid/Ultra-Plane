@@ -5,6 +5,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { sortBy } from "lodash-es";
 import { observer } from "mobx-react";
 import Link from "next/link";
 import { mutate } from "swr";
@@ -22,6 +23,7 @@ import { MyCalendarRoot } from "../calendar/my-calendar-root";
 import { getErrorMessage } from "../calendar/error-message";
 import { MyReportsRoot } from "../reports/my-reports-root";
 // local imports
+import { NotificationItem } from "../notifications/notification-item";
 import { ContributionGraph } from "./contribution-graph";
 import { DayModeChip, DayOverride, DayStart, Gate, WeekUnlock } from "./day-start";
 import { FinishWorkPanel } from "./finish-work-panel";
@@ -73,10 +75,15 @@ function Alerts({
   return (
     <section
       aria-label="Alerts"
-      className="flex flex-col gap-2 rounded-lg border border-warning-strong bg-warning-subtle p-4"
+      className="flex flex-col gap-1 rounded-lg border border-accent-strong bg-surface-1 p-4"
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-body-md-medium text-primary">New for you</h3>
+        <h3 className="flex items-center gap-2 text-body-md-medium text-primary">
+          New for you
+          <span className="rounded-full bg-accent-primary px-2 py-0.5 text-caption-sm-medium text-on-color">
+            {items.length}
+          </span>
+        </h3>
         <button
           type="button"
           className="text-body-xs-medium text-accent-primary hover:underline"
@@ -85,26 +92,15 @@ function Alerts({
           Mark all read
         </button>
       </div>
-      <ul className="flex flex-col gap-1.5">
+      <ul className="flex flex-col divide-y divide-subtle">
         {items.slice(0, 5).map((item) => (
-          <li key={item.id} className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <Link
-                href={item.link ? `/${workspaceSlug}/${item.link.replace(/^\/+/, "")}/` : "#"}
-                onClick={() => void onRead(item.id)}
-                className="text-body-sm-medium text-primary hover:underline"
-              >
-                {item.title}
-              </Link>
-              {item.body ? <p className="line-clamp-2 text-body-xs-regular text-secondary">{item.body}</p> : null}
-            </div>
-            <button
-              type="button"
-              className="shrink-0 text-caption-sm-regular text-tertiary hover:text-primary"
-              onClick={() => onRead(item.id)}
-            >
-              Dismiss
-            </button>
+          <li key={item.id}>
+            <NotificationItem
+              workspaceSlug={workspaceSlug}
+              item={item}
+              onOpen={() => void onRead(item.id)}
+              action={{ label: "Dismiss", onClick: () => void onRead(item.id) }}
+            />
           </li>
         ))}
       </ul>
@@ -193,10 +189,11 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
   };
 
   // Today's story: what was finished, and the breaks and freezes in between, in time order.
-  const timeline = [
+  const events = [
     ...todaySessions.map((session) => ({ at: session.started_at, kind: "work" as const, session })),
     ...(totals?.interruptions ?? []).map((item) => ({ at: item.started_at, kind: item.kind, item })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
+  ];
+  const timeline = sortBy(events, (entry) => entry.at);
 
   const running = timer ? `${timer.work_item ?? ""} ${timer.work_item_name ?? ""}`.trim() : "";
 
@@ -273,9 +270,20 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
           onBreak={rest}
           onCheckIn={checkIn}
           onFinish={() => setIsFinishing(true)}
+          onMeeting={async (action) => {
+            try {
+              await day.meeting(action);
+              await everything();
+              if (action === "end")
+                setToast({ type: "success", title: "Meeting ended", message: "Its time is logged." });
+            } catch (error) {
+              fail(action === "start" ? "Could not start the meeting" : "Could not end the meeting")(error);
+            }
+          }}
+          onDiscard={() => discard()}
           hasParallel={parallelActive}
         >
-          {timer && !parallelFinishing ? (
+          {timer && timer.activity !== "MEETING" && !parallelFinishing ? (
             <ParallelTasks
               workspaceSlug={workspaceSlug}
               defaultPlace={timer.location}
@@ -298,6 +306,17 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
                 <Stat label="Onsite" value={formatHm(totals?.onsite_seconds ?? 0)} />
                 <Stat label="Remote" value={formatHm(totals?.remote_seconds ?? 0)} />
               </>
+            ) : null}
+            {(totals?.meeting_seconds ?? 0) > 0 ? (
+              <div
+                className="flex min-w-32 flex-1 flex-col rounded-lg border bg-surface-1 px-4 py-3"
+                style={{ borderColor: "#16a34a" }}
+              >
+                <span className="text-caption-sm-regular text-tertiary">Meetings</span>
+                <span className="text-h4-medium tabular-nums" style={{ color: "#16a34a" }}>
+                  {formatHm(totals?.meeting_seconds ?? 0)}
+                </span>
+              </div>
             ) : null}
             {(totals?.parallel_seconds ?? 0) > 0 ? (
               <div

@@ -407,6 +407,31 @@ class TestHeatmapAndPeopleTags:
         )
         assert lead_client.get(url(workspace, "work-sessions/heatmap/"), {"user": str(member.id)}).status_code == 403
 
+    def test_heatmap_counts_logged_time_and_the_running_timer(self, member_client, workspace, member, issue):
+        from plane.team_ops.models import TimeEntry
+
+        now = timezone.now()
+        TimeEntry.objects.create(
+            workspace=workspace,
+            user=member,
+            issue=issue,
+            started_at=now - timedelta(days=3, minutes=40),
+            ended_at=now - timedelta(days=3),
+            duration_seconds=40 * 60,
+        )
+        ActiveTimer.objects.create(
+            workspace=workspace,
+            user=member,
+            issue=issue,
+            started_at=now - timedelta(minutes=10),
+            last_confirmed_at=now,
+            location="REMOTE",
+        )
+        days = member_client.get(url(workspace, "work-sessions/heatmap/")).data["days"]
+        assert len(days) == 2
+        assert days[0]["tasks"] == 1 and days[0]["seconds"] == 40 * 60
+        assert days[1]["date"] == timezone.now().date() and days[1]["tasks"] == 1 and days[1]["seconds"] >= 9 * 60
+
     def test_a_person_tagged_in_the_report_gets_it_privately_when_in_no_shared_channel(
         self, member_client, workspace, member, colleague, issue
     ):
@@ -617,3 +642,42 @@ class TestRoundSeven:
         WeekPlanConfirmation.objects.filter(user=member).delete()
         day = week_start_of(timezone.now().date()) - timedelta(days=1)
         assert self._put(member_client, workspace, day).status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.contract
+class TestMeeting:
+    def test_a_meeting_needs_no_task_and_logs_its_time(self, member_client, workspace, member, issue):
+        from plane.team_ops.models import TimeEntry
+
+        set_mode(member_client, workspace, "ONSITE")
+        response = member_client.post(w(workspace, "meeting/"), {"action": "start"}, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+        timer = response.data["timer"]
+        assert timer["activity"] == "MEETING" and timer["issue"] is None and timer["location"] == "ONSITE"
+        assert timer["check_in_due_at"] is None
+        # A task cannot start while the meeting runs.
+        assert start(member_client, workspace, issue).status_code == status.HTTP_409_CONFLICT
+        # Hours later there is still no freeze.
+        ActiveTimer.objects.filter(user=member).update(
+            started_at=timezone.now() - timedelta(hours=3), last_confirmed_at=timezone.now() - timedelta(hours=3)
+        )
+        assert member_client.get(w(workspace)).data["timer"]["state"] == "RUNNING"
+        assert freeze_unanswered_timers() == 0
+        ended = member_client.post(w(workspace, "meeting/"), {"action": "end"}, format="json")
+        assert ended.status_code == status.HTTP_200_OK
+        assert ended.data["timer"] is None
+        assert 3 * 3600 - 60 <= ended.data["totals"]["meeting_seconds"] <= 3 * 3600 + 60
+        entry = TimeEntry.objects.get(user=member)
+        assert entry.issue is None and entry.note == "Meeting"
+        assert not WorkSession.objects.exists()
+
+    def test_a_meeting_waits_for_the_running_task_and_can_be_cancelled(self, member_client, workspace, member, issue):
+        set_mode(member_client, workspace, "REMOTE")
+        assert start(member_client, workspace, issue).status_code == status.HTTP_201_CREATED
+        busy = member_client.post(w(workspace, "meeting/"), {"action": "start"}, format="json")
+        assert busy.status_code == status.HTTP_409_CONFLICT
+        assert member_client.post(w(workspace, "meeting/"), {"action": "end"}, format="json").status_code == 400
+        member_client.post(w(workspace, "discard/"), format="json")
+        assert member_client.post(w(workspace, "meeting/"), {"action": "start"}, format="json").status_code == 201
+        member_client.post(w(workspace, "discard/"), format="json")
+        assert not ActiveTimer.objects.exists()

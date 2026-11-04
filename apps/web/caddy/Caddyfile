@@ -18,6 +18,9 @@
 		}
 	}
 
+	# Compress text files (the app's JavaScript is ~4x smaller this way). Images and fonts are left alone.
+	encode zstd gzip
+
 	# Security headers (HSTS is set at the TLS terminator)
 	header {
 		X-Frame-Options "DENY"

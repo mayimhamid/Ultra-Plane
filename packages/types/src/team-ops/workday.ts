@@ -137,6 +137,8 @@ export type TTimerState = "RUNNING" | "BREAK" | "FROZEN";
 export type TWorkdayTimer = {
   id: string;
   is_parallel: boolean;
+  /** "" for a task; MEETING for a meeting (no work item, no check-in, no report). */
+  activity: "" | "MEETING";
   state: TTimerState;
   location: TWorkPlace | "";
   started_at: string;
@@ -160,6 +162,8 @@ export type TDayTotals = {
   remote_seconds: number;
   /** Tasks worked beside the main one; counted apart from the onsite and remote hours. */
   parallel_seconds: number;
+  /** Time in meetings today, the running one included. */
+  meeting_seconds: number;
   break_seconds: number;
   frozen_seconds: number;
   interruptions: TInterruption[];
@@ -208,13 +212,25 @@ export type TTeamStatusRow = {
   work_item: string | null;
   work_item_name: string | null;
   location: TWorkPlace | "";
+  activity: "" | "MEETING";
   worked_today_seconds: number;
   frozen_today_seconds: number;
 };
 
 export type TOpsNotification = {
   id: string;
-  kind: "MENTION" | "ATTENTION" | "FREEZE" | "NEWS" | "DIRECT" | "SECRET" | "FLOW" | "REPLY";
+  kind:
+    | "MENTION"
+    | "ATTENTION"
+    | "FREEZE"
+    | "NEWS"
+    | "DIRECT"
+    | "SECRET"
+    | "FLOW"
+    | "REPLY"
+    | "ASSIGN"
+    | "CHECKIN"
+    | "LEAVE";
   title: string;
   body: string;
   link: string;

@@ -6,11 +6,10 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
-import Link from "next/link";
-import { cn } from "@plane/utils";
 // hooks
 import { useOpsNotifications } from "@/hooks/team-ops/use-workday";
 // local imports
+import { NotificationItem } from "./notification-item";
 import { PushPrompt } from "./push-prompt";
 
 /**
@@ -37,32 +36,29 @@ export const TeamNotificationsStrip = observer(function TeamNotificationsStrip({
           onClick={() => setOpen(!open)}
           className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left"
         >
-          <span className="text-body-sm-medium text-primary">
-            Team notifications{unread > 0 ? ` (${unread} new)` : ""}
+          <span className="flex items-center gap-2 text-body-sm-medium text-primary">
+            Team notifications
+            {unread > 0 ? (
+              <span className="rounded-full bg-accent-primary px-2 py-0.5 text-caption-sm-medium text-on-color">
+                {unread} new
+              </span>
+            ) : null}
           </span>
           <span className="text-caption-sm-regular text-tertiary">{open ? "Hide" : "Show"}</span>
         </button>
         {open ? (
-          <ul className="flex max-h-60 flex-col divide-y divide-subtle overflow-y-auto border-t border-subtle">
-            {items.slice(0, 20).map((item) => (
-              <li key={item.id} className="flex items-center justify-between gap-3 px-4 py-2">
-                <Link
-                  href={item.link ? `/${workspaceSlug}/${item.link.replace(/^\/+/, "")}/` : "#"}
-                  onClick={() => !item.read && void markRead(item.id)}
-                  className={cn(
-                    "min-w-0 truncate text-body-sm-regular hover:underline",
-                    item.read ? "text-secondary" : "font-medium text-primary"
-                  )}
-                >
-                  {item.title}
-                </Link>
-                <button
-                  type="button"
-                  className="shrink-0 text-caption-sm-medium text-tertiary hover:text-primary"
-                  onClick={() => void markRead(item.id, !item.read)}
-                >
-                  {item.read ? "Mark unread" : "Mark read"}
-                </button>
+          <ul className="flex max-h-80 flex-col divide-y divide-subtle overflow-y-auto border-t border-subtle px-4">
+            {items.slice(0, 30).map((item) => (
+              <li key={item.id}>
+                <NotificationItem
+                  workspaceSlug={workspaceSlug}
+                  item={item}
+                  onOpen={() => !item.read && void markRead(item.id)}
+                  action={{
+                    label: item.read ? "Mark unread" : "Mark read",
+                    onClick: () => void markRead(item.id, !item.read),
+                  }}
+                />
               </li>
             ))}
           </ul>

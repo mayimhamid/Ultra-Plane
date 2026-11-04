@@ -130,7 +130,7 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(props:
       </Tooltip>
 
       <IssueProperties
-        className="flex flex-wrap items-center gap-2 pt-1.5 whitespace-nowrap text-tertiary"
+        className="touch-properties flex flex-wrap items-center gap-2 pt-1.5 whitespace-nowrap text-tertiary"
         issue={issue}
         displayProperties={displayProperties}
         activeLayout="Kanban"

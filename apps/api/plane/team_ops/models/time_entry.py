@@ -87,6 +87,8 @@ class ActiveTimer(BaseModel):
     location = models.CharField(max_length=10, blank=True, default="")
     # A second task worked at the same time as the main one. It has no check-in and no pauses.
     is_parallel = models.BooleanField(default=False)
+    # What kind of work: "" is a task; MEETING is a meeting, with no work item, no check-in and no report.
+    activity = models.CharField(max_length=10, blank=True, default="")
     # RUNNING counts time; BREAK is a rest pause the person started; FROZEN means a check-in was missed.
     state = models.CharField(max_length=10, default="RUNNING")
     # When the current break or freeze began (null while running). A freeze begins when the check-in fell due.
