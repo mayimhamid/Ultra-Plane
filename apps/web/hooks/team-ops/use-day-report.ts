@@ -37,9 +37,9 @@ export const useDayReportHistory = (workspaceSlug: string, day: string, user: st
     dayReportService.getHistory(workspaceSlug, day, user)
   );
 
-export const useTeamDayReports = (workspaceSlug: string, day: string, enabled: boolean) =>
-  useSWR(enabled ? `TEAM_OPS_DAY_REPORT_TEAM_${workspaceSlug}_${day}` : null, () =>
-    dayReportService.getTeam(workspaceSlug, day)
+export const useTeamDayReports = (workspaceSlug: string, day: string, enabled: boolean, place = "") =>
+  useSWR(enabled ? `TEAM_OPS_DAY_REPORT_TEAM_${workspaceSlug}_${day}_${place}` : null, () =>
+    dayReportService.getTeam(workspaceSlug, day, place || undefined)
   );
 
 /** Micro tasks of the caller, or of `user` for managers. */

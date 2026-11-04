@@ -18,9 +18,10 @@ from rest_framework.response import Response
 from plane.app.permissions import allow_permission
 from plane.app.views.base import BaseAPIView
 from plane.db.models import Issue, Project, ProjectMember, User, Workspace
-from plane.team_ops.models import DayReport, MicroTask, PlanUnit
+from plane.team_ops.models import DayReport, DayReportEntry, MicroTask, PlanUnit
 from plane.team_ops.services import day_reports, task_import
 from plane.team_ops.services.access import CALENDAR_ROLES, CalendarAccess, calendar_user_ids
+from plane.team_ops.services.csv_export import csv_response, csv_safe
 from plane.team_ops.services.time_entry import parse_uuid
 
 
@@ -126,6 +127,11 @@ class DayReportTeamEndpoint(BaseAPIView):
             .values("user_id", "status", "submitted_at", "is_late", "edit_count")
             .annotate(total=Sum("entries__minutes"), rows=Count("entries"))
         }
+        places = {}
+        for user_id, location in DayReportEntry.objects.filter(
+            report__workspace=workspace, report__user_id__in=ids, report__date=day
+        ).values_list("report__user_id", "location"):
+            places.setdefault(user_id, []).append(location)
         people = User.objects.filter(pk__in=ids)
         rows = [
             {
@@ -135,12 +141,96 @@ class DayReportTeamEndpoint(BaseAPIView):
                 "is_late": reports.get(p.id, {}).get("is_late", False),
                 "edit_count": reports.get(p.id, {}).get("edit_count", 0),
                 "total_minutes": reports.get(p.id, {}).get("total") or 0,
-                "mode": day_reports.day_mode(workspace, p, day),
+                # Where the person worked that day: from the rows (both places: HYBRID), else their plan.
+                "mode": day_reports.day_place(places.get(p.id, []), day_reports.day_mode(workspace, p, day)),
             }
             for p in people
         ]
+        place = (request.query_params.get("place") or "").upper()
+        if place in ("REMOTE", "ONSITE", "HYBRID"):
+            rows = [row for row in rows if row["mode"] == place]
         rows.sort(key=lambda row: row["user"]["display_name"].lower())
         return Response({"date": day, "results": rows})
+
+
+class DayReportExportEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug):
+        """CSV of the day report rows from `from` to `to`. `place=REMOTE|ONSITE` keeps only rows done there;
+        `place=HYBRID` keeps the days that had both."""
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        access = CalendarAccess(request.user, workspace)
+        if not access.can_view_team:
+            return _forbidden()
+        start, end = _day(request.query_params.get("from", "")), _day(request.query_params.get("to", ""))
+        if end < start or (end - start).days > 366:
+            raise ParseError(detail="Choose a period of at most a year.")
+        visible = access.visible_user_ids()
+        ids = calendar_user_ids(workspace) if visible is None else visible & set(calendar_user_ids(workspace))
+        entries = list(
+            DayReportEntry.objects.filter(
+                report__workspace=workspace, report__user_id__in=ids, report__date__gte=start, report__date__lte=end
+            )
+            .select_related("report", "report__user", "issue", "issue__project", "micro_task")
+            .order_by("report__date", "report__user__display_name", "position")
+        )
+        by_day = {}
+        for entry in entries:
+            by_day.setdefault((entry.report.user_id, entry.report.date), []).append(entry.location)
+        place = (request.query_params.get("place") or "").upper()
+        rows = []
+        for entry in entries:
+            report = entry.report
+            day_kind = day_reports.day_place(by_day[(report.user_id, report.date)], "")
+            if place in ("REMOTE", "ONSITE") and entry.location != place:
+                continue
+            if place == "HYBRID" and day_kind != "HYBRID":
+                continue
+            task = (
+                f"{entry.issue.project.identifier}-{entry.issue.sequence_id} {entry.issue.name}"
+                if entry.issue_id and entry.issue
+                else (entry.micro_task.title if entry.micro_task_id and entry.micro_task else "")
+            )
+            rows.append(
+                [
+                    report.date.isoformat(),
+                    csv_safe(report.user.display_name),
+                    day_kind,
+                    csv_safe(entry.issue.project.name if entry.issue_id and entry.issue else "No project"),
+                    csv_safe(task),
+                    entry.start_time.strftime("%H:%M") if entry.start_time else "",
+                    entry.end_time.strftime("%H:%M") if entry.end_time else "",
+                    f"{entry.minutes / 60:.2f}",
+                    entry.location,
+                    "yes" if entry.finished else "",
+                    report.status,
+                    report.edit_count,
+                    csv_safe(entry.note),
+                ]
+            )
+        suffix = f"-{place.lower()}" if place in ("REMOTE", "ONSITE", "HYBRID") else ""
+        return csv_response(
+            f"day-reports-{start}-{end}{suffix}.csv",
+            [
+                "Date",
+                "Person",
+                "Day place",
+                "Project",
+                "Task",
+                "Start",
+                "End",
+                "Hours",
+                "Place",
+                "Done",
+                "Report",
+                "Edits",
+                "Note",
+            ],
+            rows,
+            f"Day reports {start} to {end}" + (f", {place.lower()} only" if suffix else ""),
+        )
 
 
 class TaskPlanEndpoint(BaseAPIView):

@@ -99,6 +99,8 @@ const actionClass =
 function Message({ message, isOwn, isReply, isFollowUp, tokens, onReply, onEdit, onDelete, onOpenFile }: MessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(message.body);
+  // On a phone the Reply / Edit / Delete row shows only for the message that was tapped.
+  const [showActions, setShowActions] = useState(false);
 
   if (message.is_deleted) {
     return (
@@ -118,6 +120,13 @@ function Message({ message, isOwn, isReply, isFollowUp, tokens, onReply, onEdit,
 
   return (
     <article
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("button, a, textarea, input")) return;
+        setShowActions((open) => !open);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setShowActions(false);
+      }}
       className={cn(
         "group flex gap-2 px-3",
         isOwn ? "flex-row-reverse" : "flex-row",
@@ -226,7 +235,10 @@ function Message({ message, isOwn, isReply, isFollowUp, tokens, onReply, onEdit,
 
         <footer
           className={cn(
-            "flex gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100",
+            // Touch: hidden until the message is tapped. Mouse: appears on hover, as before.
+            showActions ? "flex" : "hidden",
+            "gap-0.5 transition-opacity [@media(hover:hover)]:flex [@media(hover:hover)]:opacity-0",
+            "[@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100",
             isOwn && "flex-row-reverse"
           )}
         >
@@ -306,6 +318,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
 
   // Scrolling: the newest message stays in view while reading the end; reading older ones is not disturbed.
   const scroller = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const olderAnchor = useRef<{ height: number; top: number } | null>(null);
   const lastMessage = hub.messages?.[hub.messages.length - 1];
@@ -320,6 +333,18 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
     if (nearBottom.current || lastMessage.author.id === currentUser?.id)
       bottom.current?.scrollIntoView?.({ block: "end" });
   }, [lastMessage, channel.id, currentUser?.id]);
+
+  // Avatars and pictures load after the messages: keep the end in view while the reader is at the end.
+  useEffect(() => {
+    const box = scroller.current;
+    const inner = content.current;
+    if (!box || !inner || typeof ResizeObserver === "undefined") return;
+    const keep = new ResizeObserver(() => {
+      if (nearBottom.current && !olderAnchor.current) box.scrollTop = box.scrollHeight;
+    });
+    keep.observe(inner);
+    return () => keep.disconnect();
+  }, [channel.id, hub.isLoading]);
 
   // After an older page is added above, keep the same message under the reader's eyes.
   useLayoutEffect(() => {
@@ -516,54 +541,56 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3"
         aria-live="polite"
       >
-        {hub.hasMore ? (
-          <p className="py-2 text-center text-caption-sm-regular text-tertiary">
-            {hub.isLoadingOlder ? "Loading older messages..." : "Scroll up for older messages"}
-          </p>
-        ) : null}
-        {hub.isLoading ? <p className="px-4 py-2 text-body-sm-regular text-tertiary">Loading messages...</p> : null}
-        {!hub.isLoading && threads.length === 0 ? (
-          <p className="px-4 py-6 text-center text-body-sm-regular text-tertiary">
-            No messages yet. Say hello, type @ to tag a colleague, / for a project, or share a file.
-          </p>
-        ) : null}
-        {threads.map(({ root, replies }, index) => {
-          const previousRoot = index > 0 ? threads[index - 1] : undefined;
-          const previous = previousRoot
-            ? (previousRoot.replies[previousRoot.replies.length - 1] ?? previousRoot.root)
-            : undefined;
-          const newDay = !previous || dayOf(previous.created_at) !== dayOf(root.created_at);
-          return (
-            <div key={root.id}>
-              {newDay ? (
-                <div className="sticky top-0 z-[1] flex justify-center py-2">
-                  <span className="rounded-full border border-subtle bg-surface-1 px-3 py-0.5 text-caption-sm-medium text-secondary shadow-raised-100">
-                    {dayFormat.format(new Date(root.created_at))}
-                  </span>
-                </div>
-              ) : null}
-              <Message
-                message={root}
-                isOwn={root.author.id === currentUser?.id}
-                isFollowUp={!newDay && !previousRoot?.replies.length && followsUp(previous, root)}
-                tokens={tokensFor(root)}
-                {...shared}
-              />
-              {replies.map((reply, replyIndex) => (
+        <div ref={content}>
+          {hub.hasMore ? (
+            <p className="py-2 text-center text-caption-sm-regular text-tertiary">
+              {hub.isLoadingOlder ? "Loading older messages..." : "Scroll up for older messages"}
+            </p>
+          ) : null}
+          {hub.isLoading ? <p className="px-4 py-2 text-body-sm-regular text-tertiary">Loading messages...</p> : null}
+          {!hub.isLoading && threads.length === 0 ? (
+            <p className="px-4 py-6 text-center text-body-sm-regular text-tertiary">
+              No messages yet. Say hello, type @ to tag a colleague, / for a project, or share a file.
+            </p>
+          ) : null}
+          {threads.map(({ root, replies }, index) => {
+            const previousRoot = index > 0 ? threads[index - 1] : undefined;
+            const previous = previousRoot
+              ? (previousRoot.replies[previousRoot.replies.length - 1] ?? previousRoot.root)
+              : undefined;
+            const newDay = !previous || dayOf(previous.created_at) !== dayOf(root.created_at);
+            return (
+              <div key={root.id}>
+                {newDay ? (
+                  <div className="sticky top-0 z-[1] flex justify-center py-2">
+                    <span className="rounded-full border border-subtle bg-surface-1 px-3 py-0.5 text-caption-sm-medium text-secondary shadow-raised-100">
+                      {dayFormat.format(new Date(root.created_at))}
+                    </span>
+                  </div>
+                ) : null}
                 <Message
-                  key={reply.id}
-                  message={reply}
-                  isReply
-                  isOwn={reply.author.id === currentUser?.id}
-                  isFollowUp={replyIndex > 0 && followsUp(replies[replyIndex - 1], reply)}
-                  tokens={tokensFor(reply)}
+                  message={root}
+                  isOwn={root.author.id === currentUser?.id}
+                  isFollowUp={!newDay && !previousRoot?.replies.length && followsUp(previous, root)}
+                  tokens={tokensFor(root)}
                   {...shared}
                 />
-              ))}
-            </div>
-          );
-        })}
-        <div ref={bottom} />
+                {replies.map((reply, replyIndex) => (
+                  <Message
+                    key={reply.id}
+                    message={reply}
+                    isReply
+                    isOwn={reply.author.id === currentUser?.id}
+                    isFollowUp={replyIndex > 0 && followsUp(replies[replyIndex - 1], reply)}
+                    tokens={tokensFor(reply)}
+                    {...shared}
+                  />
+                ))}
+              </div>
+            );
+          })}
+          <div ref={bottom} />
+        </div>
       </div>
 
       {!channel.can_post ? (

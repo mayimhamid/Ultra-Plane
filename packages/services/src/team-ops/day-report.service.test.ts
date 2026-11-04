@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { durationText, formatMinutes, parseDuration, planLabel } from "./day-report.service";
+import { durationText, formatMinutes, parseDuration, planLabel, spanMinutes } from "./day-report.service";
 
 describe("parseDuration", () => {
   it.each([
@@ -44,5 +44,14 @@ describe("formatMinutes and durationText", () => {
     expect(planLabel(3, "HOURS")).toBe("3 h");
     expect(planLabel(1, "DAYS")).toBe("1 day");
     expect(planLabel(2, "DAYS")).toBe("2 days");
+  });
+});
+
+describe("spanMinutes", () => {
+  it("counts the minutes from start to end", () => {
+    expect(spanMinutes("09:00", "10:30")).toBe(90);
+    expect(spanMinutes("9:15", "9:45")).toBe(30);
+    expect(spanMinutes("10:00", "09:00")).toBeNull();
+    expect(spanMinutes("10:00", "")).toBeNull();
   });
 });

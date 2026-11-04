@@ -6,47 +6,19 @@
 
 // components
 import { observer } from "mobx-react";
-import { useParams, usePathname } from "next/navigation";
 import { cn } from "@plane/utils";
 import { TopNavPowerK } from "@/components/navigation";
 import { HelpMenuRoot } from "@/components/workspace/sidebar/help-section/root";
 import { UserMenuRoot } from "@/components/workspace/sidebar/user-menu-root";
 import { WorkspaceMenuRoot } from "@/components/workspace/sidebar/workspace-menu-root";
 import { useAppRailPreferences } from "@/hooks/use-navigation-preferences";
-import { Tooltip } from "@makeplane/propel/components/tooltip";
-import { AppSidebarItem } from "@/components/sidebar/sidebar-item";
-import { InboxOutline } from "@makeplane/propel/icons";
-import useSWR from "swr";
-import { useWorkspaceNotifications } from "@/hooks/store/notifications";
-import { useOpsUnread } from "@/hooks/team-ops/use-ops-unread";
 // local imports
-import { StarUsOnGitHubLink } from "@/app/(all)/[workspaceSlug]/(projects)/star-us-link";
 
 export const TopNavigationRoot = observer(function TopNavigationRoot() {
-  // router
-  const { workspaceSlug } = useParams();
-  const pathname = usePathname();
-
   // store hooks
-  const { unreadNotificationsCount, getUnreadNotificationsCount } = useWorkspaceNotifications();
   const { preferences } = useAppRailPreferences();
 
   const showLabel = preferences.displayMode === "icon_with_label";
-
-  // Fetch notification count
-  useSWR(
-    workspaceSlug ? "WORKSPACE_UNREAD_NOTIFICATION_COUNT" : null,
-    workspaceSlug ? () => getUnreadNotificationsCount(workspaceSlug.toString()) : null
-  );
-
-  // Calculate notification count
-  const isMentionsEnabled = unreadNotificationsCount.mention_unread_notifications_count > 0;
-  // Team Ops notifications ride on the same bell.
-  const opsUnread = useOpsUnread(workspaceSlug?.toString());
-  const totalNotifications =
-    (isMentionsEnabled
-      ? unreadNotificationsCount.mention_unread_notifications_count
-      : unreadNotificationsCount.total_unread_notifications_count) + opsUnread;
 
   return (
     <div
@@ -59,33 +31,13 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
         <WorkspaceMenuRoot variant="top-navigation" />
       </div>
       {/* Power K Search */}
-      {/* Phones: no command search here (it crowded the bar); the inbox and profile menu stay. */}
+      {/* Phones: no command search here (it crowded the bar). Notifications are in the sidebar. */}
       <div className="top-nav-search hidden min-w-0 shrink sm:block [&>div]:min-w-0 [&>div>div:first-child]:max-w-full">
         <TopNavPowerK />
       </div>
       {/* Additional Actions */}
       <div className="flex min-w-fit flex-1 shrink-0 items-center justify-end gap-1">
-        <Tooltip label="Inbox" side="bottom">
-          <AppSidebarItem
-            variant="link"
-            item={{
-              href: `/${workspaceSlug?.toString()}/notifications/`,
-              icon: (
-                <div className="relative">
-                  <InboxOutline className="size-5" />
-                  {totalNotifications > 0 && (
-                    <span className="absolute top-0 right-0 size-2 rounded-full bg-danger-primary" />
-                  )}
-                </div>
-              ),
-              isActive: pathname?.includes("/notifications/"),
-            }}
-          />
-        </Tooltip>
         <HelpMenuRoot />
-        <div className="hidden sm:contents">
-          <StarUsOnGitHubLink />
-        </div>
         <div className="flex size-8 items-center justify-center rounded-md hover:bg-layer-1-hover">
           <UserMenuRoot />
         </div>

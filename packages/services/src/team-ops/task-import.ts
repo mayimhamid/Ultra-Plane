@@ -121,14 +121,34 @@ export const buildImportPrompt = (options: {
     target === "micro"
       ? `small tasks with no project for ${personName ?? "one person"}`
       : `work items of the project "${context.project?.name ?? ""}"`;
+  const team =
+    target === "project" && context.people.length
+      ? [
+          "",
+          "The people of this project (give each task to whoever fits it best, by name or by role if I mention one):",
+          ...context.people.map((person) => `- ${person.display_name}: ${person.email}`),
+        ]
+      : [];
   return [
-    `You are helping me plan work. Turn my description below into ${where}.`,
-    `Today is ${today}. Split the work into concrete tasks of a few hours to a few days, and estimate each one.`,
+    `You are a project planner. Turn what I give you below into ${where}, ready to import into my task tool.`,
+    `Today is ${today}.`,
     "",
-    "Answer with ONLY a JSON array, no text before or after it. Each item is an object with these keys:",
+    "What I give you can be anything: a description of a project, a long list of tasks copied from Excel, a",
+    "document or my notes, in English or Persian. Rules:",
+    "- Turn EVERY item into a task; never skip, merge or summarise items of a list. A list of 100 lines gives",
+    "  at least 100 tasks. Split a big piece of work into concrete tasks of a few hours to a few days.",
+    "- Estimate the time of every task yourself (planned_hours, or planned_days for longer work) when I do not.",
+    '- Work out the dates from what I say ("next week", "by the 20th"), counting from today; skip weekends.',
+    target === "project"
+      ? "- Choose the assignees, priority and the rest yourself from the lists below when I do not say."
+      : "- Mark meetings with is_meeting: true.",
+    "- Write titles short and clear, in the language I used.",
+    "",
+    "Answer with ONLY a JSON array, no text before or after it, no comments. Each item is an object with:",
     ...fields,
-    "Leave a key out when you do not know it. Use the names exactly as written above; do not invent people,",
+    "Leave a key out when you do not know it. Use the names exactly as written; do not invent people,",
     "modules, states or labels.",
+    ...team,
     "",
     "Example:",
     target === "micro"

@@ -24,6 +24,7 @@ import {
   YourWorkOutline,
 } from "@makeplane/propel/icons";
 import { cn } from "@plane/utils";
+import { NotificationsNavIcon } from "@/components/team-ops/notifications/notifications-nav-icon";
 
 export const getSidebarNavigationItemIcon = (key: string, className: string = "") => {
   switch (key) {
@@ -45,6 +46,10 @@ export const getSidebarNavigationItemIcon = (key: string, className: string = ""
       return <DraftsOutline className={cn("size-4 flex-shrink-0", className)} />;
     case "archives":
       return <ArchiveOutline className={cn("size-4 flex-shrink-0", className)} />;
+    case "team_calendar":
+      return <CalendarOutline className={cn("size-4 flex-shrink-0", className)} />;
+    case "notifications":
+      return <NotificationsNavIcon className={className} />;
     case "workday":
       return <ClockOutline className={cn("size-4 flex-shrink-0", className)} />;
     case "micro_tasks":

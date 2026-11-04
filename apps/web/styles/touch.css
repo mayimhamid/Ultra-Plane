@@ -109,3 +109,12 @@ html {
     overscroll-behavior: none;
   }
 }
+
+/*
+ * Full-height screens use the height that is really visible. On phones 100vh is taller than the screen
+ * (it ignores the browser bars and, in the installed app, can reach under the home indicator), which pushed
+ * the chat's Send button below the edge.
+ */
+.h-screen {
+  height: 100dvh;
+}

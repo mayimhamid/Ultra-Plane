@@ -116,6 +116,11 @@ class DayReportEntry(BaseModel):
         MicroTask, on_delete=models.SET_NULL, null=True, blank=True, related_name="day_entries"
     )
     minutes = models.PositiveIntegerField()
+    # From and to, when the work was done in one go; empty for work spread over the day (only `minutes`).
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    # REMOTE or ONSITE: where this piece of work was done. Both in one day make it a hybrid day.
+    location = models.CharField(max_length=10, blank=True, default="")
     # The person finished the task with this row.
     finished = models.BooleanField(default=False)
     note = models.TextField(blank=True, default="")

@@ -28,10 +28,16 @@ export type TDayReportTask = TTaskProgress & {
   project: { id: string; name: string } | null;
 };
 
+export type TReportPlace = "REMOTE" | "ONSITE";
+
 export type TDayReportRow = {
   id: string;
   task: TDayReportTask | null;
   minutes: number;
+  /** "09:30" when the work was done in one go; null for work spread over the day. */
+  start: string | null;
+  end: string | null;
+  location: TReportPlace | "";
   finished: boolean;
   note: string;
 };
@@ -39,7 +45,9 @@ export type TDayReportRow = {
 export type TDayReport = {
   date: string;
   today: string;
+  /** Where the day was worked: from the rows (both places: HYBRID), else the day's answer. */
   mode: string | null;
+  planned_mode: string | null;
   status: "DRAFT" | "SUBMITTED";
   exists: boolean;
   submitted_at: string | null;
@@ -56,12 +64,24 @@ export type TDayReport = {
 export type TDayReportRowInput = {
   issue?: string;
   micro_task?: string;
+  /** Used when `start` and `end` are not given. */
   minutes: number;
+  start?: string;
+  end?: string;
+  location?: TReportPlace | "";
   finished: boolean;
   note: string;
 };
 
-export type TDayReportRevisionRow = { task: string; minutes: number; finished: boolean; note: string };
+export type TDayReportRevisionRow = {
+  task: string;
+  minutes: number;
+  start?: string | null;
+  end?: string | null;
+  location?: string;
+  finished: boolean;
+  note: string;
+};
 
 export type TDayReportRevision = {
   id: number;

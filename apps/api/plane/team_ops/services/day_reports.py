@@ -11,6 +11,7 @@ such change is kept as a revision and the person's managers are told.
 """
 
 from dataclasses import dataclass
+from datetime import time as time_of_day
 
 # Django imports
 from django.db import transaction
@@ -181,7 +182,18 @@ def _snapshot(report):
     if report is None or report.pk is None:
         return []
     rows = report.entries.select_related("issue", "issue__project", "micro_task")
-    return [{"task": _label(e), "minutes": e.minutes, "finished": e.finished, "note": e.note} for e in rows]
+    return [
+        {
+            "task": _label(e),
+            "minutes": e.minutes,
+            "start": e.start_time.strftime("%H:%M") if e.start_time else None,
+            "end": e.end_time.strftime("%H:%M") if e.end_time else None,
+            "location": e.location,
+            "finished": e.finished,
+            "note": e.note,
+        }
+        for e in rows
+    ]
 
 
 def day_mode(workspace, user, day):
@@ -234,6 +246,9 @@ def report_payload(workspace, user, day):
                 "id": str(entry.id),
                 "task": task,
                 "minutes": entry.minutes,
+                "start": entry.start_time.strftime("%H:%M") if entry.start_time else None,
+                "end": entry.end_time.strftime("%H:%M") if entry.end_time else None,
+                "location": entry.location,
                 "finished": entry.finished,
                 "note": entry.note,
             }
@@ -242,7 +257,9 @@ def report_payload(workspace, user, day):
     return {
         "date": day,
         "today": today,
-        "mode": day_mode(workspace, user, day),
+        # Where the day was worked: from the rows (both places make it HYBRID), else the day's answer.
+        "mode": day_place([entry.location for entry in entries], day_mode(workspace, user, day)),
+        "planned_mode": day_mode(workspace, user, day),
         "status": report.status if report else DayReport.Status.DRAFT,
         "exists": report is not None,
         "submitted_at": report.submitted_at if report else None,
@@ -256,6 +273,28 @@ def report_payload(workspace, user, day):
     }
 
 
+LOCATIONS = ("REMOTE", "ONSITE")
+
+
+def _time(value, index, label):
+    if value in (None, ""):
+        return None
+    try:
+        return time_of_day.fromisoformat(str(value)[:5])
+    except ValueError:
+        raise ParseError(detail=f"Row {index}: the {label} time must look like 09:30.")
+
+
+def day_place(locations, fallback=None):
+    """REMOTE, ONSITE or HYBRID from the places of a day's rows; the day's answer when no row says."""
+    places = {place for place in locations if place in LOCATIONS}
+    if len(places) > 1:
+        return "HYBRID"
+    if places:
+        return places.pop()
+    return fallback
+
+
 def _clean_rows(workspace, user, rows):
     if not isinstance(rows, list):
         raise ParseError(detail="The report must be a list of rows.")
@@ -265,10 +304,23 @@ def _clean_rows(workspace, user, rows):
     for index, row in enumerate(rows, start=1):
         if not isinstance(row, dict):
             raise ParseError(detail=f"Row {index} is not valid.")
-        try:
-            minutes = int(row.get("minutes") or 0)
-        except (TypeError, ValueError):
-            raise ParseError(detail=f"Row {index}: the time must be a number of minutes.")
+        start = _time(row.get("start"), index, "start")
+        end = _time(row.get("end"), index, "end")
+        if (start is None) != (end is None):
+            raise ParseError(detail=f"Row {index}: give both the start and the end time.")
+        if start is not None:
+            # Work done in one go: the time is from start to end.
+            if end <= start:
+                raise ParseError(detail=f"Row {index}: the end time must be after the start time.")
+            minutes = (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute)
+        else:
+            try:
+                minutes = int(row.get("minutes") or 0)
+            except (TypeError, ValueError):
+                raise ParseError(detail=f"Row {index}: the time must be a number of minutes.")
+        location = str(row.get("location") or "").upper()
+        if location and location not in LOCATIONS:
+            raise ParseError(detail=f"Row {index}: the place is remote or onsite.")
         if minutes <= 0 or minutes > DAY_MINUTES:
             raise ParseError(detail=f"Row {index}: enter the time spent (more than 0, at most 24 hours).")
         issue = micro = None
@@ -291,6 +343,9 @@ def _clean_rows(workspace, user, rows):
                 "issue": issue,
                 "micro_task": micro,
                 "minutes": minutes,
+                "start_time": start,
+                "end_time": end,
+                "location": location,
                 "finished": bool(row.get("finished")),
                 "note": str(row.get("note") or "")[:2000],
             }
@@ -328,6 +383,9 @@ def save_report(*, workspace, user, actor, day, rows, submit, reason=""):
                     issue=row["issue"],
                     micro_task=row["micro_task"],
                     minutes=row["minutes"],
+                    start_time=row["start_time"],
+                    end_time=row["end_time"],
+                    location=row["location"],
                     finished=row["finished"],
                     note=row["note"],
                     position=position,

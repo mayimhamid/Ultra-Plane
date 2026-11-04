@@ -46,6 +46,21 @@ export const SidebarWrapper = observer(function SidebarWrapper(props: TSidebarWr
     }
   });
 
+  // Phones: a tap anywhere outside the open sidebar closes it. iOS sends no mouse event for a tap on a plain
+  // area, so the click detector above misses it; pointer events cover touch.
+  useEffect(() => {
+    if (sidebarCollapsed !== false) return;
+    const onPointer = (event: PointerEvent) => {
+      if (window.innerWidth >= 768 || !ref.current) return;
+      const target = event.target as Node;
+      // Menus opened from the sidebar are rendered elsewhere (portals): tapping them must not close it.
+      const inPortal = (target as Element).closest?.("[data-headlessui-portal], [role='menu'], [role='dialog']");
+      if (!ref.current.contains(target) && !inPortal) toggleSidebar();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    return () => document.removeEventListener("pointerdown", onPointer);
+  }, [sidebarCollapsed, toggleSidebar]);
+
   useEffect(() => {
     if (windowSize[0] < 768 && !sidebarCollapsed) toggleSidebar();
     // eslint-disable-next-line react-hooks/exhaustive-deps

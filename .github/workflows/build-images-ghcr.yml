@@ -31,16 +31,18 @@ permissions:
   contents: read
   packages: write
 
+# A new push stops the run of the previous push straight away (its builds, and its deploy if it got that far),
+# so GitHub never works on code that is already outdated. The new run then builds and deploys everything again.
+# Stopping a deploy halfway is safe: each database migration runs in a transaction (it is either applied or
+# not), and the new run pulls the images and recreates every container again.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build ${{ matrix.name }}
     runs-on: ubuntu-latest
-    # A newer push makes an older build pointless: cancel it and build the new code. The old run's deploy
-    # then never starts (it needs this job). A deploy that is already running is never cancelled (see below),
-    # because stopping it halfway through the migrations could leave the database half updated.
-    concurrency:
-      group: build-${{ github.ref }}-${{ matrix.name }}
-      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -99,10 +101,6 @@ jobs:
     environment: mg-sfactory
     permissions:
       contents: read
-    # One deployment at a time and never cancelled: a newer one waits until the running one is finished.
-    concurrency:
-      group: deploy-mg-sfactory
-      cancel-in-progress: false
     env:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_PORT: ${{ secrets.SSH_PORT }}

@@ -249,11 +249,12 @@ def post_message(
     if tagged:
         name = channel_name(channel, author)
         attention = kind == HubMessage.Kind.ATTENTION
+        what = "needs your attention" if attention else "tagged everyone" if everyone else "tagged you"
         notify(
             channel.workspace,
             tagged,
             "ATTENTION" if attention else "MENTION",
-            f"{author.display_name} {'needs your attention' if attention else 'tagged everyone' if everyone else 'tagged you'} in {name}",
+            f"{author.display_name} {what} in {name}",
             body[:300],
             link=f"team-ops/hub?channel={channel.id}",
             actor=author,

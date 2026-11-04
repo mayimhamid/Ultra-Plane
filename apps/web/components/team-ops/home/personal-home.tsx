@@ -5,6 +5,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { orderBy } from "lodash-es";
 import { observer } from "mobx-react";
 import Link from "next/link";
 import { addDays, formatHm, toDateKey } from "@plane/services";
@@ -14,6 +15,7 @@ import { useUser } from "@/hooks/store/user";
 import { useWorkday } from "@/hooks/team-ops/use-workday";
 // components
 import { ContributionGraph } from "../workday/contribution-graph";
+import { HomeMentions } from "./home-mentions";
 
 type Props = { workspaceSlug: string };
 
@@ -30,7 +32,7 @@ const groupByMonth = (sessions: TWorkSession[]): Month[] => {
     if (!months.has(key)) months.set(key, { key, label: monthFormat.format(date), sessions: [] });
     months.get(key)!.sessions.push(session);
   }
-  return [...months.values()].sort((a, b) => b.key.localeCompare(a.key));
+  return orderBy([...months.values()], (month) => month.key, "desc");
 };
 
 function MonthBlock({ month }: { month: Month }) {
@@ -103,9 +105,11 @@ export const PersonalHome = observer(function PersonalHome({ workspaceSlug }: Pr
           href={`/${workspaceSlug}/team-ops/workday/`}
           className="rounded-md bg-accent-primary px-4 py-2 text-body-sm-medium text-on-color"
         >
-          Go to Workday
+          Open Day Report
         </Link>
       </header>
+
+      <HomeMentions workspaceSlug={workspaceSlug} />
 
       <dl className="flex flex-wrap gap-3">
         {[

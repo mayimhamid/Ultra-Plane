@@ -5,7 +5,7 @@
  */
 
 import { useRef, useState } from "react";
-import { Brain, Copy, FileUp, X } from "lucide-react";
+import { Brain, CircleHelp, Copy, FileUp, X } from "lucide-react";
 import useSWR from "swr";
 import { Button } from "@makeplane/propel/components/button";
 import { setToast } from "@plane/blocks/toast";
@@ -56,7 +56,7 @@ function Panel({ title, onClose, children }: { title: string; onClose: () => voi
 
 /** "Import" (a JSON or CSV file, checked and previewed before anything is created) and the AI prompt builder. */
 export function TaskImportButtons({ workspaceSlug, target, projectId, userId, personName, onDone }: Props) {
-  const [open, setOpen] = useState<"import" | "prompt" | null>(null);
+  const [open, setOpen] = useState<"import" | "prompt" | "help" | null>(null);
   const [items, setItems] = useState<TImportItem[] | null>(null);
   const [rows, setRows] = useState<TImportRow[]>([]);
   const [ok, setOk] = useState(false);
@@ -161,7 +161,64 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
         >
           <Brain className="size-5" aria-hidden />
         </button>
+        <button
+          type="button"
+          title="How to import with ChatGPT or Claude"
+          aria-label="How to import with ChatGPT or Claude"
+          onClick={() => setOpen("help")}
+          className="inline-flex size-10 items-center justify-center rounded-md border border-subtle text-secondary hover:bg-layer-1"
+        >
+          <CircleHelp className="size-5" aria-hidden />
+        </button>
       </div>
+
+      {open === "help" ? (
+        <Panel title="How to add many tasks at once" onClose={close}>
+          <ol className="flex flex-col gap-3 text-body-sm-regular text-secondary">
+            <li>
+              <strong className="text-primary">1. Open the prompt.</strong> Press the purple brain button. Write what
+              needs doing in the box: a description of the work, or paste your whole list (from Excel, notes or a
+              document, even 100 lines).
+            </li>
+            <li>
+              <strong className="text-primary">2. Copy it to ChatGPT or Claude.</strong> Press "Copy the prompt" and
+              paste it into a new chat. The prompt already lists{" "}
+              {target === "project" ? "the people, modules and states of this project" : "how micro tasks are written"},
+              so the assistant splits the work into tasks and decides the time,{" "}
+              {target === "project"
+                ? "the people, the priority and the dates"
+                : "the dates and which ones are meetings"}{" "}
+              itself.
+            </li>
+            <li>
+              <strong className="text-primary">3. Bring the answer back.</strong> Copy the assistant&apos;s whole answer
+              (the JSON), press "Import" and paste it, or save it as a .json file and choose the file. A CSV with a
+              "title" column works too.
+            </li>
+            <li>
+              <strong className="text-primary">4. Check and confirm.</strong> A preview shows every task and any problem
+              (a person who is not in the project, a missing title). Nothing is added until you press "Add". If
+              something is wrong, ask the assistant to fix it and import again.
+            </li>
+          </ol>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              variant="primary"
+              size="lg"
+              stretch="auto"
+              label="Open the prompt"
+              onClick={() => setOpen("prompt")}
+            />
+            <Button
+              variant="secondary"
+              size="lg"
+              stretch="auto"
+              label="Import an answer"
+              onClick={() => setOpen("import")}
+            />
+          </div>
+        </Panel>
+      ) : null}
 
       {open === "prompt" ? (
         <Panel title="Prompt for ChatGPT or Claude" onClose={close}>
@@ -173,8 +230,8 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
             <textarea
               value={description}
               onChange={(event) => setDescription(event.target.value)}
-              rows={4}
-              placeholder="For example: install 12 BLE anchors in hall B next week, test the coverage, write a report"
+              rows={7}
+              placeholder="Describe the work, or paste your list of tasks (any length). For example: install 12 BLE anchors in hall B next week, test the coverage, write a report"
               className="rounded-md border border-subtle bg-layer-1 p-3 text-body-sm-regular text-primary outline-none focus:border-accent-strong"
             />
             <pre className="max-h-72 overflow-auto rounded-md border border-subtle bg-layer-1 p-3 text-caption-sm-regular whitespace-pre-wrap text-secondary">

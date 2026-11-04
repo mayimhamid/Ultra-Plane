@@ -183,9 +183,7 @@ class TestMicroTasks:
         listed = member_client.get(url(workspace, "micro-tasks/")).data["results"]
         assert {task["title"] for task in listed} == {"Call the supplier", "Weekly sync"}
 
-    def test_only_managers_give_micro_tasks_to_others(
-        self, member_client, admin_client, workspace, member, colleague
-    ):
+    def test_only_managers_give_micro_tasks_to_others(self, member_client, admin_client, workspace, member, colleague):
         body = {"title": "Check stock", "user": str(colleague.id)}
         assert member_client.post(url(workspace, "micro-tasks/"), body, format="json").status_code == 403
         given = admin_client.post(url(workspace, "micro-tasks/"), body, format="json")
@@ -243,3 +241,49 @@ class TestImport:
         response = admin_client.post(url(workspace, "import/tasks/"), body, format="json")
         assert response.status_code == 201 and response.data["created"] == 2
         assert MicroTask.objects.filter(assignee=colleague).count() == 2
+
+
+@pytest.mark.contract
+class TestTimesAndPlace:
+    def test_start_and_end_give_the_time_and_both_places_make_a_hybrid_day(
+        self, member_client, admin_client, workspace, member, issue
+    ):
+        rows = [
+            {"issue": str(issue.id), "start": "09:00", "end": "10:30", "location": "ONSITE"},
+            {"issue": str(issue.id), "minutes": 45, "location": "REMOTE", "note": "spread over the day"},
+        ]
+        report = put(member_client, workspace, today(), rows, submit=True).data
+        assert [row["minutes"] for row in report["entries"]] == [90, 45]
+        assert report["entries"][0]["start"] == "09:00" and report["entries"][0]["end"] == "10:30"
+        assert report["entries"][1]["start"] is None
+        assert report["mode"] == "HYBRID" and report["total_minutes"] == 135
+        hybrid = admin_client.get(url(workspace, "day-reports/team/"), {"place": "HYBRID"}).data["results"]
+        assert [row["user"]["id"] for row in hybrid] == [str(member.id)]
+        remote = admin_client.get(url(workspace, "day-reports/team/"), {"place": "REMOTE"}).data["results"]
+        assert all(row["user"]["id"] != str(member.id) for row in remote)
+
+    def test_bad_times_are_refused(self, member_client, workspace, issue):
+        for row in (
+            {"start": "10:00", "end": "09:00"},
+            {"start": "10:00"},
+            {"start": "ten", "end": "11:00"},
+            {"minutes": 30, "location": "MOON"},
+        ):
+            body = [{"issue": str(issue.id), **row}]
+            assert put(member_client, workspace, today(), body).status_code == 400
+
+    def test_export_keeps_only_the_place_asked_for(self, member_client, admin_client, workspace, issue):
+        rows = [
+            {"issue": str(issue.id), "start": "09:00", "end": "10:00", "location": "ONSITE"},
+            {"issue": str(issue.id), "minutes": 30, "location": "REMOTE"},
+        ]
+        put(member_client, workspace, today(), rows, submit=True)
+        params = {"from": str(today() - timedelta(days=7)), "to": str(today())}
+        everything = admin_client.get(url(workspace, "day-reports/export/"), params)
+        assert everything.status_code == 200 and everything["Content-Type"].startswith("text/csv")
+        text = everything.content.decode("utf-8-sig")
+        assert "ONSITE" in text and "REMOTE" in text and "HYBRID" in text
+        remote = admin_client.get(url(workspace, "day-reports/export/"), {**params, "place": "REMOTE"})
+        lines = [line for line in remote.content.decode("utf-8-sig").splitlines() if line.startswith(str(today()))]
+        assert len(lines) == 1 and ",REMOTE," in lines[0] and "0.50" in lines[0]
+        assert member_client.get(url(workspace, "day-reports/export/"), params).status_code in (200, 403)

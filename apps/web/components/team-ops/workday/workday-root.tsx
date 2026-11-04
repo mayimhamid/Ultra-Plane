@@ -16,14 +16,12 @@ import { useUser } from "@/hooks/store/user";
 import { useCalendarSettings } from "@/hooks/team-ops/use-work-calendar";
 import { useOpsNotifications, useWorkdayState } from "@/hooks/team-ops/use-workday";
 // components
-import { MyCalendarRoot } from "../calendar/my-calendar-root";
 import { getErrorMessage } from "../calendar/error-message";
 import { DayReportCard } from "../day-report/day-report-card";
 import { TeamDayReports } from "../day-report/team-day-reports";
 import { NotificationItem } from "../notifications/notification-item";
 import { MyReportsRoot } from "../reports/my-reports-root";
 // local imports
-import { ContributionGraph } from "./contribution-graph";
 import { DayModeChip, DayOverride, DayStart, Gate, WeekUnlock } from "./day-start";
 import { WeekPlan } from "./week-plan";
 
@@ -215,8 +213,6 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
         canSeeHistory={!othersReport || !!permissions?.can_view_team}
       />
 
-      {!othersReport ? <ContributionGraph workspaceSlug={workspaceSlug} /> : null}
-
       {permissions?.can_view_team && !othersReport ? <TeamDayReports workspaceSlug={workspaceSlug} day={date} /> : null}
 
       {permissions?.can_view_team ? (
@@ -241,9 +237,6 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
       {!othersReport ? (
         <>
           <div className="flex flex-col gap-3">
-            <Section title="My plan" hint="Calendar: where you work each day">
-              <MyCalendarRoot workspaceSlug={workspaceSlug} />
-            </Section>
             <Section title="My reports" hint="Daily and weekly">
               <MyReportsRoot workspaceSlug={workspaceSlug} />
             </Section>

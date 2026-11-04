@@ -47,6 +47,19 @@ export const parseDuration = (text: string): number | null => {
   return number <= 12 ? Math.round(number * 60) : Math.round(number);
 };
 
+/** Minutes between two "HH:MM" times; `null` when one is missing or the end is not after the start. */
+const clockMinutes = (value: string) => {
+  const match = value.match(/^(\d{1,2}):(\d{2})$/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+};
+
+export const spanMinutes = (start: string, end: string): number | null => {
+  const from = clockMinutes(start);
+  const to = clockMinutes(end);
+  if (from === null || to === null || to <= from) return null;
+  return to - from;
+};
+
 /** Minutes back to the short form shown in the time box. */
 export const durationText = (minutes: number) => {
   if (!minutes) return "";
@@ -101,10 +114,22 @@ export class DayReportService extends APIService {
       .catch(unwrap);
   }
 
-  async getTeam(workspaceSlug: string, day?: string): Promise<{ date: string; results: TTeamDayReportRow[] }> {
-    return this.get(`${this.base(workspaceSlug)}/day-reports/team/`, { params: day ? { date: day } : {} })
+  async getTeam(
+    workspaceSlug: string,
+    day?: string,
+    place?: string
+  ): Promise<{ date: string; results: TTeamDayReportRow[] }> {
+    return this.get(`${this.base(workspaceSlug)}/day-reports/team/`, {
+      params: { ...(day ? { date: day } : {}), ...(place ? { place } : {}) },
+    })
       .then((response) => response?.data)
       .catch(unwrap);
+  }
+
+  /** Link of the CSV of the team's report rows; `place` keeps only remote, onsite or hybrid days. */
+  exportUrl(workspaceSlug: string, from: string, to: string, place?: string) {
+    const query = new URLSearchParams({ from, to, ...(place ? { place } : {}) });
+    return `${this.baseURL}${this.base(workspaceSlug)}/day-reports/export/?${query.toString()}`;
   }
 
   async getPlan(workspaceSlug: string, issueId: string): Promise<TTaskPlan> {

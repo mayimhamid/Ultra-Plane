@@ -17,7 +17,16 @@ const at = (stamp: string) =>
   });
 
 const line = (row: TDayReportRevisionRow) =>
-  `${row.task} · ${formatMinutes(row.minutes)}${row.finished ? " · done" : ""}${row.note ? ` · ${row.note}` : ""}`;
+  [
+    row.task,
+    row.start && row.end ? `${row.start}–${row.end}` : null,
+    formatMinutes(row.minutes),
+    row.location ? row.location.toLowerCase() : null,
+    row.finished ? "done" : null,
+    row.note || null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
 /** What changed in each recorded edit: rows removed in red, rows added in green. */
 export function ReportHistory({ revisions }: { revisions: TDayReportRevision[] }) {

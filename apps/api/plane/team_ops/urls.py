@@ -394,6 +394,7 @@ urlpatterns = [
 # Day Reports, planned time, micro tasks and the task import.
 from plane.team_ops.views.day_reports import (  # noqa: E402
     DayReportEndpoint,
+    DayReportExportEndpoint,
     DayReportHistoryEndpoint,
     DayReportTeamEndpoint,
     MicroTaskDetailEndpoint,
@@ -403,6 +404,11 @@ from plane.team_ops.views.day_reports import (  # noqa: E402
 )
 
 urlpatterns += [
+    path(
+        "workspaces/<str:slug>/team-ops/day-reports/export/",
+        DayReportExportEndpoint.as_view(),
+        name="team-ops-day-report-export",
+    ),
     path(
         "workspaces/<str:slug>/team-ops/day-reports/team/",
         DayReportTeamEndpoint.as_view(),
