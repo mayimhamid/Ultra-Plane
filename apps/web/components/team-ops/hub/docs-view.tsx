@@ -119,7 +119,7 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-subtle px-4 py-3">
-        <h2 className="text-body-md-medium text-primary">Doc Hub</h2>
+        <h2 className="text-body-md-medium text-primary">Documents</h2>
         <Button
           variant="primary"
           size="sm"

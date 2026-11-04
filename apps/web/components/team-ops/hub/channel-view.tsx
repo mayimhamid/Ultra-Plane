@@ -84,6 +84,14 @@ function Message({ message, isOwn, isReply, onReply, onEdit, onDelete, onOpenFil
             value={draft}
             rows={3}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && draft.trim()) {
+                event.preventDefault();
+                void onEdit(message, draft).then(() => setIsEditing(false));
+              } else if (event.key === "Escape") {
+                setIsEditing(false);
+              }
+            }}
           />
           <div className="flex gap-2">
             <Button
@@ -282,12 +290,13 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
             value={body}
             rows={2}
             maxLength={5000}
-            placeholder="Write a message. Use the lists below to tag people or a whole team."
+            placeholder="Write a message. Enter sends, Shift+Enter for a new line. Use the lists below to tag people or a team."
             onChange={(event) => setBody(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+              // Enter sends, Shift+Enter starts a new line. Not while a word is still being composed (IME).
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
-                void send();
+                if (!isSending) void send();
               }
             }}
           />
@@ -370,7 +379,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
                 </li>
               ))}
               {files.map((file, index) => (
-                <li key={`${file.name}-${index}`}>
+                <li key={`${file.name}-${file.size}-${file.lastModified}`}>
                   <button
                     type="button"
                     className="rounded-full bg-layer-1 px-2.5 py-0.5 text-caption-sm-regular text-secondary"

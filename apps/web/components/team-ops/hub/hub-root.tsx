@@ -17,8 +17,7 @@ import { hubExtraService, useHubChannels, useHubMentions, useHubPeople } from "@
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
 import { ChannelView } from "./channel-view";
-import { DocsView } from "./docs-view";
-import { FilesView } from "./files-view";
+import { DocHubView } from "./doc-hub-view";
 import { SecretsView } from "./secrets-view";
 
 type Props = { workspaceSlug: string };
@@ -30,12 +29,12 @@ const dateFormat = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-const SECTIONS = ["mentions", "docs", "files", "secrets"] as const;
+const SECTIONS = ["mentions", "docs", "files", "secrets"] as const; // "files" is kept for old links
 type TSection = (typeof SECTIONS)[number];
 const SECTION_LABEL: Record<TSection, string> = {
   mentions: "Mentions",
   docs: "Doc Hub",
-  files: "Files",
+  files: "Doc Hub",
   secrets: "Secrets",
 };
 
@@ -193,8 +192,12 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
           </div>
         </Group>
         <Group title="Library">
-          {(["docs", "files", "secrets"] as const).map((item) => (
-            <SideButton key={item} active={section === item} onClick={() => openSection(item)}>
+          {(["docs", "secrets"] as const).map((item) => (
+            <SideButton
+              key={item}
+              active={section === item || (item === "docs" && section === "files")}
+              onClick={() => openSection(item)}
+            >
               {SECTION_LABEL[item]}
             </SideButton>
           ))}
@@ -213,8 +216,9 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
         </button>
         <div className="min-h-0 flex-1">
           {section === "mentions" ? <MentionsView workspaceSlug={workspaceSlug} onOpenChannel={openChannel} /> : null}
-          {section === "docs" ? <DocsView workspaceSlug={workspaceSlug} /> : null}
-          {section === "files" ? <FilesView workspaceSlug={workspaceSlug} /> : null}
+          {section === "docs" || section === "files" ? (
+            <DocHubView workspaceSlug={workspaceSlug} initialTab={section === "files" ? "files" : "docs"} />
+          ) : null}
           {section === "secrets" ? <SecretsView workspaceSlug={workspaceSlug} /> : null}
           {!section && active ? (
             <ChannelView key={active.id} workspaceSlug={workspaceSlug} channel={active} onRead={() => void refresh()} />
