@@ -48,13 +48,18 @@ export class HubService extends APIService {
   }
 
   /** The newest messages, oldest first. Opening a channel marks it read; paging back with `before` does not. */
+  /**
+   * A page of messages, oldest first: the newest page, or the one `before` a message. With `since`, only the
+   * messages new or changed (edited, deleted) after that server time, for cheap polling.
+   */
   async listMessages(
     workspaceSlug: string,
     channelId: string,
-    before?: string
-  ): Promise<{ results: THubMessage[]; has_more: boolean }> {
+    before?: string,
+    since?: string
+  ): Promise<{ results: THubMessage[]; has_more: boolean; server_time: string }> {
     return this.get(`${this.base(workspaceSlug)}/channels/${channelId}/messages/`, {
-      params: before ? { before } : {},
+      params: since ? { since } : before ? { before } : {},
     })
       .then((response) => response?.data)
       .catch((error) => {

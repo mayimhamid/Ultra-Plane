@@ -6,6 +6,8 @@
 
 import { observer } from "mobx-react";
 import { useSearchParams } from "react-router";
+import { AtSign, BookOpen, KeyRound, Megaphone, MessagesSquare } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Badge } from "@makeplane/propel/components/badge";
 import { Button } from "@makeplane/propel/components/button";
 import { SelectField } from "@makeplane/propel/components/select-field";
@@ -38,37 +40,82 @@ const SECTION_LABEL: Record<TSection, string> = {
   secrets: "Secrets",
 };
 
+// A small colored tile for teams, projects and people: the first letter on a color of its own.
+const HUES = [210, 340, 145, 25, 265, 185, 5, 290, 95, 45];
+const tileColor = (key: string) => {
+  let hash = 0;
+  for (let index = 0; index < key.length; index++) hash = (hash * 31 + key.charCodeAt(index)) | 0;
+  return `hsl(${HUES[Math.abs(hash) % HUES.length]} 60% 46%)`;
+};
+
+const Tile = ({ name, seed, round = false }: { name: string; seed: string; round?: boolean }) => (
+  <span
+    aria-hidden
+    className={cn(
+      "inline-flex size-7 shrink-0 items-center justify-center text-[12px] font-semibold text-white",
+      round ? "rounded-full" : "rounded-md"
+    )}
+    style={{ backgroundColor: tileColor(seed) }}
+  >
+    {name.trim().charAt(0).toUpperCase() || "?"}
+  </span>
+);
+
+const IconTile = ({ icon: Icon, color }: { icon: LucideIcon; color: string }) => (
+  <span
+    aria-hidden
+    className="inline-flex size-7 shrink-0 items-center justify-center rounded-md"
+    style={{ color, backgroundColor: `color-mix(in oklab, ${color} 15%, transparent)` }}
+  >
+    <Icon className="size-4" />
+  </span>
+);
+
 const SideButton = ({
   active,
   onClick,
   children,
   badge,
+  lead,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
   badge?: number;
+  lead?: React.ReactNode;
 }) => (
   <button
     type="button"
     aria-current={active ? "page" : undefined}
     onClick={onClick}
     className={cn(
-      "flex items-center justify-between gap-2 rounded-md px-3 py-1.5 text-left text-body-sm-regular",
-      active ? "bg-layer-1 text-primary" : "text-secondary hover:bg-layer-1"
+      "relative flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-body-sm-regular transition-colors",
+      active ? "bg-accent-subtle text-primary" : "text-secondary hover:bg-layer-1",
+      badge ? "font-semibold text-primary" : ""
     )}
   >
-    <span className="truncate">{children}</span>
-    {badge ? <Badge variant="brand" size="sm" label={String(badge)} /> : null}
+    {active ? (
+      <span aria-hidden className="absolute top-2 bottom-2 left-0 w-0.5 rounded-full bg-accent-primary" />
+    ) : null}
+    {lead}
+    <span className="min-w-0 flex-1 truncate">{children}</span>
+    {badge ? (
+      <span className="min-w-5 rounded-full bg-accent-primary px-1.5 text-center text-caption-sm-medium text-on-color">
+        {badge > 99 ? "99+" : badge}
+      </span>
+    ) : null}
   </button>
 );
 
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
+function Group({ title, count, children }: { title: string; count?: number; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <h3 className="px-3 pb-1 text-caption-sm-medium text-tertiary uppercase">{title}</h3>
+    <section className="flex flex-col gap-0.5">
+      <h3 className="flex items-center justify-between px-2 pb-1 text-caption-sm-medium text-tertiary">
+        <span>{title}</span>
+        {count ? <span className="text-accent-primary tabular-nums">{count} new</span> : null}
+      </h3>
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -151,40 +198,64 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
   };
 
   const ofKind = (...kinds: THubChannel["kind"][]) => list.filter((channel) => kinds.includes(channel.kind));
+  const leadOf = (channel: THubChannel) => {
+    if (channel.kind === "GENERAL") return <IconTile icon={MessagesSquare} color="#2563eb" />;
+    if (channel.kind === "NEWS") return <IconTile icon={Megaphone} color="#c026d3" />;
+    if (channel.kind === "DM") return <Tile name={channel.name} seed={channel.id} round />;
+    return <Tile name={channel.name} seed={channel.project ?? channel.team ?? channel.id} />;
+  };
   const channelButton = (channel: THubChannel) => (
     <SideButton
       key={channel.id}
       active={active?.id === channel.id}
       onClick={() => openChannel(channel.id)}
       badge={channel.unread}
+      lead={leadOf(channel)}
     >
-      {channel.kind === "DM" ? channel.name : `# ${channel.name}`}
+      {channel.name}
     </SideButton>
   );
+  const unreadOf = (...kinds: THubChannel["kind"][]) =>
+    ofKind(...kinds).reduce((sum, channel) => sum + (channel.unread || 0), 0);
 
   return (
-    <div className="flex h-full min-h-96 w-full">
+    <div className="flex h-full min-h-0 w-full overflow-hidden">
       <aside
         aria-label="Hub"
         className={cn(
-          "w-full shrink-0 flex-col gap-4 overflow-y-auto border-subtle p-3 md:flex md:w-64 md:border-r",
+          "w-full shrink-0 flex-col gap-5 overflow-y-auto overscroll-contain border-subtle bg-surface-1 p-3 md:flex md:w-72 md:border-r",
           hasChoice ? "hidden" : "flex"
         )}
       >
         <Group title="Inbox">
-          <SideButton active={section === "mentions"} onClick={() => openSection("mentions")} badge={unreadMentions}>
+          <SideButton
+            active={section === "mentions"}
+            onClick={() => openSection("mentions")}
+            badge={unreadMentions}
+            lead={<IconTile icon={AtSign} color="#ea580c" />}
+          >
             {SECTION_LABEL.mentions}
           </SideButton>
         </Group>
-        <Group title="Everyone">{ofKind("NEWS", "GENERAL").map(channelButton)}</Group>
-        {ofKind("TEAM").length > 0 ? <Group title="Teams">{ofKind("TEAM").map(channelButton)}</Group> : null}
-        {ofKind("PROJECT").length > 0 ? <Group title="Projects">{ofKind("PROJECT").map(channelButton)}</Group> : null}
-        <Group title="Private">
+        <Group title="Everyone" count={unreadOf("NEWS", "GENERAL")}>
+          {ofKind("GENERAL", "NEWS").map(channelButton)}
+        </Group>
+        {ofKind("TEAM").length > 0 ? (
+          <Group title="Teams" count={unreadOf("TEAM")}>
+            {ofKind("TEAM").map(channelButton)}
+          </Group>
+        ) : null}
+        {ofKind("PROJECT").length > 0 ? (
+          <Group title="Projects" count={unreadOf("PROJECT")}>
+            {ofKind("PROJECT").map(channelButton)}
+          </Group>
+        ) : null}
+        <Group title="Private messages" count={unreadOf("DM")}>
           {ofKind("DM").map(channelButton)}
           <div className="px-1 pt-1 [&_button]:min-w-0">
             <SelectField
               size="lg"
-              label="New private message"
+              label="New message"
               options={(people ?? []).map((person) => ({ value: person.id, label: person.display_name }))}
               value={undefined}
               onValueChange={(value) => void startDirect(value)}
@@ -197,6 +268,13 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
               key={item}
               active={section === item || (item === "docs" && section === "files")}
               onClick={() => openSection(item)}
+              lead={
+                item === "docs" ? (
+                  <IconTile icon={BookOpen} color="#0d9488" />
+                ) : (
+                  <IconTile icon={KeyRound} color="#475569" />
+                )
+              }
             >
               {SECTION_LABEL[item]}
             </SideButton>
@@ -206,7 +284,7 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
           <p className="px-3 text-body-xs-regular text-tertiary">Channels appear when you join a team or a project.</p>
         ) : null}
       </aside>
-      <section className={cn("min-w-0 flex-1 flex-col md:flex", hasChoice ? "flex" : "hidden")}>
+      <section className={cn("min-h-0 min-w-0 flex-1 flex-col md:flex", hasChoice ? "flex" : "hidden")}>
         <button
           type="button"
           onClick={() => setSearchParams({})}

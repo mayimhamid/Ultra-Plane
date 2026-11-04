@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { sortBy } from "lodash-es";
 import { observer } from "mobx-react";
@@ -304,10 +304,52 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
     return roots.map((root) => ({ root, replies: replies.filter((reply) => reply.parent === root.id) }));
   }, [hub.messages]);
 
-  const lastId = hub.messages?.[hub.messages.length - 1]?.id;
+  // Scrolling: the newest message stays in view while reading the end; reading older ones is not disturbed.
+  const scroller = useRef<HTMLDivElement>(null);
+  const top = useRef<HTMLDivElement>(null);
+  const nearBottom = useRef(true);
+  const olderAnchor = useRef<{ height: number; top: number } | null>(null);
+  const lastMessage = hub.messages?.[hub.messages.length - 1];
+  const firstId = hub.messages?.[0]?.id;
+
   useEffect(() => {
-    bottom.current?.scrollIntoView?.({ block: "end" });
-  }, [lastId, channel.id]);
+    nearBottom.current = true;
+  }, [channel.id]);
+
+  useEffect(() => {
+    if (!lastMessage) return;
+    if (nearBottom.current || lastMessage.author.id === currentUser?.id)
+      bottom.current?.scrollIntoView?.({ block: "end" });
+  }, [lastMessage, channel.id, currentUser?.id]);
+
+  // After an older page is added above, keep the same message under the reader's eyes.
+  useLayoutEffect(() => {
+    const box = scroller.current;
+    const anchor = olderAnchor.current;
+    if (!box || !anchor) return;
+    box.scrollTop = box.scrollHeight - anchor.height + anchor.top;
+    olderAnchor.current = null;
+  }, [firstId]);
+
+  // Older messages load when the reader scrolls to the top, one page at a time.
+  const { hasMore, loadOlder } = hub;
+  useEffect(() => {
+    const box = scroller.current;
+    const sentinel = top.current;
+    if (!box || !sentinel || !hasMore) return;
+    const watcher = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        olderAnchor.current = { height: box.scrollHeight, top: box.scrollTop };
+        void loadOlder().catch(() => {
+          olderAnchor.current = null;
+        });
+      },
+      { root: box, rootMargin: "200px 0px 0px 0px" }
+    );
+    watcher.observe(sentinel);
+    return () => watcher.disconnect();
+  }, [hasMore, loadOlder]);
 
   const people = (hub.channel?.members ?? []).filter((person) => person.id !== currentUser?.id);
   const projects = joinedProjectIds
@@ -470,7 +512,21 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
         </p>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pb-3" aria-live="polite">
+      <div
+        ref={scroller}
+        onScroll={(event) => {
+          const box = event.currentTarget;
+          nearBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+        }}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3"
+        aria-live="polite"
+      >
+        <div ref={top} aria-hidden className="h-px" />
+        {hub.hasMore ? (
+          <p className="py-2 text-center text-caption-sm-regular text-tertiary">
+            {hub.isLoadingOlder ? "Loading older messages..." : "Scroll up for older messages"}
+          </p>
+        ) : null}
         {hub.isLoading ? <p className="px-4 py-2 text-body-sm-regular text-tertiary">Loading messages...</p> : null}
         {!hub.isLoading && threads.length === 0 ? (
           <p className="px-4 py-6 text-center text-body-sm-regular text-tertiary">

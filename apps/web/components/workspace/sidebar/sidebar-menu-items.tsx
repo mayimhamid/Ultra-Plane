@@ -113,7 +113,15 @@ export const SidebarMenuItems = observer(function SidebarMenuItems() {
             <SidebarItemBase
               key={`team_ops_${item.key}`}
               item={item}
-              additionalStaticItems={["workday", "hub", "teamflow", "team_dashboard", "team_leave", "teamspaces"]}
+              additionalStaticItems={[
+                "workday",
+                "micro_tasks",
+                "hub",
+                "teamflow",
+                "team_dashboard",
+                "team_leave",
+                "teamspaces",
+              ]}
             />
           ))}
           {sortedNavigationItems.map((item, _index) => (

@@ -1,0 +1,12 @@
+[Unit]
+Description=Backup of the Plane database, uploads and settings
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/smartfactoryteam/plane
+ExecStart=/opt/smartfactoryteam/plane/plane-backup.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=1h

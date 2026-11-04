@@ -107,6 +107,24 @@ export function AppUpdater() {
     return () => window.clearTimeout(timeout);
   }, []);
 
+  // In the installed app (home screen), iOS still zooms on a pinch: stop it, like a native app.
+  useEffect(() => {
+    const standalone =
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    if (!standalone) return;
+    const stop = (event: Event) => event.preventDefault();
+    const pinch = (event: TouchEvent) => {
+      if (event.touches.length > 1) event.preventDefault();
+    };
+    document.addEventListener("gesturestart", stop, { passive: false });
+    document.addEventListener("touchmove", pinch, { passive: false });
+    return () => {
+      document.removeEventListener("gesturestart", stop);
+      document.removeEventListener("touchmove", pinch);
+    };
+  }, []);
+
   const check = useCallback(async () => {
     if (!running.current) return;
     try {

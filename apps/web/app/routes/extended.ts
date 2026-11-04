@@ -18,6 +18,12 @@ export const extendedRoutes: RouteConfigEntry[] = [
         layout("./(all)/[workspaceSlug]/(projects)/team-ops/workday/layout.tsx", [
           route(":workspaceSlug/team-ops/workday", "./(all)/[workspaceSlug]/(projects)/team-ops/workday/page.tsx"),
         ]),
+        layout("./(all)/[workspaceSlug]/(projects)/team-ops/micro-tasks/layout.tsx", [
+          route(
+            ":workspaceSlug/team-ops/micro-tasks",
+            "./(all)/[workspaceSlug]/(projects)/team-ops/micro-tasks/page.tsx"
+          ),
+        ]),
         layout("./(all)/[workspaceSlug]/(projects)/team-ops/control/layout.tsx", [
           route(":workspaceSlug/team-ops/control", "./(all)/[workspaceSlug]/(projects)/team-ops/control/page.tsx"),
         ]),

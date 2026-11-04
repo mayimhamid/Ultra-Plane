@@ -59,7 +59,8 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
         <WorkspaceMenuRoot variant="top-navigation" />
       </div>
       {/* Power K Search */}
-      <div className="top-nav-search min-w-0 shrink [&>div]:min-w-0 [&>div>div:first-child]:max-w-full">
+      {/* Phones: no command search here (it crowded the bar); the inbox and profile menu stay. */}
+      <div className="top-nav-search hidden min-w-0 shrink sm:block [&>div]:min-w-0 [&>div>div:first-child]:max-w-full">
         <TopNavPowerK />
       </div>
       {/* Additional Actions */}

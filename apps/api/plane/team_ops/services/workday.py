@@ -530,6 +530,15 @@ def heatmap(workspace, user, days=365):
     for started_at, issue_id, seconds in logged:
         add(started_at.astimezone(zone).date(), 1, [issue_id], seconds)
 
+    # Day Reports: the time each row says was spent on its task that day.
+    from plane.team_ops.models import DayReportEntry
+
+    reported = DayReportEntry.objects.filter(
+        report__workspace=workspace, report__user=user, report__date__gte=first, report__date__lte=today
+    ).values_list("report__date", "issue_id", "micro_task_id", "minutes")
+    for day, issue_id, micro_id, minutes in reported:
+        add(day, 1, [issue_id or micro_id], minutes * 60)
+
     now = timezone.now()
     for timer in ActiveTimer.objects.filter(workspace=workspace, user=user):
         seconds = worked_seconds(timer, now)

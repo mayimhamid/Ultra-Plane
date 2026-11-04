@@ -96,3 +96,16 @@ html {
     }
   }
 }
+
+/*
+ * The installed app (home screen): the page itself never scrolls or bounces like a web page. Each screen
+ * scrolls inside its own frame (a list, the messages of a chat), the way a phone app does.
+ */
+@media (display-mode: standalone) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+}

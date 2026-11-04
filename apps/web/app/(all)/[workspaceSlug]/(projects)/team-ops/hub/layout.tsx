@@ -28,7 +28,8 @@ export default function HubLayout() {
           </Header>
         }
       />
-      <ContentWrapper>
+      {/* A fixed frame: only the channel list and the messages scroll, never the whole page. */}
+      <ContentWrapper className="overflow-y-hidden">
         <Outlet />
       </ContentWrapper>
     </>

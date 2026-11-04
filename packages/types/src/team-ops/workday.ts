@@ -230,7 +230,8 @@ export type TOpsNotification = {
     | "REPLY"
     | "ASSIGN"
     | "CHECKIN"
-    | "LEAVE";
+    | "LEAVE"
+    | "REPORT";
   title: string;
   body: string;
   link: string;

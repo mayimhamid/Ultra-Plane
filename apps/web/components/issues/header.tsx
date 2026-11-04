@@ -20,6 +20,7 @@ import { Header } from "@plane/blocks/layout";
 // components
 import { BreadcrumbLink } from "@/components/common/breadcrumb-link";
 import { CountChip } from "@/components/common/count-chip";
+import { TaskImportButtons } from "@/components/team-ops/import/task-import-button";
 // constants
 import { HeaderFilters } from "@/components/issues/filters";
 // helpers
@@ -118,6 +119,14 @@ export const IssuesHeader = observer(function IssuesHeader() {
             canUserCreateIssue={canUserCreateIssue}
           />
         </div>
+        {/* Team Ops: import many work items from a file, and the AI prompt that writes that file. */}
+        {canUserCreateIssue && workspaceSlug && projectId ? (
+          <TaskImportButtons
+            workspaceSlug={workspaceSlug.toString()}
+            target="project"
+            projectId={projectId.toString()}
+          />
+        ) : null}
         {canUserCreateIssue && (
           <Button
             variant="primary"

@@ -14,7 +14,7 @@ function WorkdayPage({ params }: Route.ComponentProps) {
   const { currentWorkspace } = useWorkspace();
   return (
     <>
-      <PageHead title={currentWorkspace?.name ? `${currentWorkspace.name} - Workday` : undefined} />
+      <PageHead title={currentWorkspace?.name ? `${currentWorkspace.name} - Day Report` : undefined} />
       <WorkdayRoot workspaceSlug={params.workspaceSlug} />
     </>
   );

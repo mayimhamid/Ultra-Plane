@@ -11,6 +11,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   CornerUpLeft,
+  FileClock,
   KeyRound,
   Megaphone,
   MessageCircle,
@@ -37,6 +38,7 @@ export const NOTIFICATION_KIND: Record<TOpsNotification["kind"], TKindStyle> = {
   NEWS: { icon: Megaphone, color: "#c026d3", label: "News" },
   SECRET: { icon: KeyRound, color: "#475569", label: "Secret" },
   LEAVE: { icon: CalendarDays, color: "#0891b2", label: "Leave" },
+  REPORT: { icon: FileClock, color: "#b45309", label: "Report changed" },
 };
 
 const FALLBACK: TKindStyle = { icon: MessageCircle, color: "#6b7280", label: "Notice" };
@@ -49,8 +51,12 @@ const ago = (stamp: string) => {
   return new Date(stamp).toLocaleDateString("en-US", { day: "numeric", month: "short" });
 };
 
-export const notificationHref = (workspaceSlug: string, link: string) =>
-  link ? `/${workspaceSlug}/${link.replace(/^\/+/, "")}/` : "#";
+/** The page of a notification; a link with a query (`team-ops/workday?date=...`) keeps it after the slash. */
+export const notificationHref = (workspaceSlug: string, link: string) => {
+  if (!link) return "#";
+  const [path, query] = link.replace(/^\/+/, "").split("?");
+  return `/${workspaceSlug}/${path.replace(/\/+$/, "")}/${query ? `?${query}` : ""}`;
+};
 
 type Props = {
   workspaceSlug: string;

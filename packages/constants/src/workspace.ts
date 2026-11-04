@@ -285,8 +285,15 @@ export const WORKSPACE_SIDEBAR_STATIC_PINNED_NAVIGATION_ITEMS_LINKS: IWorkspaceS
 export const TEAM_OPS_SIDEBAR_NAVIGATION_ITEMS_LINKS: IWorkspaceSidebarNavigationItem[] = [
   {
     key: "workday",
-    labelTranslationKey: "Workday",
+    labelTranslationKey: "Day Report",
     href: `/team-ops/workday/`,
+    access: [EUserWorkspaceRoles.ADMIN, EUserWorkspaceRoles.MEMBER],
+    highlight: (pathname: string, url: string) => pathname.includes(url),
+  },
+  {
+    key: "micro_tasks",
+    labelTranslationKey: "Micro Tasks",
+    href: `/team-ops/micro-tasks/`,
     access: [EUserWorkspaceRoles.ADMIN, EUserWorkspaceRoles.MEMBER],
     highlight: (pathname: string, url: string) => pathname.includes(url),
   },

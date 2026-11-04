@@ -8,6 +8,7 @@ import {
   AnalyticsOutline,
   ArchiveOutline,
   CalendarOutline,
+  CheckDoneOutline,
   ChatOutline,
   ClockOutline,
   CyclesOutline,
@@ -46,6 +47,8 @@ export const getSidebarNavigationItemIcon = (key: string, className: string = ""
       return <ArchiveOutline className={cn("size-4 flex-shrink-0", className)} />;
     case "workday":
       return <ClockOutline className={cn("size-4 flex-shrink-0", className)} />;
+    case "micro_tasks":
+      return <CheckDoneOutline className={cn("size-4 flex-shrink-0", className)} />;
     case "hub":
       return <ChatOutline className={cn("size-4 flex-shrink-0", className)} />;
     case "team_control":

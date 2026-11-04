@@ -390,3 +390,44 @@ urlpatterns = [
     ),
     path("workspaces/<str:slug>/team-ops/hub/mentions/", HubMentionEndpoint.as_view(), name="team-ops-hub-mentions"),
 ]
+
+# Day Reports, planned time, micro tasks and the task import.
+from plane.team_ops.views.day_reports import (  # noqa: E402
+    DayReportEndpoint,
+    DayReportHistoryEndpoint,
+    DayReportTeamEndpoint,
+    MicroTaskDetailEndpoint,
+    MicroTaskListEndpoint,
+    TaskImportEndpoint,
+    TaskPlanEndpoint,
+)
+
+urlpatterns += [
+    path(
+        "workspaces/<str:slug>/team-ops/day-reports/team/",
+        DayReportTeamEndpoint.as_view(),
+        name="team-ops-day-report-team",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/day-reports/<str:day>/",
+        DayReportEndpoint.as_view(),
+        name="team-ops-day-report",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/day-reports/<str:day>/history/",
+        DayReportHistoryEndpoint.as_view(),
+        name="team-ops-day-report-history",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/task-plans/<uuid:issue_id>/",
+        TaskPlanEndpoint.as_view(),
+        name="team-ops-task-plan",
+    ),
+    path("workspaces/<str:slug>/team-ops/micro-tasks/", MicroTaskListEndpoint.as_view(), name="team-ops-micro-tasks"),
+    path(
+        "workspaces/<str:slug>/team-ops/micro-tasks/<uuid:task_id>/",
+        MicroTaskDetailEndpoint.as_view(),
+        name="team-ops-micro-task",
+    ),
+    path("workspaces/<str:slug>/team-ops/import/tasks/", TaskImportEndpoint.as_view(), name="team-ops-task-import"),
+]

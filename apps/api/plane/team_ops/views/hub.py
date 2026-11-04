@@ -4,6 +4,7 @@
 
 # Django imports
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 # Third party imports
 from rest_framework import status
@@ -119,6 +120,26 @@ class HubMessageListEndpoint(BaseAPIView):
         workspace = Workspace.objects.get(slug=slug)
         channel = hub.get_channel(workspace, pk, request.user)
         queryset = self._messages(channel)
+        now = timezone.now()
+        since = request.query_params.get("since")
+        if since:
+            # Polling: only what is new or changed (edited, deleted) since the last look, not the whole page.
+            stamp = parse_datetime(since)
+            if stamp is None:
+                raise ParseError(detail="since must be a date and time.")
+            changed = list(queryset.filter(updated_at__gt=stamp).order_by("created_at")[: PAGE_SIZE * 2])
+            if any(m.author_id != request.user.id and m.created_at > stamp for m in changed):
+                hub.mark_read(channel, request.user)
+                HubMention.objects.filter(
+                    user=request.user, message__channel=channel, read_at__isnull=True
+                ).update(read_at=now)
+            return Response(
+                {
+                    "results": [_message_payload(m, request.user) for m in changed],
+                    "has_more": False,
+                    "server_time": now,
+                }
+            )
         before = request.query_params.get("before")
         if before:
             anchor = queryset.filter(pk=parse_uuid(before, "before")).first()
@@ -133,7 +154,13 @@ class HubMessageListEndpoint(BaseAPIView):
             HubMention.objects.filter(user=request.user, message__channel=channel, read_at__isnull=True).update(
                 read_at=timezone.now()
             )
-        return Response({"results": [_message_payload(m, request.user) for m in page], "has_more": has_more})
+        return Response(
+            {
+                "results": [_message_payload(m, request.user) for m in page],
+                "has_more": has_more,
+                "server_time": now,
+            }
+        )
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug, pk):

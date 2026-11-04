@@ -20,9 +20,16 @@ from .push import PushSubscription
 from .workday import FreezeCredit, OpsNotification, WeekPlanConfirmation, WorkApproval, WorkDay, WorkInterruption
 from .work_report import WorkReport
 from .time_entry import ActiveTimer, TimeEntry, MAX_ENTRY_SECONDS
+from .day_report import DayReport, DayReportEntry, DayReportRevision, MicroTask, PlanUnit, TaskPlan
 
 __all__ = [
     "ActiveTimer",
+    "DayReport",
+    "DayReportEntry",
+    "DayReportRevision",
+    "MicroTask",
+    "PlanUnit",
+    "TaskPlan",
     "AuditIsAppendOnly",
     "CalendarAudit",
     "CalendarEntry",

@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { ArrowLeft } from "lucide-react";
 import { observer } from "mobx-react";
 // plane imports
 import { useTranslation } from "@plane/i18n";
@@ -12,6 +13,7 @@ import { Breadcrumbs } from "@plane/blocks/breadcrumb";
 import { Header } from "@plane/blocks/layout";
 // components
 import { BreadcrumbLink } from "@/components/common/breadcrumb-link";
+import { useAppRouter } from "@/hooks/use-app-router";
 // local imports
 import { NotificationSidebarHeaderOptions } from "./options";
 
@@ -24,11 +26,24 @@ export const NotificationSidebarHeader = observer(function NotificationSidebarHe
 ) {
   const { workspaceSlug } = props;
   const { t } = useTranslation();
+  const router = useAppRouter();
 
   if (!workspaceSlug) return <></>;
   return (
     <Header className="my-auto bg-surface-1">
       <Header.LeftItem>
+        {/* Phones show the inbox full screen: a way back to where the person came from. */}
+        <button
+          type="button"
+          aria-label="Back"
+          onClick={() => {
+            if (window.history.length > 1) router.back();
+            else router.push(`/${workspaceSlug}/`);
+          }}
+          className="mr-1 inline-flex size-9 shrink-0 items-center justify-center rounded-md text-secondary hover:bg-layer-1 md:hidden"
+        >
+          <ArrowLeft className="size-5" />
+        </button>
         <Breadcrumbs>
           <Breadcrumbs.Item
             component={

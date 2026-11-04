@@ -22,7 +22,7 @@ export default function WorkdayLayout() {
               <Breadcrumbs>
                 <Breadcrumbs.Item
                   component={
-                    <BreadcrumbLink label="Workday" icon={<ClockOutline className="h-4 w-4 text-tertiary" />} />
+                    <BreadcrumbLink label="Day Report" icon={<ClockOutline className="h-4 w-4 text-tertiary" />} />
                   }
                 />
               </Breadcrumbs>
