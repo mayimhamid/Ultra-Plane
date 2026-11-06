@@ -287,3 +287,40 @@ class TestTimesAndPlace:
         lines = [line for line in remote.content.decode("utf-8-sig").splitlines() if line.startswith(str(today()))]
         assert len(lines) == 1 and ",REMOTE," in lines[0] and "0.50" in lines[0]
         assert member_client.get(url(workspace, "day-reports/export/"), params).status_code in (200, 403)
+
+
+@pytest.mark.contract
+class TestSummary:
+    def test_hours_per_person_and_day_projects_tasks_and_missing_reports(
+        self, member_client, admin_client, workspace, member, issue
+    ):
+        TaskPlan.objects.create(workspace=workspace, issue=issue, planned_minutes=45)
+        yesterday = today() - timedelta(days=1)
+        put(member_client, workspace, yesterday, [{"issue": str(issue.id), "minutes": 30, "location": "ONSITE"}])
+        put(
+            member_client,
+            workspace,
+            today(),
+            [
+                {"issue": str(issue.id), "start": "09:00", "end": "10:00", "location": "REMOTE", "finished": True},
+            ],
+            submit=True,
+        )
+        params = {"from": str(today() - timedelta(days=6)), "to": str(today())}
+        data = admin_client.get(url(workspace, "day-reports/summary/"), params).data
+        row = next(r for r in data["people"] if r["user"]["id"] == str(member.id))
+        assert row["total_minutes"] == 90
+        assert row["days"] == {str(yesterday): 30, str(today()): 60}
+        assert row["remote_minutes"] == 60 and row["onsite_minutes"] == 30
+        assert row["task_count"] == 1 and row["finished"] == 1 and row["overtime"] == 1
+        assert row["reports_sent"] == 2 and row["reports_late"] == 1
+        assert data["totals"]["minutes"] == 90 and data["totals"]["overtime"] == 1
+        assert data["projects"][0]["minutes"] == 90 and data["tasks"][0]["minutes"] == 90
+        assert len(data["days"]) == 7 and sum(day["minutes"] for day in data["days"]) == 90
+        remote = admin_client.get(url(workspace, "day-reports/summary/"), {**params, "place": "REMOTE"}).data
+        row = next(r for r in remote["people"] if r["user"]["id"] == str(member.id))
+        assert row["total_minutes"] == 60
+
+    def test_only_managers(self, member_client, workspace):
+        params = {"from": str(today() - timedelta(days=6)), "to": str(today())}
+        assert member_client.get(url(workspace, "day-reports/summary/"), params).status_code in (200, 403)

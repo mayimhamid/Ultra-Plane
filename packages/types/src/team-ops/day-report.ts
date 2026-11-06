@@ -180,3 +180,56 @@ export type TImportContext = {
   states: string[];
   labels: string[];
 };
+
+/** One person's reported work in a period (Control and the Dashboard). */
+export type TReportPersonSummary = {
+  user: { id: string; display_name: string; avatar_url: string | null };
+  total_minutes: number;
+  remote_minutes: number;
+  onsite_minutes: number;
+  /** Minutes per day, "2026-11-04": 135. */
+  days: Record<string, number>;
+  /** Where the person worked each day: REMOTE, ONSITE or HYBRID. */
+  places: Record<string, string>;
+  task_count: number;
+  finished: number;
+  speedy: number;
+  on_time: number;
+  overtime: number;
+  expected_days: number;
+  reports_sent: number;
+  reports_missing: number;
+  reports_late: number;
+  edits: number;
+};
+
+export type TReportSummary = {
+  from: string;
+  to: string;
+  totals: {
+    minutes: number;
+    remote_minutes: number;
+    onsite_minutes: number;
+    people: number;
+    people_reporting: number;
+    reports_sent: number;
+    reports_missing: number;
+    reports_late: number;
+    edits: number;
+    speedy: number;
+    on_time: number;
+    overtime: number;
+  };
+  people: TReportPersonSummary[];
+  days: { date: string; minutes: number; remote_minutes: number; onsite_minutes: number; people: number }[];
+  projects: { id: string | null; name: string; identifier: string; minutes: number }[];
+  tasks: (TTaskProgress & {
+    kind: "issue" | "micro";
+    id: string;
+    key: string | null;
+    name: string;
+    project: string | null;
+    minutes: number;
+    people: string[];
+  })[];
+};

@@ -12,7 +12,7 @@ from django.utils import timezone
 from rest_framework import status
 
 from plane.db.models import Issue, IssueAssignee, ModuleIssue, State
-from plane.team_ops.models import Flow, WorkSession
+from plane.team_ops.models import DayReport, DayReportEntry, Flow
 from plane.team_ops.services import flows as flow_service
 from plane.tests.contract.app.team_ops_support import (
     _no_broker,
@@ -58,20 +58,11 @@ def assign(workspace, project, task, user):
     IssueAssignee.objects.create(issue=task, assignee=user, project=project, workspace=workspace)
 
 
-def spend(workspace, user, task, minutes, parallel=False):
-    end = timezone.now()
-    WorkSession.objects.create(
-        workspace=workspace,
-        user=user,
-        project=task.project,
-        issue=task,
-        started_at=end - timedelta(minutes=minutes),
-        finished_at=end,
-        duration_seconds=minutes * 60,
-        summary="x",
-        location="REMOTE",
-        is_parallel=parallel,
-    )
+def spend(workspace, user, task, minutes, day_offset=0):
+    """A Day Report row: `minutes` on `task`, `day_offset` days ago (one report per person and day)."""
+    day = timezone.now().date() - timedelta(days=day_offset)
+    report, _ = DayReport.objects.get_or_create(workspace=workspace, user=user, date=day)
+    DayReportEntry.objects.create(report=report, issue=task, minutes=minutes, location="REMOTE")
 
 
 def done_state(workspace, project):
@@ -102,18 +93,17 @@ class TestTasks:
         assert data["total"] == 1 and data["has_more"] is False
         assert data["filters"]["projects"][0]["identifier"] == "TK"
 
-    def test_time_is_summed_per_task_and_parallel_is_left_out(
-        self, member_client, workspace, project, member, colleague
-    ):
+    def test_time_is_the_day_report_time_summed_per_task(self, member_client, workspace, project, member, colleague):
         task = issue(workspace, project)
         assign(workspace, project, task, member)
         spend(workspace, member, task, 60)
-        spend(workspace, member, task, 30, parallel=True)
+        spend(workspace, member, task, 30, day_offset=1)
         spend(workspace, colleague, task, 20)  # not assigned, but worked on it
         (row,) = member_client.get(api(workspace)).data["results"]
-        assert row["seconds"] == 80 * 60 and row["sessions"] == 3
+        assert row["seconds"] == 110 * 60 and row["sessions"] == 3
+        assert row["plan"]["reported_minutes"] == 110 and row["plan"]["status"] is None
         people = {fork["user"]["id"]: fork for fork in row["forks"] if fork["kind"] == "person"}
-        assert people[member.id]["seconds"] == 3600 and people[colleague.id]["seconds"] == 1200
+        assert people[member.id]["seconds"] == 90 * 60 and people[colleague.id]["seconds"] == 1200
 
     def test_sub_items_and_people_are_the_forks(self, member_client, workspace, project, member, colleague):
         parent = issue(workspace, project, "Parent")

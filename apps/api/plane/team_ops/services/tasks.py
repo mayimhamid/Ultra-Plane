@@ -13,7 +13,8 @@ from django.db.models import Count, Q, Sum
 
 # Module imports
 from plane.db.models import Issue, IssueAssignee, ModuleIssue, Project, ProjectMember
-from plane.team_ops.models import Flow, FlowStageModule, WorkSession
+from plane.team_ops.models import DayReportEntry, Flow, FlowStageModule
+from plane.team_ops.services.day_reports import issue_progress
 
 LIMIT = 150
 OPEN_GROUPS = ("backlog", "unstarted", "started")
@@ -78,13 +79,15 @@ def task_list(workspace, user, is_admin, params):
     for row in IssueAssignee.objects.filter(issue_id__in=everyone).select_related("assignee"):
         assignees.setdefault(row.issue_id, []).append(row.assignee)
 
+    # Time comes from the Day Reports: what each person reported on each task (rows count as "sessions").
     spent = {}
     for row in (
-        WorkSession.objects.filter(workspace=workspace, issue_id__in=everyone)
-        .values("issue_id", "user_id")
-        .annotate(seconds=Sum("duration_seconds", filter=Q(is_parallel=False)), sessions=Count("id"))
+        DayReportEntry.objects.filter(report__workspace=workspace, issue_id__in=everyone)
+        .values("issue_id", "report__user_id")
+        .annotate(minutes=Sum("minutes"), rows=Count("id"))
     ):
-        spent[(row["issue_id"], row["user_id"])] = (row["seconds"] or 0, row["sessions"])
+        spent[(row["issue_id"], row["report__user_id"])] = ((row["minutes"] or 0) * 60, row["rows"])
+    progress = issue_progress(everyone)
 
     flows = _flow_index({issue.project_id for issue in issues} | {child.project_id for child in children})
     modules_of = {}
@@ -124,6 +127,8 @@ def task_list(workspace, user, is_admin, params):
             "state": {"name": issue.state.name, "group": issue.state.group} if issue.state_id else None,
             "assignees": [_person(person) for person in assignees.get(issue.id, [])],
             "flows": flow_chips(issue),
+            # Planned time and Speedy / On time / OverTime, from all the Day Report time on it.
+            "plan": progress[issue.id].payload() if issue.id in progress else None,
         }
 
     by_parent = {}

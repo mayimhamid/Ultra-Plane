@@ -11,11 +11,12 @@ import useSWR from "swr";
 import { Badge } from "@makeplane/propel/components/badge";
 import { InputField } from "@makeplane/propel/components/input-field";
 import { SelectField } from "@makeplane/propel/components/select-field";
-import { WorkdayService, formatHm } from "@plane/services";
+import { WorkdayService, formatHm, planLabel } from "@plane/services";
 import type { TTask, TTaskFork, TTaskLite } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
 import useDebounce from "@/hooks/use-debounce";
+import { VerdictBadge } from "../day-report/verdict-badge";
 
 const workdayService = new WorkdayService();
 
@@ -110,7 +111,7 @@ function Fork({ fork, workspaceSlug }: { fork: TTaskFork; workspaceSlug: string 
       </div>
       <p className="text-caption-sm-regular text-secondary tabular-nums">
         {fork.stage ? `Stage: ${fork.stage} · ` : ""}
-        {formatHm(fork.seconds)} in {fork.sessions} piece{fork.sessions === 1 ? "" : "s"} of work
+        {formatHm(fork.seconds)} reported on {fork.sessions} day{fork.sessions === 1 ? "" : "s"}
         {fork.done ? " · done" : ""}
       </p>
     </li>
@@ -125,6 +126,12 @@ export function TaskRow({ task, workspaceSlug }: { task: TTask; workspaceSlug: s
         <Line item={task} workspaceSlug={workspaceSlug} />
         <div className="flex shrink-0 flex-col items-end gap-1">
           <span className="text-body-sm-medium text-primary tabular-nums">{formatHm(task.seconds)}</span>
+          {task.plan?.planned_minutes ? (
+            <span className="flex items-center gap-1.5 text-caption-sm-regular text-tertiary">
+              of {planLabel(task.plan.planned_amount, task.plan.unit)}
+              <VerdictBadge status={task.plan.status} />
+            </span>
+          ) : null}
           {task.forks.length > 0 ? (
             <button
               type="button"
@@ -141,9 +148,9 @@ export function TaskRow({ task, workspaceSlug }: { task: TTask; workspaceSlug: s
       </div>
       {open ? (
         <ul className="ml-4 flex flex-col gap-2 border-l-2 border-subtle pl-3">
-          {task.forks.map((fork, index) => (
+          {task.forks.map((fork) => (
             <Fork
-              key={fork.kind === "sub" ? fork.id : `${fork.user.id}-${index}`}
+              key={fork.kind === "sub" ? fork.id : `${fork.user.id}-${fork.stage ?? ""}`}
               fork={fork}
               workspaceSlug={workspaceSlug}
             />

@@ -356,6 +356,8 @@ export type TTaskLite = {
   state: { name: string; group: string } | null;
   assignees: THubPerson[];
   flows: TTaskFlow[];
+  /** Planned time and Speedy / On time / OverTime from the Day Reports. */
+  plan?: import("./day-report").TTaskProgress | null;
 };
 
 /** A branch of a task: a sub work item, or a person working on it with their own time and stage. */

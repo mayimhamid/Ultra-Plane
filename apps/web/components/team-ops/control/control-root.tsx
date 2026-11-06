@@ -11,16 +11,17 @@ import { cn } from "@plane/utils";
 import { useCalendarSettings } from "@/hooks/team-ops/use-work-calendar";
 // local imports
 import { FlowControl } from "./flow-control";
-import { HoursControl } from "./hours-control";
 import { HubControl } from "./hub-control";
-import { NotificationsBox } from "./notifications-box";
-import { RankingControl } from "./ranking-control";
-import { SumControl } from "./sum-control";
-import { TeamControl } from "./team-control";
+import { ReportExport } from "./report-export";
+import { ReportHours } from "./report-hours";
+import { ReportRanking } from "./report-ranking";
 
 type Props = { workspaceSlug: string; /** Inside the Dashboard: no title of its own. */ embedded?: boolean };
 
-/** Control: managers watch tasks and hours; admins also watch the Hub and the flows. */
+/**
+ * Control: what the team reported in their Day Reports (hours per person and day, by week or month, with each
+ * day's tasks a tap away), the ranking and the export; admins also watch the Hub and the flows.
+ */
 export const ControlRoot = observer(function ControlRoot({ workspaceSlug, embedded = false }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { permissions, isLoading } = useCalendarSettings(workspaceSlug);
@@ -30,14 +31,13 @@ export const ControlRoot = observer(function ControlRoot({ workspaceSlug, embedd
   const tabs = [
     ...(canTeam
       ? [
-          { key: "team", label: "Team control", hint: "Tasks and working hours" },
-          { key: "hours", label: "Hours and approval", hint: "Onsite, remote, frozen; confirm the days" },
-          { key: "ranking", label: "Ranking", hint: "Who did the most" },
+          { key: "hours", label: "Hours", hint: "Reported hours per person and day, by week or month" },
+          { key: "ranking", label: "Ranking", hint: "Hours, tasks done and on time" },
+          { key: "export", label: "Export", hint: "Everyone's hours between two dates, to Excel" },
         ]
       : []),
     ...(isAdmin
       ? [
-          { key: "sum", label: "Sum time", hint: "Everyone's time between two dates, to Excel" },
           { key: "hub", label: "Hub control", hint: "Channels and messages" },
           { key: "flows", label: "Teamflow control", hint: "Project flows and hand-offs" },
         ]
@@ -55,16 +55,16 @@ export const ControlRoot = observer(function ControlRoot({ workspaceSlug, embedd
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 sm:p-6">
       {embedded ? null : (
         <header>
           <h1 className="text-h4-medium text-primary">Control</h1>
           <p className="text-body-sm-regular text-secondary">
-            See how the team works: who is on what, for how long, and where things are stuck.
+            What the team reported: hours per person and day, the tasks behind them, and how they went.
           </p>
         </header>
       )}
-      <nav aria-label="Control" className="flex gap-1 border-b border-subtle">
+      <nav aria-label="Control" className="flex gap-1 overflow-x-auto border-b border-subtle">
         {tabs.map((item) => (
           <button
             key={item.key}
@@ -80,7 +80,7 @@ export const ControlRoot = observer(function ControlRoot({ workspaceSlug, embedd
               })
             }
             className={cn(
-              "-mb-px border-b-2 px-3 py-2 text-body-sm-medium transition-colors",
+              "-mb-px shrink-0 border-b-2 px-3 py-2 text-body-sm-medium whitespace-nowrap transition-colors",
               tab === item.key
                 ? "border-accent-strong text-primary"
                 : "border-transparent text-tertiary hover:text-secondary"
@@ -90,15 +90,9 @@ export const ControlRoot = observer(function ControlRoot({ workspaceSlug, embedd
           </button>
         ))}
       </nav>
-      {tab === "team" ? (
-        <>
-          <NotificationsBox workspaceSlug={workspaceSlug} />
-          <TeamControl workspaceSlug={workspaceSlug} />
-        </>
-      ) : null}
-      {tab === "hours" ? <HoursControl workspaceSlug={workspaceSlug} /> : null}
-      {tab === "ranking" ? <RankingControl workspaceSlug={workspaceSlug} /> : null}
-      {tab === "sum" ? <SumControl workspaceSlug={workspaceSlug} /> : null}
+      {tab === "hours" ? <ReportHours workspaceSlug={workspaceSlug} /> : null}
+      {tab === "ranking" ? <ReportRanking workspaceSlug={workspaceSlug} /> : null}
+      {tab === "export" ? <ReportExport workspaceSlug={workspaceSlug} /> : null}
       {tab === "hub" ? <HubControl workspaceSlug={workspaceSlug} /> : null}
       {tab === "flows" ? <FlowControl workspaceSlug={workspaceSlug} /> : null}
     </div>

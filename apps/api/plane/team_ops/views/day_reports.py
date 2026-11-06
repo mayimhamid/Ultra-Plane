@@ -413,3 +413,25 @@ class TaskImportEndpoint(BaseAPIView):
             workspace=workspace, actor=request.user, target=target, rows=rows, project=project, assignee=assignee
         )
         return Response({"ok": True, "rows": rows, "created": created}, status=status.HTTP_201_CREATED)
+
+
+class DayReportSummaryEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug):
+        """What the team reported from `from` to `to` (at most a year): per person and day, projects, tasks.
+        `team`, `user` and `place` (REMOTE, ONSITE, HYBRID) narrow it."""
+        from plane.team_ops.services.report_summary import summary
+        from plane.team_ops.services.team_view import visible_people
+
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        access = CalendarAccess(request.user, workspace)
+        if not access.can_view_team:
+            return _forbidden()
+        start, end = _day(request.query_params.get("from", "")), _day(request.query_params.get("to", ""))
+        if end < start or (end - start).days > 366:
+            raise ParseError(detail="Choose a period of at most a year.")
+        people = [user_id for user_id, _ in visible_people(access, workspace, request.query_params)]
+        place = (request.query_params.get("place") or "").upper()
+        return Response(summary(workspace, access.settings, people, start, end, place))

@@ -15,6 +15,7 @@ import type {
   TMicroTask,
   TMicroTaskInput,
   TPlanUnit,
+  TReportSummary,
   TTaskPlan,
   TTaskVerdict,
   TTeamDayReportRow,
@@ -122,6 +123,16 @@ export class DayReportService extends APIService {
     return this.get(`${this.base(workspaceSlug)}/day-reports/team/`, {
       params: { ...(day ? { date: day } : {}), ...(place ? { place } : {}) },
     })
+      .then((response) => response?.data)
+      .catch(unwrap);
+  }
+
+  /** What the team reported in a period: per person and day, projects and tasks. */
+  async getSummary(
+    workspaceSlug: string,
+    params: { from: string; to: string; team?: string; place?: string; user?: string }
+  ): Promise<TReportSummary> {
+    return this.get(`${this.base(workspaceSlug)}/day-reports/summary/`, { params })
       .then((response) => response?.data)
       .catch(unwrap);
   }
