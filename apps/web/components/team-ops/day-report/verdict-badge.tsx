@@ -8,7 +8,7 @@ import { VERDICT_LABEL, formatMinutes, planLabel } from "@plane/services";
 import type { TTaskProgress, TTaskVerdict } from "@plane/types";
 import { cn } from "@plane/utils";
 
-const COLOR: Record<Exclude<TTaskVerdict, null>, string> = {
+export const VERDICT_COLOR: Record<Exclude<TTaskVerdict, null>, string> = {
   SPEEDY: "#0ea5e9",
   ON_TIME: "#16a34a",
   OVERTIME: "#dc2626",
@@ -18,7 +18,7 @@ const COLOR: Record<Exclude<TTaskVerdict, null>, string> = {
 /** Speedy, On time, OverTime or In progress, in its own color. */
 export function VerdictBadge({ status, className }: { status: TTaskVerdict; className?: string }) {
   if (!status) return null;
-  const color = COLOR[status];
+  const color = VERDICT_COLOR[status];
   return (
     <span
       className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-caption-sm-medium", className)}

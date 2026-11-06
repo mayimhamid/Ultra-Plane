@@ -19,13 +19,13 @@ const when = (stamp: string) =>
 /** Home starts with where the person was tagged in the Hub, the unread ones highlighted. */
 export const HomeMentions = observer(function HomeMentions({ workspaceSlug }: { workspaceSlug: string }) {
   const { mentions, markAllRead } = useHubMentions(workspaceSlug, true);
-  const list = (mentions ?? []).slice(0, 8);
+  const list = (mentions ?? []).slice(0, 5);
   const unread = (mentions ?? []).filter((mention) => !mention.read).length;
 
   return (
-    <section aria-label="Mentions" className="flex flex-col gap-2 rounded-lg border border-subtle bg-surface-1 p-4">
-      <header className="flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-body-md-medium text-primary">
+    <section aria-label="Mentions" className="flex flex-col gap-1 rounded-lg border border-subtle bg-surface-1 p-3">
+      <header className="flex flex-wrap items-center justify-between gap-x-2">
+        <h2 className="flex items-center gap-2 text-body-sm-medium text-primary">
           <AtSign className="size-4 text-[#ea580c]" aria-hidden />
           Mentions
           {unread > 0 ? (
@@ -61,11 +61,11 @@ export const HomeMentions = observer(function HomeMentions({ workspaceSlug }: { 
               <Link
                 href={`/${workspaceSlug}/team-ops/hub/?channel=${mention.channel}`}
                 className={cn(
-                  "flex min-h-12 items-start gap-3 rounded-md px-2 py-2 hover:bg-layer-1",
+                  "flex min-h-11 items-start gap-2 rounded-md px-1.5 py-2 hover:bg-layer-1",
                   !mention.read && "bg-accent-subtle"
                 )}
               >
-                <PersonAvatar person={mention.author} />
+                <PersonAvatar person={mention.author} size="sm" />
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-baseline gap-x-2">
                     <span className={cn("text-body-sm-medium text-primary", !mention.read && "font-semibold")}>

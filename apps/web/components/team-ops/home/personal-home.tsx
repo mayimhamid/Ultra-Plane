@@ -7,7 +7,6 @@
 import { useMemo, useState } from "react";
 import { orderBy } from "lodash-es";
 import { observer } from "mobx-react";
-import Link from "next/link";
 import { addDays, formatHm, toDateKey } from "@plane/services";
 import type { TWorkSession } from "@plane/types";
 // hooks
@@ -17,6 +16,7 @@ import { useWorkday } from "@/hooks/team-ops/use-workday";
 import { ContributionGraph } from "../workday/contribution-graph";
 import { HomeMentions } from "./home-mentions";
 import { MyTasks } from "./my-tasks";
+import { ProfileCard } from "./profile-card";
 
 type Props = { workspaceSlug: string };
 
@@ -95,56 +95,42 @@ export const PersonalHome = observer(function PersonalHome({ workspaceSlug }: Pr
   const months = useMemo(() => groupByMonth(sessions ?? []), [sessions]);
   const attention = (sessions ?? []).filter((session) => session.needs_attention).length;
 
+  const stats: [string, string][] = [
+    ["Pieces of work", String((sessions ?? []).length)],
+    ["Tasks worked on", String((tasks?.results ?? []).length)],
+    ["Hours", formatHm(tasks?.total_seconds ?? 0)],
+    ["Needed attention", String(attention)],
+  ];
+
+  // As on a GitHub profile: who you are on the left, your work in the middle, what needs you on the right.
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-h4-medium text-primary">{currentUser?.display_name ?? "Home"}</h1>
-          <p className="text-body-sm-regular text-secondary">Your work over the last 90 days.</p>
-        </div>
-        <Link
-          href={`/${workspaceSlug}/team-ops/workday/`}
-          className="rounded-md bg-accent-primary px-4 py-2 text-body-sm-medium text-on-color"
-        >
-          Open Day Report
-        </Link>
-      </header>
+    <div className="mx-auto grid w-full max-w-[1400px] gap-6 p-6 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)_20rem]">
+      <aside className="lg:row-span-2 xl:row-span-1">
+        {currentUser ? <ProfileCard workspaceSlug={workspaceSlug} user={currentUser} stats={stats} /> : null}
+      </aside>
 
-      <HomeMentions workspaceSlug={workspaceSlug} />
+      <main className="flex min-w-0 flex-col gap-6">
+        <MyTasks workspaceSlug={workspaceSlug} />
 
-      <MyTasks workspaceSlug={workspaceSlug} />
+        <ContributionGraph workspaceSlug={workspaceSlug} />
 
-      <dl className="flex flex-wrap gap-3">
-        {[
-          ["Pieces of work", String((sessions ?? []).length)],
-          ["Tasks worked on", String((tasks?.results ?? []).length)],
-          ["Hours", formatHm(tasks?.total_seconds ?? 0)],
-          ["Needed attention", String(attention)],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="flex min-w-32 flex-1 flex-col rounded-lg border border-subtle bg-surface-1 px-4 py-3"
-          >
-            <dt className="text-caption-sm-regular text-tertiary">{label}</dt>
-            <dd className="text-h4-medium text-primary tabular-nums">{value}</dd>
-          </div>
-        ))}
-      </dl>
+        <section aria-label="Contribution activity" className="flex flex-col gap-4">
+          <h2 className="text-body-md-medium text-primary">Contribution activity</h2>
+          {months.length === 0 ? (
+            <p className="text-body-sm-regular text-tertiary">Nothing finished yet. Start a task in Workday.</p>
+          ) : (
+            <ol className="flex flex-col gap-5">
+              {months.map((month) => (
+                <MonthBlock key={month.key} month={month} />
+              ))}
+            </ol>
+          )}
+        </section>
+      </main>
 
-      <ContributionGraph workspaceSlug={workspaceSlug} />
-
-      <section aria-label="Contribution activity" className="flex flex-col gap-4">
-        <h2 className="text-body-md-medium text-primary">Contribution activity</h2>
-        {months.length === 0 ? (
-          <p className="text-body-sm-regular text-tertiary">Nothing finished yet. Start a task in Workday.</p>
-        ) : (
-          <ol className="flex flex-col gap-5">
-            {months.map((month) => (
-              <MonthBlock key={month.key} month={month} />
-            ))}
-          </ol>
-        )}
-      </section>
+      <aside className="min-w-0 lg:col-start-2 xl:col-start-3 xl:row-start-1">
+        <HomeMentions workspaceSlug={workspaceSlug} />
+      </aside>
     </div>
   );
 });
