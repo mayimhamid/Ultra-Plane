@@ -77,10 +77,13 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-body-md-medium text-primary">
-            {metric === "tasks" ? `${totalTasks} task days` : `${formatHm(totalSeconds)} worked`} in the last year
+            {metric === "tasks"
+              ? `${totalTasks} task${totalTasks === 1 ? "" : "s"} finished`
+              : `${formatHm(totalSeconds)} worked`}{" "}
+            in the last year
           </h3>
           <p className="text-caption-sm-regular text-tertiary">
-            {activeDays} days with finished work · weeks run Saturday to Friday
+            {activeDays} day{activeDays === 1 ? "" : "s"} with finished work · weeks run Saturday to Friday
           </p>
         </div>
         <div role="group" aria-label="Measure" className="flex gap-1 rounded-lg border border-subtle p-0.5">

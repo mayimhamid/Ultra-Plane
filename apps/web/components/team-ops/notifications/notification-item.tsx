@@ -10,6 +10,7 @@ import {
   AtSign,
   CalendarDays,
   ClipboardCheck,
+  ClipboardList,
   CornerUpLeft,
   FileClock,
   KeyRound,
@@ -39,6 +40,7 @@ export const NOTIFICATION_KIND: Record<TOpsNotification["kind"], TKindStyle> = {
   SECRET: { icon: KeyRound, color: "#475569", label: "Secret" },
   LEAVE: { icon: CalendarDays, color: "#0891b2", label: "Leave" },
   REPORT: { icon: FileClock, color: "#b45309", label: "Report changed" },
+  REMIND: { icon: ClipboardList, color: "#e11d48", label: "Log your tasks" },
 };
 
 const FALLBACK: TKindStyle = { icon: MessageCircle, color: "#6b7280", label: "Notice" };

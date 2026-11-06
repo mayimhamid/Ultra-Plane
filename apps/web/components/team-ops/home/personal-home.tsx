@@ -110,9 +110,9 @@ export const PersonalHome = observer(function PersonalHome({ workspaceSlug }: Pr
       </aside>
 
       <main className="flex min-w-0 flex-col gap-6">
-        <MyTasks workspaceSlug={workspaceSlug} />
-
         <ContributionGraph workspaceSlug={workspaceSlug} />
+
+        <MyTasks workspaceSlug={workspaceSlug} />
 
         <section aria-label="Contribution activity" className="flex flex-col gap-4">
           <h2 className="text-body-md-medium text-primary">Contribution activity</h2>

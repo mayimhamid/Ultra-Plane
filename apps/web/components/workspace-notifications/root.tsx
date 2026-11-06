@@ -19,6 +19,7 @@ import { useWorkspace } from "@/hooks/store/use-workspace";
 import { useUserPermissions } from "@/hooks/store/user";
 import { useWorkspaceIssueProperties } from "@/hooks/use-workspace-issue-properties";
 import { useNotificationPreview } from "@/hooks/use-notification-preview";
+import { TeamNotificationCenter } from "@/components/team-ops/notifications/team-notification-center";
 // local imports
 import { InboxContentRoot } from "../inbox/content";
 
@@ -85,9 +86,15 @@ export const NotificationsRoot = observer(function NotificationsRoot({ workspace
   return (
     <div className={cn("h-full w-full overflow-hidden", isWorkItem && "overflow-y-auto")}>
       {!currentSelectedNotificationId ? (
-        <div className="flex size-full items-center justify-center">
-          <EmptyStateCompact assetKey="unknown" assetClassName="size-20" />
-        </div>
+        <>
+          {/* Team Ops fills the page while no work item is open; phones show the same list in the sidebar. */}
+          <div className="hidden size-full md:block">
+            {workspaceSlug ? <TeamNotificationCenter workspaceSlug={workspaceSlug} /> : null}
+          </div>
+          <div className="flex size-full items-center justify-center md:hidden">
+            <EmptyStateCompact assetKey="unknown" assetClassName="size-20" />
+          </div>
+        </>
       ) : (
         <>
           {is_inbox_issue === true && workspace_slug && project_id && issue_id ? (

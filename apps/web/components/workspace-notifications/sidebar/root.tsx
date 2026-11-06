@@ -96,8 +96,9 @@ export const NotificationsSidebarRoot = observer(function NotificationsSidebarRo
           ))}
         </Header>
 
-        {/* Team Ops: the Hub and the team notifications sit at the top of the list. */}
-        <div className="max-h-[45%] flex-shrink-0 overflow-y-auto overscroll-contain">
+        {/* Team Ops: on phones the Hub and the team notifications sit at the top of the list; on larger screens they
+            fill the page next to it (TeamNotificationCenter). */}
+        <div className="max-h-[45%] flex-shrink-0 overflow-y-auto overscroll-contain md:hidden">
           <HubNotifications workspaceSlug={workspaceSlug.toString()} />
         </div>
 
