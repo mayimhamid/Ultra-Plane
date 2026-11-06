@@ -15,7 +15,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 # Module imports
-from plane.db.models import User
+from plane.db.models import Issue, User
 from plane.team_ops.models import DayReport, DayReportEntry
 from plane.team_ops.services.day_reports import OVERTIME, ON_TIME, SPEEDY, day_place, issue_progress, micro_progress
 from plane.team_ops.services.day_resolution import iter_days, resolve_days
@@ -38,7 +38,7 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
             report__date__gte=start,
             report__date__lte=end,
             report__deleted_at__isnull=True,
-        ).select_related("report", "issue", "issue__project", "micro_task")
+        ).select_related("report", "issue", "issue__project", "issue__state", "micro_task")
     )
     # Where each person worked each day, from the places of their rows.
     places = defaultdict(list)
@@ -141,6 +141,15 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
                     "key": f"{project.identifier}-{entry.issue.sequence_id}",
                     "name": entry.issue.name,
                     "project": project.name,
+                    "state": (
+                        {
+                            "name": entry.issue.state.name,
+                            "group": entry.issue.state.group,
+                            "color": entry.issue.state.color,
+                        }
+                        if entry.issue.state_id
+                        else None
+                    ),
                     **issue_state[entry.issue_id].payload(),
                 }
             )
@@ -155,6 +164,9 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
                     "key": None,
                     "name": entry.micro_task.title,
                     "project": None,
+                    "state": {"name": "Done", "group": "completed", "color": "#16a34a"}
+                    if entry.micro_task.done
+                    else {"name": "Open", "group": "started", "color": "#f59e0b"},
                     **micro_state[entry.micro_task_id].payload(),
                 }
             )
@@ -178,6 +190,33 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
                 person["overtime"] += 1
         person["task_count"] = len(person.pop("tasks"))
 
+    # Work items of these people that reached a Done state in the period (from Plane's states).
+    completed = defaultdict(set)
+    for issue_id, assignee_id in (
+        Issue.issue_objects.filter(
+            workspace=workspace,
+            state__group="completed",
+            completed_at__date__gte=start,
+            completed_at__date__lte=end,
+            issue_assignee__assignee_id__in=user_ids,
+            issue_assignee__deleted_at__isnull=True,
+        )
+        .values_list("id", "issue_assignee__assignee_id")
+        .distinct()
+    ):
+        completed[assignee_id].add(issue_id)
+    # Also the work items a person reported time on, assigned to them or not.
+    done_reported = set(
+        Issue.issue_objects.filter(
+            pk__in=issue_ids, state__group="completed", completed_at__date__gte=start, completed_at__date__lte=end
+        ).values_list("id", flat=True)
+    )
+    for entry in entries:
+        if entry.issue_id in done_reported:
+            completed[entry.report.user_id].add(entry.issue_id)
+    for user_id, person in people.items():
+        person["completed_tasks"] = len(completed.get(user_id, ()))
+
     rows = sorted(people.values(), key=lambda row: row["user"]["display_name"].lower())
     total = sum(row["total_minutes"] for row in rows)
     verdicts = {SPEEDY: 0, ON_TIME: 0, OVERTIME: 0}
@@ -197,6 +236,7 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
             "reports_missing": sum(row["reports_missing"] for row in rows),
             "reports_late": sum(row["reports_late"] for row in rows),
             "edits": sum(row["edits"] for row in rows),
+            "completed_tasks": len(set().union(*completed.values())) if completed else 0,
             "speedy": verdicts[SPEEDY],
             "on_time": verdicts[ON_TIME],
             "overtime": verdicts[OVERTIME],

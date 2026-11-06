@@ -193,6 +193,8 @@ export type TReportPersonSummary = {
   places: Record<string, string>;
   task_count: number;
   finished: number;
+  /** Work items assigned to the person that reached a Done state in the period. */
+  completed_tasks: number;
   speedy: number;
   on_time: number;
   overtime: number;
@@ -216,6 +218,7 @@ export type TReportSummary = {
     reports_missing: number;
     reports_late: number;
     edits: number;
+    completed_tasks: number;
     speedy: number;
     on_time: number;
     overtime: number;
@@ -229,6 +232,8 @@ export type TReportSummary = {
     key: string | null;
     name: string;
     project: string | null;
+    /** The work item's state in its project (micro tasks: Open or Done). */
+    state: { name: string; group: string; color: string } | null;
     minutes: number;
     people: string[];
   })[];

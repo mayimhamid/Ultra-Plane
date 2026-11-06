@@ -87,6 +87,29 @@ class DayReportEndpoint(BaseAPIView):
         return Response(payload)
 
 
+class DayReportRowEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug, day):
+        """Add one row to the caller's report of `day` (for example when a task is marked done in its project)."""
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        row = {
+            key: request.data.get(key)
+            for key in ("issue", "micro_task", "minutes", "start", "end", "location", "finished", "note")
+        }
+        payload = day_reports.append_row(
+            workspace=workspace,
+            user=request.user,
+            actor=request.user,
+            day=_day(day),
+            row=row,
+            reason=request.data.get("reason") or "Added when the task was marked done",
+        )
+        payload["can_edit"] = True
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+
 class DayReportHistoryEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def get(self, request, slug, day):

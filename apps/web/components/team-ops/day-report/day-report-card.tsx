@@ -611,7 +611,8 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
           <p className="text-caption-sm-regular text-tertiary">
             Give each task its from and to time. When the work was spread over the day, tick "Not continuous" and type
             only how long (1:30, 1.5 or 45m). Remote and onsite in one day make it a hybrid day. Tick "Task done" when a
-            task is finished: Speedy, On time or OverTime compares all its reported time with its plan.
+            task is finished: it is also set to Done in its project, and Speedy, On time or OverTime compares all its
+            reported time with its plan.
           </p>
         </>
       )}

@@ -109,6 +109,13 @@ export class DayReportService extends APIService {
       .catch(unwrap);
   }
 
+  /** Adds one row to the caller's report of `day`, keeping the rows already there. */
+  async addRow(workspaceSlug: string, day: string, row: TDayReportRowInput & { reason?: string }): Promise<TDayReport> {
+    return this.post(`${this.base(workspaceSlug)}/day-reports/${day}/rows/`, row)
+      .then((response) => response?.data)
+      .catch(unwrap);
+  }
+
   async getHistory(workspaceSlug: string, day: string, user?: string): Promise<TDayReportRevision[]> {
     return this.get(`${this.base(workspaceSlug)}/day-reports/${day}/history/`, { params: user ? { user } : {} })
       .then((response) => response?.data?.results ?? [])

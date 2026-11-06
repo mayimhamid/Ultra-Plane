@@ -397,6 +397,7 @@ from plane.team_ops.views.day_reports import (  # noqa: E402
     DayReportExportEndpoint,
     DayReportSummaryEndpoint,
     DayReportHistoryEndpoint,
+    DayReportRowEndpoint,
     DayReportTeamEndpoint,
     MicroTaskDetailEndpoint,
     MicroTaskListEndpoint,
@@ -424,6 +425,11 @@ urlpatterns += [
         "workspaces/<str:slug>/team-ops/day-reports/<str:day>/",
         DayReportEndpoint.as_view(),
         name="team-ops-day-report",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/day-reports/<str:day>/rows/",
+        DayReportRowEndpoint.as_view(),
+        name="team-ops-day-report-row",
     ),
     path(
         "workspaces/<str:slug>/team-ops/day-reports/<str:day>/history/",

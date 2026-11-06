@@ -295,6 +295,9 @@ class TestSummary:
         self, member_client, admin_client, workspace, member, issue
     ):
         TaskPlan.objects.create(workspace=workspace, issue=issue, planned_minutes=45)
+        State.objects.get_or_create(
+            project=issue.project, workspace=workspace, name="Done", defaults={"color": "#0a0", "group": "completed"}
+        )
         yesterday = today() - timedelta(days=1)
         put(member_client, workspace, yesterday, [{"issue": str(issue.id), "minutes": 30, "location": "ONSITE"}])
         put(
@@ -315,6 +318,8 @@ class TestSummary:
         assert row["task_count"] == 1 and row["finished"] == 1 and row["overtime"] == 1
         assert row["reports_sent"] == 2 and row["reports_late"] == 1
         assert data["totals"]["minutes"] == 90 and data["totals"]["overtime"] == 1
+        # "Task done" in the report set the work item to Done: it counts as completed in the period.
+        assert row["completed_tasks"] == 1 and data["totals"]["completed_tasks"] == 1
         assert data["projects"][0]["minutes"] == 90 and data["tasks"][0]["minutes"] == 90
         assert len(data["days"]) == 7 and sum(day["minutes"] for day in data["days"]) == 90
         remote = admin_client.get(url(workspace, "day-reports/summary/"), {**params, "place": "REMOTE"}).data
@@ -324,3 +329,41 @@ class TestSummary:
     def test_only_managers(self, member_client, workspace):
         params = {"from": str(today() - timedelta(days=6)), "to": str(today())}
         assert member_client.get(url(workspace, "day-reports/summary/"), params).status_code in (200, 403)
+
+
+@pytest.mark.contract
+class TestStateSync:
+    def test_done_in_the_report_moves_the_work_item_to_done(self, member_client, workspace, project, issue):
+        todo, _ = State.objects.get_or_create(
+            project=project, workspace=workspace, name="Todo", defaults={"color": "#999", "group": "unstarted"}
+        )
+        done, _ = State.objects.get_or_create(
+            project=project, workspace=workspace, name="Shipped", defaults={"color": "#0a0", "group": "completed"}
+        )
+        Issue.objects.filter(pk=issue.pk).update(state=todo)
+        put(member_client, workspace, today(), [{"issue": str(issue.id), "minutes": 30, "finished": True}])
+        issue.refresh_from_db()
+        assert issue.state.group == "completed"
+        from plane.db.models import IssueActivity
+
+        assert IssueActivity.objects.filter(issue=issue, field="state", new_value=issue.state.name).exists()
+
+    def test_a_row_is_added_to_the_day_and_keeps_the_others(self, member_client, workspace, member, issue):
+        put(member_client, workspace, today(), [{"issue": str(issue.id), "minutes": 20, "location": "REMOTE"}])
+        added = member_client.post(
+            report_url(workspace, today(), "rows/"),
+            {"issue": str(issue.id), "start": "13:00", "end": "14:30", "location": "ONSITE", "finished": True},
+            format="json",
+        )
+        assert added.status_code == 201
+        assert [row["minutes"] for row in added.data["entries"]] == [20, 90]
+        assert added.data["status"] == "DRAFT" and added.data["mode"] == "HYBRID"
+        assert not DayReportRevision.objects.exists()
+
+    def test_adding_to_a_sent_report_is_recorded(self, member_client, workspace, issue):
+        put(member_client, workspace, today(), [{"issue": str(issue.id), "minutes": 20}], submit=True)
+        member_client.post(
+            report_url(workspace, today(), "rows/"), {"issue": str(issue.id), "minutes": 15}, format="json"
+        )
+        revision = DayReportRevision.objects.get()
+        assert revision.kind == "CHANGE" and "marked done" in revision.reason

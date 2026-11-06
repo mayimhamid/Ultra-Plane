@@ -94,7 +94,12 @@ const DashboardOverview = observer(function DashboardOverview({ workspaceSlug }:
             hint={`${totals.reports_missing} missing · ${totals.reports_late} late`}
             tone={totals.reports_missing ? "warn" : "good"}
           />
-          <StatCard label="Speedy · On time" value={`${totals.speedy} · ${totals.on_time}`} tone="good" />
+          <StatCard
+            label="Tasks set to Done"
+            value={totals.completed_tasks}
+            hint={`${totals.speedy} Speedy · ${totals.on_time} On time`}
+            tone="good"
+          />
           <StatCard label="OverTime" value={totals.overtime} tone={totals.overtime ? "bad" : "good"} />
         </div>
       ) : null}
@@ -181,8 +186,26 @@ const DashboardOverview = observer(function DashboardOverview({ workspaceSlug }:
                         {task.key ? <span className="text-tertiary">{task.key} </span> : null}
                         {task.name}
                       </span>
-                      <span className="block truncate text-caption-sm-regular text-tertiary">
-                        {task.project ?? "No project"} · {task.people.join(", ")}
+                      <span className="flex min-w-0 items-center gap-1.5 text-caption-sm-regular text-tertiary">
+                        {task.state ? (
+                          <span
+                            className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[11px] font-medium"
+                            style={{
+                              color: task.state.color,
+                              backgroundColor: `color-mix(in oklab, ${task.state.color} 15%, transparent)`,
+                            }}
+                          >
+                            <span
+                              aria-hidden
+                              className="size-1.5 rounded-full"
+                              style={{ backgroundColor: task.state.color }}
+                            />
+                            {task.state.name}
+                          </span>
+                        ) : null}
+                        <span className="truncate">
+                          {task.project ?? "No project"} · {task.people.join(", ")}
+                        </span>
                       </span>
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-0.5">
@@ -202,7 +225,7 @@ const DashboardOverview = observer(function DashboardOverview({ workspaceSlug }:
           <table className="w-full min-w-[44rem] text-left">
             <thead className="border-b border-subtle bg-layer-1 text-caption-sm-medium text-tertiary">
               <tr>
-                {["Person", "Hours", "Days", "Tasks done", "OverTime", "Reports missing", "Late", "Edits"].map((c) => (
+                {["Person", "Hours", "Days", "Set to Done", "OverTime", "Reports missing", "Late", "Edits"].map((c) => (
                   <th key={c} scope="col" className="px-3 py-2">
                     {c}
                   </th>
@@ -220,9 +243,7 @@ const DashboardOverview = observer(function DashboardOverview({ workspaceSlug }:
                   </td>
                   <td className="px-3 py-2 font-semibold tabular-nums">{hours(person.total_minutes)}</td>
                   <td className="px-3 py-2 tabular-nums">{Object.keys(person.days).length}</td>
-                  <td className="px-3 py-2 tabular-nums">
-                    {person.finished}/{person.task_count}
-                  </td>
+                  <td className="px-3 py-2 tabular-nums">{person.completed_tasks || "–"}</td>
                   <td className={cn("px-3 py-2 tabular-nums", person.overtime && "text-danger-primary")}>
                     {person.overtime || "–"}
                   </td>

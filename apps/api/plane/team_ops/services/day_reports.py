@@ -22,7 +22,7 @@ from django.utils import timezone
 from rest_framework.exceptions import ParseError
 
 # Module imports
-from plane.db.models import Issue, ProjectMember
+from plane.db.models import Issue, IssueActivity, ProjectMember, State
 from plane.team_ops.models import (
     CalendarEntry,
     DayReport,
@@ -355,6 +355,67 @@ def _clean_rows(workspace, user, rows):
     return cleaned
 
 
+def complete_issues(issues, actor):
+    """Move each work item to the first Done state of its project (unless it is done already), as Plane would,
+    with the change in its history. Only for people who may change the work item (members, not guests)."""
+    moved = []
+    for issue in {issue.id: issue for issue in issues}.values():
+        state = issue.state if issue.state_id else None
+        if state is not None and state.group in COMPLETED_GROUPS:
+            continue
+        if not ProjectMember.objects.filter(
+            project_id=issue.project_id, member=actor, is_active=True, role__gte=15
+        ).exists():
+            continue
+        done = State.objects.filter(project_id=issue.project_id, group="completed").order_by("sequence").first()
+        if done is None:
+            continue
+        issue.state = done
+        issue.updated_by = actor
+        issue.save()
+        IssueActivity.objects.create(
+            issue=issue,
+            project_id=issue.project_id,
+            workspace_id=issue.workspace_id,
+            actor=actor,
+            verb="updated",
+            field="state",
+            old_value=state.name if state else "",
+            new_value=done.name,
+            old_identifier=state.id if state else None,
+            new_identifier=done.id,
+            comment="updated the state to (Day Report: done)",
+            epoch=timezone.now().timestamp(),
+        )
+        moved.append(issue)
+    return moved
+
+
+def append_row(*, workspace, user, actor, day, row, reason=""):
+    """Add one row to the report of `day`, keeping the rows already there (a task marked done in its project).
+
+    Today's unsent report stays a draft; a sent report or a past day records the change, as any change does.
+    """
+    report = DayReport.objects.filter(workspace=workspace, user=user, date=day).first()
+    rows = []
+    if report is not None:
+        for entry in report.entries.all():
+            rows.append(
+                {
+                    "issue": str(entry.issue_id) if entry.issue_id else None,
+                    "micro_task": str(entry.micro_task_id) if entry.micro_task_id else None,
+                    "minutes": entry.minutes,
+                    "start": entry.start_time.strftime("%H:%M") if entry.start_time else None,
+                    "end": entry.end_time.strftime("%H:%M") if entry.end_time else None,
+                    "location": entry.location,
+                    "finished": entry.finished,
+                    "note": entry.note,
+                }
+            )
+    rows.append(row)
+    return save_report(workspace=workspace, user=user, actor=actor, day=day, rows=rows, submit=False, reason=reason)
+
+
 def save_report(*, workspace, user, actor, day, rows, submit, reason=""):
     """Save the report of `user` for `day`; `submit` sends it. Returns the payload.
 
@@ -398,6 +459,8 @@ def save_report(*, workspace, user, actor, day, rows, submit, reason=""):
             if micro is not None and row["finished"] and not micro.done:
                 micro.done, micro.done_at = True, now
                 micro.save(update_fields=["done", "done_at", "updated_at"])
+        # "Done" in the report also moves the work item to its project's Done state.
+        complete_issues([row["issue"] for row in cleaned if row["issue"] is not None and row["finished"]], actor)
         after = _snapshot(report)
         if sending and report.status != DayReport.Status.SUBMITTED:
             report.status = DayReport.Status.SUBMITTED

@@ -578,6 +578,21 @@ export abstract class BaseIssuesStore implements IBaseIssuesStore {
       // call API to update the issue
       await this.issueService.patchIssue(workspaceSlug, projectId, issueId, data);
 
+      // Team Ops: a state change by this person (list, board, work item page...) can go into the Day Report.
+      if (data.state_id && data.state_id !== issueBeforeUpdate?.state_id && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("team-ops:state-changed", {
+            detail: {
+              workspaceSlug,
+              projectId,
+              issueId,
+              stateId: data.state_id,
+              previousStateId: issueBeforeUpdate?.state_id,
+            },
+          })
+        );
+      }
+
       // call fetch Parent Stats
       this.fetchParentStats(workspaceSlug, projectId);
     } catch (error) {

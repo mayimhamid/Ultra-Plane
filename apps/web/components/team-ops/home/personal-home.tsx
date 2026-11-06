@@ -16,6 +16,7 @@ import { useWorkday } from "@/hooks/team-ops/use-workday";
 // components
 import { ContributionGraph } from "../workday/contribution-graph";
 import { HomeMentions } from "./home-mentions";
+import { MyTasks } from "./my-tasks";
 
 type Props = { workspaceSlug: string };
 
@@ -110,6 +111,8 @@ export const PersonalHome = observer(function PersonalHome({ workspaceSlug }: Pr
       </header>
 
       <HomeMentions workspaceSlug={workspaceSlug} />
+
+      <MyTasks workspaceSlug={workspaceSlug} />
 
       <dl className="flex flex-wrap gap-3">
         {[
