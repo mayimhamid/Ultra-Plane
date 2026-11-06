@@ -231,7 +231,8 @@ export type TOpsNotification = {
     | "ASSIGN"
     | "CHECKIN"
     | "LEAVE"
-    | "REPORT";
+    | "REPORT"
+    | "REMIND";
   title: string;
   body: string;
   link: string;

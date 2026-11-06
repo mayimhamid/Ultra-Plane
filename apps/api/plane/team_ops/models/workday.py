@@ -80,6 +80,7 @@ class OpsNotification(BaseModel):
         CHECKIN = "CHECKIN", "Check-in due"
         LEAVE = "LEAVE", "Leave request"
         REPORT = "REPORT", "Day report changed"
+        REMIND = "REMIND", "Log your tasks"
 
     workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_notifications")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_ops_notifications")

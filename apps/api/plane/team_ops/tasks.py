@@ -33,6 +33,14 @@ def freeze_unanswered_timers_task():
 
 
 @shared_task
+def remind_missing_day_reports_task():
+    """At 20:00 and at 23:30 (team clock), remind the people who have logged no task today."""
+    from plane.team_ops.services.reminders import remind_missing_day_reports
+
+    return remind_missing_day_reports()
+
+
+@shared_task
 def sync_admin_access_task():
     """Keep every workspace admin on every project of their workspace, so they can see all of it."""
     return sync_admin_access()

@@ -32,6 +32,11 @@ class TeamOpsConfig(AppConfig):
             "task": "plane.team_ops.tasks.notify_new_assignments_task",
             "schedule": crontab(minute="*"),
         }
+        # Every minute: the task itself only acts inside the 20:00 and 23:30 windows and tells each person once.
+        app.conf.beat_schedule["team-ops-remind-missing-day-reports"] = {
+            "task": "plane.team_ops.tasks.remind_missing_day_reports_task",
+            "schedule": crontab(minute="*"),
+        }
         app.conf.beat_schedule["team-ops-sync-admin-access"] = {
             "task": "plane.team_ops.tasks.sync_admin_access_task",
             "schedule": crontab(minute="*/5"),
