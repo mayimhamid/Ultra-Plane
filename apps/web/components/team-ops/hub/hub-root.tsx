@@ -286,19 +286,28 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
         ) : null}
       </aside>
       <section className={cn("min-h-0 min-w-0 flex-1 flex-col md:flex", hasChoice ? "flex" : "hidden")}>
-        <button
-          type="button"
-          onClick={() => setSearchParams({})}
-          className="flex items-center gap-1.5 border-b border-subtle px-3 py-2.5 text-left text-body-sm-medium text-accent-primary md:hidden"
-        >
-          <span aria-hidden>&larr;</span> Hub
-        </button>
+        {/* The chat has its own header with a back button; the other sections get this bar on phones. */}
+        {section || !active ? (
+          <button
+            type="button"
+            onClick={() => setSearchParams({})}
+            className="flex items-center gap-1.5 border-b border-subtle px-3 py-2.5 text-left text-body-sm-medium text-accent-primary md:hidden"
+          >
+            <span aria-hidden>&larr;</span> Hub
+          </button>
+        ) : null}
         <div className="min-h-0 flex-1">
           {section === "mentions" ? <MentionsView workspaceSlug={workspaceSlug} onOpenChannel={openChannel} /> : null}
           {section === "docs" || section === "files" ? <DocHubView workspaceSlug={workspaceSlug} /> : null}
           {section === "secrets" ? <SecretsView workspaceSlug={workspaceSlug} /> : null}
           {!section && active ? (
-            <ChannelView key={active.id} workspaceSlug={workspaceSlug} channel={active} onRead={() => void refresh()} />
+            <ChannelView
+              key={active.id}
+              workspaceSlug={workspaceSlug}
+              channel={active}
+              onRead={() => void refresh()}
+              onBack={() => setSearchParams({})}
+            />
           ) : null}
           {!section && !active ? <p className="p-6 text-body-sm-regular text-tertiary">Choose a channel.</p> : null}
         </div>
