@@ -15,11 +15,9 @@ import type {
   THubPerson,
   THubSecret,
   THubSecretLog,
-  THubPendingKey,
-  THubSealed,
   THubSecretPayload,
   THubSecretReveal,
-  THubVault,
+  THubSecretValue,
   TProjectModule,
   TLibraryFile,
 } from "@plane/types";
@@ -117,11 +115,11 @@ export class HubExtraService extends APIService {
       .catch(fail);
   }
 
-  /** Name or info; with `sealed`, a new value (sealed again in the browser, with new keys for the readers). */
+  /** Name or info; with a value (`secret`, or `username` and `password`), a new value. */
   async updateSecret(
     workspaceSlug: string,
     id: string,
-    payload: Partial<Pick<THubSecretPayload, "name" | "description" | "kind">> & Partial<THubSealed>
+    payload: Partial<Pick<THubSecretPayload, "name" | "description">> | THubSecretValue
   ): Promise<THubSecret> {
     return this.patch(`${this.base(workspaceSlug)}/secrets/${id}/`, payload)
       .then((response) => response?.data)
@@ -134,82 +132,17 @@ export class HubExtraService extends APIService {
       .catch(fail);
   }
 
-  /** The sealed value and the caller's wrapped key (an old secret: its value). Every call is logged. */
+  /** The value of a secret. Every call is logged on the server; never keep the result longer than needed. */
   async revealSecret(workspaceSlug: string, id: string): Promise<THubSecretReveal> {
     return this.post(`${this.base(workspaceSlug)}/secrets/${id}/reveal/`, {})
       .then((response) => response?.data)
       .catch(fail);
   }
 
-  /** An old server-key secret, sealed again in the publisher's browser. */
-  async convertSecret(
-    workspaceSlug: string,
-    id: string,
-    payload: THubSealed & { kind: THubSecretPayload["kind"] }
-  ): Promise<THubSecret> {
-    return this.post(`${this.base(workspaceSlug)}/secrets/${id}/convert/`, payload)
+  /** Replaces the list of people who may read the secret (publisher only). */
+  async setSecretAccess(workspaceSlug: string, id: string, users: string[]): Promise<THubSecret> {
+    return this.put(`${this.base(workspaceSlug)}/secrets/${id}/access/`, { users })
       .then((response) => response?.data)
-      .catch(fail);
-  }
-
-  /** Replaces the list of people who may read the secret (publisher only), with keys for new readers. */
-  async setSecretAccess(
-    workspaceSlug: string,
-    id: string,
-    users: string[],
-    keys: Record<string, string> = {}
-  ): Promise<THubSecret> {
-    return this.put(`${this.base(workspaceSlug)}/secrets/${id}/access/`, { users, keys })
-      .then((response) => response?.data)
-      .catch(fail);
-  }
-
-  async getVault(workspaceSlug: string): Promise<THubVault | null> {
-    return this.get(`${this.base(workspaceSlug)}/vault/`)
-      .then((response) => response?.data?.vault ?? null)
-      .catch(fail);
-  }
-
-  async createVault(workspaceSlug: string, vault: THubVault): Promise<THubVault> {
-    return this.post(`${this.base(workspaceSlug)}/vault/`, vault)
-      .then((response) => response?.data?.vault)
-      .catch(fail);
-  }
-
-  /** The same keys, locked with a new passphrase. */
-  async changeVaultPassphrase(workspaceSlug: string, vault: THubVault): Promise<THubVault> {
-    return this.put(`${this.base(workspaceSlug)}/vault/`, vault)
-      .then((response) => response?.data?.vault)
-      .catch(fail);
-  }
-
-  /** Forgotten passphrase: the caller's own secrets are deleted, shared ones wait to be shared again. */
-  async resetVault(workspaceSlug: string): Promise<{ deleted: number; waiting: number }> {
-    return this.delete(`${this.base(workspaceSlug)}/vault/`)
-      .then((response) => response?.data)
-      .catch(fail);
-  }
-
-  /** Public keys of the given colleagues who have a vault, by user id. */
-  async getPublicKeys(workspaceSlug: string, users: string[]): Promise<Record<string, string>> {
-    if (users.length === 0) return {};
-    return this.get(`${this.base(workspaceSlug)}/vault/keys/`, { params: { users: users.join(",") } })
-      .then((response) => response?.data?.keys ?? {})
-      .catch(fail);
-  }
-
-  async getPendingKeys(workspaceSlug: string): Promise<THubPendingKey[]> {
-    return this.get(`${this.base(workspaceSlug)}/vault/pending/`)
-      .then((response) => response?.data?.results ?? [])
-      .catch(fail);
-  }
-
-  async fillPendingKeys(
-    workspaceSlug: string,
-    items: { secret: string; user: string; wrapped_key: string }[]
-  ): Promise<number> {
-    return this.post(`${this.base(workspaceSlug)}/vault/pending/`, { items })
-      .then((response) => response?.data?.done ?? 0)
       .catch(fail);
   }
 

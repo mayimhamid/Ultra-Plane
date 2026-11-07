@@ -2,203 +2,68 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
-"""Secrets in the Hub, encrypted end to end.
+"""Secrets in the Hub: stored encrypted, readable only by the publisher and the people the publisher chose.
 
-The browser encrypts every value before it is sent. Each secret has its own random key; that key is wrapped
-with the public key of the publisher and of each person allowed to read it. Private keys are locked with each
-person's vault passphrase, in the browser. So the server only ever stores and hands out ciphertext: not the
-server, not its database, not an admin and not someone who breaks into the machine can read a value.
+A secret is either a single value (SECRET) or a username and a password (LOGIN). Everything sensitive, the
+username included, is encrypted together (Fernet: AES-128-CBC with an HMAC-SHA256 check) before it reaches the
+database. The key is `TEAM_OPS_SECRET_KEY` from the server's environment, never stored in the database, so a
+copy of the database alone opens nothing. Several keys can be given, comma separated: the first encrypts, all of
+them can read, which lets the key be changed without losing old secrets.
 
-Workspace admins get no special access. Every reveal, change and change of access is logged, without the value.
-
-Secrets from before end-to-end encryption (`e2e` false) are still encrypted with a server key. Their publisher's
-browser converts them the next time the publisher opens their vault; until then they can be read the old way.
+Workspace admins get no special access: if the publisher did not allow them, they cannot read the value.
+Every reveal, change and change of access is written to a log the publisher can read, without the value.
 """
 
 # Python imports
 import base64
-import binascii
 import hashlib
+import json
 import os
 
 # Django imports
 from django.conf import settings
-from django.db import transaction
 from django.db.models import Q
 
 # Third party imports
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from rest_framework.exceptions import NotFound, ParseError
 
 # Module imports
-from plane.team_ops.models import HubSecret, HubSecretAccess, HubSecretLog, HubVaultKey
+from plane.team_ops.models import HubSecret, HubSecretAccess, HubSecretLog
 from plane.team_ops.services.access import calendar_user_ids
 from plane.team_ops.services.notifications import notify
-from plane.team_ops.services.time_entry import parse_uuid
 
-# Base64 sizes: a sealed value of up to ~20 000 characters, an RSA-3072 wrapped key, a wrapped private key.
-MAX_CIPHERTEXT = 40000
-MAX_WRAPPED = 1024
-MAX_PUBLIC_KEY = 1024
-MAX_PRIVATE_KEY = 4096
-MIN_ITERATIONS = 300_000
-
-
-# ---- Old secrets (server key): read and converted only ----
+MAX_VALUE = 20000
+MAX_USERNAME = 500
 
 
 def _fernet():
-    """The key is `TEAM_OPS_SECRET_KEY` (a Fernet key) when set; otherwise one derived from Django's SECRET_KEY."""
-    configured = os.environ.get("TEAM_OPS_SECRET_KEY")
-    if configured:
-        return Fernet(configured.encode())
+    """`TEAM_OPS_SECRET_KEY` (one or more Fernet keys, comma separated) when set; otherwise a key derived from
+    Django's SECRET_KEY, which also lives outside the database."""
+    configured = [key.strip() for key in os.environ.get("TEAM_OPS_SECRET_KEY", "").split(",") if key.strip()]
     digest = hashlib.sha256(f"team-ops-secrets:{settings.SECRET_KEY}".encode()).digest()
-    return Fernet(base64.urlsafe_b64encode(digest))
+    derived = Fernet(base64.urlsafe_b64encode(digest))
+    # The derived key always comes last: it still reads secrets saved before TEAM_OPS_SECRET_KEY was set.
+    return MultiFernet([*(Fernet(key.encode()) for key in configured), derived])
 
 
-def encrypt(value):
-    """Server-key encryption. Only used by tests to make secrets the old way."""
-    return _fernet().encrypt(value.encode()).decode()
+def encrypt(content):
+    """`content` is the dict of a secret's fields, or (old callers) a plain value."""
+    data = content if isinstance(content, dict) else {"secret": content}
+    return _fernet().encrypt(json.dumps(data).encode()).decode()
 
 
 def decrypt(token):
+    """The fields of a secret. Secrets saved before LOGIN existed hold just the value."""
     try:
-        return _fernet().decrypt(token.encode()).decode()
+        text = _fernet().decrypt(token.encode()).decode()
     except InvalidToken:
         raise ParseError(detail="The secret cannot be read with the current key.")
-
-
-# ---- Checks on what the browser sends ----
-
-
-def _blob(value, label, limit, required=True):
-    """A base64 string from the browser. The server cannot read it; it only checks its shape and size."""
-    if value in (None, "") and not required:
-        return ""
-    if not isinstance(value, str) or not value or len(value) > limit:
-        raise ParseError(detail=f"Invalid {label}.")
     try:
-        base64.b64decode(value, validate=True)
-    except (binascii.Error, ValueError):
-        raise ParseError(detail=f"Invalid {label}.")
-    return value
-
-
-def _kind(value):
-    if value in (None, ""):
-        return HubSecret.Kind.SECRET
-    if value not in HubSecret.Kind.values:
-        raise ParseError(detail="The kind is SECRET or LOGIN.")
-    return value
-
-
-def _sealed(data):
-    """The encrypted value: ciphertext, its nonce and the key wrapped for the publisher."""
-    if "value" in data:
-        # Never accept a value in the clear: it would pass through and could be logged on the server.
-        raise ParseError(detail="Secrets are encrypted in the browser. Open your vault and try again.")
-    return {
-        "ciphertext": _blob(data.get("ciphertext"), "ciphertext", MAX_CIPHERTEXT),
-        "iv": _blob(data.get("iv"), "iv", 64),
-        "owner_key": _blob(data.get("owner_key"), "owner key", MAX_WRAPPED),
-    }
-
-
-def parse_keys(data):
-    """`{user id: wrapped key}` for readers; a reader without a key yet is waiting for it."""
-    raw = data.get("keys") or {}
-    if not isinstance(raw, dict):
-        raise ParseError(detail="Invalid keys.")
-    return {str(user_id): _blob(key, "key", MAX_WRAPPED) for user_id, key in raw.items()}
-
-
-def _name(name):
-    name = (name or "").strip()
-    if not name or len(name) > 200:
-        raise ParseError(detail="Give the secret a name.")
-    return name
-
-
-# ---- Vault keys ----
-
-
-def vault_of(workspace, user):
-    return HubVaultKey.objects.filter(workspace=workspace, user=user).first()
-
-
-def vault_payload(vault):
-    if vault is None:
-        return None
-    return {
-        "public_key": vault.public_key,
-        "private_key": vault.private_key,
-        "salt": vault.salt,
-        "iv": vault.iv,
-        "iterations": vault.iterations,
-    }
-
-
-def _vault_fields(data):
-    iterations = data.get("iterations")
-    if not isinstance(iterations, int) or iterations < MIN_ITERATIONS or iterations > 10_000_000:
-        raise ParseError(detail="The vault passphrase must be stretched with more iterations.")
-    return {
-        "private_key": _blob(data.get("private_key"), "private key", MAX_PRIVATE_KEY),
-        "salt": _blob(data.get("salt"), "salt", 64),
-        "iv": _blob(data.get("iv"), "iv", 64),
-        "iterations": iterations,
-    }
-
-
-def create_vault(workspace, user, data):
-    if vault_of(workspace, user):
-        raise ParseError(detail="You already have a vault.")
-    return HubVaultKey.objects.create(
-        workspace=workspace,
-        user=user,
-        public_key=_blob(data.get("public_key"), "public key", MAX_PUBLIC_KEY),
-        **_vault_fields(data),
-    )
-
-
-def change_passphrase(workspace, user, data):
-    """The same key pair, locked with a new passphrase (re-encrypted in the browser)."""
-    vault = vault_of(workspace, user)
-    if vault is None:
-        raise NotFound("You have no vault yet.")
-    if data.get("public_key") != vault.public_key:
-        raise ParseError(detail="The key pair cannot change here; reset the vault instead.")
-    for field, value in _vault_fields(data).items():
-        setattr(vault, field, value)
-    vault.save()
-    return vault
-
-
-@transaction.atomic
-def reset_vault(workspace, user):
-    """For a forgotten passphrase. Secrets the person published cannot be read by anyone any more and are
-    deleted; secrets shared with them wait until each publisher opens their vault and shares them again."""
-    vault = vault_of(workspace, user)
-    if vault is None:
-        raise NotFound("You have no vault yet.")
-    vault.delete(soft=False)
-    lost = HubSecret.objects.filter(workspace=workspace, publisher=user, e2e=True)
-    deleted = lost.count()
-    for secret in lost:
-        secret.delete()
-    waiting = HubSecretAccess.objects.filter(secret__workspace=workspace, user=user).exclude(wrapped_key="")
-    rewrap = waiting.update(wrapped_key="")
-    return {"deleted": deleted, "waiting": rewrap}
-
-
-def public_keys(workspace, user_ids):
-    """The public keys of colleagues who have a vault, to share a secret with them."""
-    allowed = calendar_user_ids(workspace) & set(user_ids)
-    rows = HubVaultKey.objects.filter(workspace=workspace, user_id__in=allowed).values_list("user_id", "public_key")
-    return {str(user_id): key for user_id, key in rows}
-
-
-# ---- Secrets ----
+        data = json.loads(text)
+    except ValueError:
+        return {"secret": text}
+    return data if isinstance(data, dict) else {"secret": text}
 
 
 def write_log(secret, user, action, target_id=None):
@@ -230,102 +95,82 @@ def get_published(workspace, user, pk):
     return secret
 
 
-def _require_vault(workspace, user):
-    if vault_of(workspace, user) is None:
-        raise ParseError(detail="Set up your vault first.")
+def _name(name):
+    name = (name or "").strip()
+    if not name or len(name) > 200:
+        raise ParseError(detail="Give the secret a name.")
+    return name
 
 
-@transaction.atomic
+def content_of(data, kind=None):
+    """The kind and the fields to encrypt, checked. SECRET: `secret`. LOGIN: `username` and `password`."""
+    kind = kind or data.get("kind") or HubSecret.Kind.SECRET
+    if kind not in HubSecret.Kind.values:
+        raise ParseError(detail="The kind is SECRET or LOGIN.")
+    if kind == HubSecret.Kind.LOGIN:
+        username = data.get("username") or ""
+        password = data.get("password")
+        if not isinstance(username, str) or len(username) > MAX_USERNAME:
+            raise ParseError(detail=f"The username can be at most {MAX_USERNAME} characters.")
+        if not isinstance(password, str) or not password or len(password) > MAX_VALUE:
+            raise ParseError(detail=f"A password is needed, at most {MAX_VALUE} characters.")
+        return kind, {"username": username, "password": password}
+    value = data.get("secret", data.get("value"))
+    if not isinstance(value, str) or not value or len(value) > MAX_VALUE:
+        raise ParseError(detail=f"A secret value is needed, at most {MAX_VALUE} characters.")
+    return kind, {"secret": value}
+
+
 def publish(workspace, user, data, project=None):
-    _require_vault(workspace, user)
+    name = _name(data.get("name"))
+    kind, content = content_of(data)
     secret = HubSecret.objects.create(
         workspace=workspace,
         publisher=user,
         project=project,
-        name=_name(data.get("name")),
+        name=name,
         description=(data.get("description") or "")[:2000],
-        kind=_kind(data.get("kind")),
-        e2e=True,
-        **_sealed(data),
+        kind=kind,
+        ciphertext=encrypt(content),
     )
     write_log(secret, user, HubSecretLog.Action.CREATE)
     return secret
 
 
 def reveal(secret, user):
-    """What the browser needs to open the value: the ciphertext and the caller's wrapped key. Logged."""
-    if not secret.e2e:
-        write_log(secret, user, HubSecretLog.Action.REVEAL)
-        return {"e2e": False, "value": decrypt(secret.ciphertext)}
-    if secret.publisher_id == user.id:
-        key = secret.owner_key
-    else:
-        key = HubSecretAccess.objects.filter(secret=secret, user=user).values_list("wrapped_key", flat=True).first()
-    if not key:
-        raise ParseError(
-            detail=f"{secret.publisher.display_name} shared this before you had a vault. "
-            "It opens for you once they open their vault."
-        )
+    if secret.e2e:
+        # Saved while Secrets used a browser vault: the server never had its key.
+        raise ParseError(detail="This secret was saved with the old vault. Its publisher needs to enter it again.")
     write_log(secret, user, HubSecretLog.Action.REVEAL)
-    return {"e2e": True, "kind": secret.kind, "ciphertext": secret.ciphertext, "iv": secret.iv, "key": key}
+    content = decrypt(secret.ciphertext)
+    if secret.kind == HubSecret.Kind.LOGIN:
+        return {"kind": secret.kind, "username": content.get("username", ""), "password": content.get("password", "")}
+    return {"kind": secret.kind, "secret": content.get("secret", "")}
 
 
-def _store_keys(secret, keys):
-    """Give each current reader the wrapped key sent for them; the others wait for it."""
-    for row in HubSecretAccess.objects.filter(secret=secret):
-        row.wrapped_key = keys.get(str(row.user_id), "")
-        row.save(update_fields=["wrapped_key"])
-
-
-@transaction.atomic
 def update(secret, user, data):
     if data.get("name") is not None:
         secret.name = _name(data.get("name"))
     if data.get("description") is not None:
         secret.description = str(data.get("description"))[:2000]
-    if "ciphertext" in data or "value" in data:
-        # A new value comes with a new key, wrapped again for everyone who may read it.
-        _require_vault(secret.workspace, user)
-        for field, value in _sealed(data).items():
-            setattr(secret, field, value)
-        secret.kind = _kind(data.get("kind") or secret.kind)
-        secret.e2e = True
-        _store_keys(secret, parse_keys(data))
+    if any(field in data for field in ("secret", "value", "password")):
+        secret.kind, content = content_of(data, data.get("kind") or secret.kind)
+        secret.ciphertext = encrypt(content)
+        secret.e2e = False
     secret.save()
     write_log(secret, user, HubSecretLog.Action.UPDATE)
     return secret
 
 
-@transaction.atomic
-def convert(secret, user, data):
-    """An old server-key secret, encrypted again in the publisher's browser. The old ciphertext is gone."""
-    if secret.e2e:
-        raise ParseError(detail="This secret is already encrypted end to end.")
-    _require_vault(secret.workspace, user)
-    for field, value in _sealed(data).items():
-        setattr(secret, field, value)
-    secret.kind = _kind(data.get("kind"))
-    secret.e2e = True
-    secret.save()
-    _store_keys(secret, parse_keys(data))
-    write_log(secret, user, HubSecretLog.Action.UPDATE)
-    return secret
-
-
-@transaction.atomic
-def set_access(secret, publisher, user_ids, keys=None):
-    """Replace the list of people allowed to read the secret. Newly allowed people are told.
-
-    `keys` holds the secret's key wrapped for new readers who have a vault; anyone without one waits for it.
-    """
+def set_access(secret, publisher, user_ids):
+    """Replace the list of people allowed to read the secret. Newly allowed people are told."""
     allowed = calendar_user_ids(secret.workspace) - {publisher.id}
     wanted = set(user_ids)
     if not wanted <= allowed:
         raise ParseError(detail="You can only share a secret with colleagues in this workspace.")
-    keys = keys or {}
     current = set(HubSecretAccess.objects.filter(secret=secret).values_list("user_id", flat=True))
     for user_id in wanted - current:
-        HubSecretAccess.objects.create(secret=secret, user_id=user_id, wrapped_key=keys.get(str(user_id), ""))
+        HubSecretAccess.objects.create(secret=secret, user_id=user_id)
         write_log(secret, publisher, HubSecretLog.Action.GRANT, user_id)
     for user_id in current - wanted:
         for row in HubSecretAccess.objects.filter(secret=secret, user_id=user_id):
@@ -339,48 +184,3 @@ def set_access(secret, publisher, user_ids, keys=None):
         link="team-ops/hub?section=secrets",
         actor=publisher,
     )
-
-
-def pending(workspace, publisher):
-    """Readers of the publisher's secrets who now have a vault but no key yet, with what the browser needs to
-    wrap one: the secret's key wrapped for the publisher, and the reader's public key."""
-    rows = (
-        HubSecretAccess.objects.filter(secret__workspace=workspace, secret__publisher=publisher, secret__e2e=True)
-        .filter(wrapped_key="")
-        .select_related("secret")
-    )
-    vaults = dict(
-        HubVaultKey.objects.filter(workspace=workspace, user_id__in=[row.user_id for row in rows]).values_list(
-            "user_id", "public_key"
-        )
-    )
-    return [
-        {
-            "secret": str(row.secret_id),
-            "user": str(row.user_id),
-            "owner_key": row.secret.owner_key,
-            "public_key": vaults[row.user_id],
-        }
-        for row in rows
-        if row.user_id in vaults
-    ]
-
-
-def fill_pending(workspace, publisher, items):
-    """Store keys the publisher's browser wrapped for readers who were waiting. Returns how many."""
-    if not isinstance(items, list):
-        raise ParseError(detail="Invalid keys.")
-    done = 0
-    for item in items:
-        if not isinstance(item, dict):
-            raise ParseError(detail="Invalid keys.")
-        key = _blob(item.get("wrapped_key"), "key", MAX_WRAPPED)
-        done += HubSecretAccess.objects.filter(
-            secret__workspace=workspace,
-            secret__publisher=publisher,
-            secret__e2e=True,
-            secret_id=parse_uuid(item.get("secret"), "secret"),
-            user_id=parse_uuid(item.get("user"), "user"),
-            wrapped_key="",
-        ).update(wrapped_key=key)
-    return done

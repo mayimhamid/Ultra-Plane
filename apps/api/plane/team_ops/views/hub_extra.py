@@ -374,93 +374,18 @@ def _secret_payload(secret, viewer):
         "name": secret.name,
         "description": secret.description,
         "kind": secret.kind,
-        "e2e": secret.e2e,
+        # Saved with the old browser vault: the publisher needs to enter it again.
+        "needs_reentry": secret.e2e,
         "publisher": person(secret.publisher),
         "project": {"id": secret.project_id, "name": secret.project.name} if secret.project_id else None,
         "is_publisher": mine,
         "updated_at": secret.updated_at,
     }
     if mine:
-        rows = list(HubSecretAccess.objects.filter(secret=secret).values_list("user_id", "wrapped_key"))
-        data["shared_with"] = [str(user_id) for user_id, _ in rows]
-        # Readers still waiting for their key (they had no vault when it was shared).
-        data["waiting"] = [str(user_id) for user_id, key in rows if secret.e2e and not key]
-        # The secret's key, wrapped for the publisher: only their own vault can open it. Needed to share it.
-        data["owner_key"] = secret.owner_key
-    else:
-        data["is_waiting"] = (
-            secret.e2e
-            and not HubSecretAccess.objects.filter(secret=secret, user=viewer).exclude(wrapped_key="").exists()
-        )
+        data["shared_with"] = [
+            str(user_id) for user_id in HubSecretAccess.objects.filter(secret=secret).values_list("user_id", flat=True)
+        ]
     return data
-
-
-class HubVaultEndpoint(BaseAPIView):
-    """The caller's vault: a key pair whose private half is locked by a passphrase only they know."""
-
-    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
-    def get(self, request, slug):
-        workspace, _ = _member(request, slug)
-        if workspace is None:
-            return _forbidden()
-        vault = secret_service.vault_of(workspace, request.user)
-        response = Response({"vault": secret_service.vault_payload(vault)})
-        response["Cache-Control"] = "no-store"
-        return response
-
-    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
-    def post(self, request, slug):
-        workspace, _ = _member(request, slug)
-        if workspace is None:
-            return _forbidden()
-        vault = secret_service.create_vault(workspace, request.user, request.data)
-        return Response({"vault": secret_service.vault_payload(vault)}, status=status.HTTP_201_CREATED)
-
-    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
-    def put(self, request, slug):
-        """A new passphrase for the same keys."""
-        workspace, _ = _member(request, slug)
-        if workspace is None:
-            return _forbidden()
-        vault = secret_service.change_passphrase(workspace, request.user, request.data)
-        return Response({"vault": secret_service.vault_payload(vault)})
-
-    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
-    def delete(self, request, slug):
-        """Forgotten passphrase: start again. The caller's own secrets are lost."""
-        workspace, _ = _member(request, slug)
-        if workspace is None:
-            return _forbidden()
-        return Response(secret_service.reset_vault(workspace, request.user))
-
-
-class HubVaultKeysEndpoint(BaseAPIView):
-    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
-    def get(self, request, slug):
-        """Public keys of colleagues (`?users=a,b`) who have a vault."""
-        workspace, _ = _member(request, slug)
-        if workspace is None:
-            return _forbidden()
-        raw = [value for value in request.query_params.get("users", "").split(",") if value]
-        ids = {parse_uuid(value, "users") for value in raw[:200]}
-        return Response({"keys": secret_service.public_keys(workspace, ids)})
-
-
-class HubVaultPendingEndpoint(BaseAPIView):
-    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
-    def get(self, request, slug):
-        """Readers of the caller's secrets who are waiting for their key and now have a vault."""
-        workspace, _ = _member(request, slug)
-        if workspace is None:
-            return _forbidden()
-        return Response({"results": secret_service.pending(workspace, request.user)})
-
-    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
-    def post(self, request, slug):
-        workspace, _ = _member(request, slug)
-        if workspace is None:
-            return _forbidden()
-        return Response({"done": secret_service.fill_pending(workspace, request.user, request.data.get("items"))})
 
 
 class HubSecretListEndpoint(BaseAPIView):
@@ -475,16 +400,15 @@ class HubSecretListEndpoint(BaseAPIView):
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug):
-        """A secret sealed in the browser: ciphertext, nonce, and its key wrapped for the publisher and readers."""
+        """A secret (`kind` SECRET with `secret`, or LOGIN with `username` and `password`), encrypted on save."""
         workspace, is_admin = _member(request, slug)
         if workspace is None:
             return _forbidden()
         data = request.data
         project = _project_of(workspace, request.user, is_admin, data.get("project"))
-        keys = secret_service.parse_keys(data)
         secret = secret_service.publish(workspace, request.user, data, project)
         if data.get("users"):
-            secret_service.set_access(secret, request.user, _ids(request, "users"), keys)
+            secret_service.set_access(secret, request.user, _ids(request, "users"))
         return Response(_secret_payload(secret, request.user), status=status.HTTP_201_CREATED)
 
 
@@ -511,7 +435,7 @@ class HubSecretDetailEndpoint(BaseAPIView):
 class HubSecretRevealEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug, pk):
-        """What the caller's browser needs to open the value (never the value itself). Every reveal is logged."""
+        """The value, for the publisher and the people they chose. Every reveal is logged."""
         workspace, _ = _member(request, slug)
         if workspace is None:
             return _forbidden()
@@ -519,18 +443,6 @@ class HubSecretRevealEndpoint(BaseAPIView):
         response = Response(secret_service.reveal(secret, request.user))
         response["Cache-Control"] = "no-store"
         return response
-
-
-class HubSecretConvertEndpoint(BaseAPIView):
-    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
-    def post(self, request, slug, pk):
-        """An old server-key secret, sealed again in the publisher's browser."""
-        workspace, _ = _member(request, slug)
-        if workspace is None:
-            return _forbidden()
-        secret = secret_service.get_published(workspace, request.user, pk)
-        secret_service.convert(secret, request.user, request.data)
-        return Response(_secret_payload(secret, request.user))
 
 
 class HubSecretAccessEndpoint(BaseAPIView):
@@ -541,8 +453,7 @@ class HubSecretAccessEndpoint(BaseAPIView):
         if workspace is None:
             return _forbidden()
         secret = secret_service.get_published(workspace, request.user, pk)
-        keys = secret_service.parse_keys(request.data)
-        secret_service.set_access(secret, request.user, _ids(request, "users"), keys)
+        secret_service.set_access(secret, request.user, _ids(request, "users"))
         return Response(_secret_payload(secret, request.user))
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")

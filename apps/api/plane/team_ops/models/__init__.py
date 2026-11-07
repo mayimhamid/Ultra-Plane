@@ -14,7 +14,7 @@ from .calendar_entry import WORKING_MODES, CalendarEntry, CalendarTemplate, Leav
 from .team import OpsTeam, OpsTeamMember
 from .hub import HubAttachment, HubChannel, HubMention, HubMessage, HubReadState, WorkSession
 from .flow import Flow, FlowStage, FlowStageModule
-from .hub_content import HubDoc, HubSecret, HubSecretAccess, HubSecretLog, HubVaultKey
+from .hub_content import HubDoc, HubSecret, HubSecretAccess, HubSecretLog
 from .leave_request import LeaveRequest
 from .push import PushSubscription
 from .workday import FreezeCredit, OpsNotification, WeekPlanConfirmation, WorkApproval, WorkDay, WorkInterruption
@@ -50,7 +50,6 @@ __all__ = [
     "HubSecret",
     "HubSecretAccess",
     "HubSecretLog",
-    "HubVaultKey",
     "LeaveRequest",
     "FreezeCredit",
     "OpsNotification",
