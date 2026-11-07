@@ -301,13 +301,17 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
           {section === "docs" || section === "files" ? <DocHubView workspaceSlug={workspaceSlug} /> : null}
           {section === "secrets" ? <SecretsView workspaceSlug={workspaceSlug} /> : null}
           {!section && active ? (
-            <ChannelView
-              key={active.id}
-              workspaceSlug={workspaceSlug}
-              channel={active}
-              onRead={() => void refresh()}
-              onBack={() => setSearchParams({})}
-            />
+            // On a phone an open chat covers the whole screen, with no frame or page bar; its back button
+            // returns to the channel list.
+            <div className="h-full max-md:fixed max-md:inset-x-0 max-md:top-0 max-md:z-40 max-md:h-dvh max-md:bg-surface-1">
+              <ChannelView
+                key={active.id}
+                workspaceSlug={workspaceSlug}
+                channel={active}
+                onRead={() => void refresh()}
+                onBack={() => setSearchParams({})}
+              />
+            </div>
           ) : null}
           {!section && !active ? <p className="p-6 text-body-sm-regular text-tertiary">Choose a channel.</p> : null}
         </div>

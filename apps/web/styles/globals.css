@@ -192,8 +192,10 @@
   }
 }
 
+/* "backwards": once it ends, no transform is left on the page, so full-screen layers inside it (an open
+   chat on a phone) cover the screen instead of the page frame. */
 .page-enter {
-  animation: page-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: page-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .message-in {

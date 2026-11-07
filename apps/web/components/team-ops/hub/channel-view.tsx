@@ -4,8 +4,9 @@
  * See the LICENSE file for details.
  */
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { sortBy } from "lodash-es";
 import { observer } from "mobx-react";
 import Link from "next/link";
@@ -13,9 +14,10 @@ import {
   ArrowUp,
   AtSign,
   ChevronLeft,
-  ChevronRight,
+  Copy,
   CornerUpLeft,
   FolderKanban,
+  MessagesSquare,
   Paperclip,
   Pencil,
   Plus,
@@ -37,14 +39,6 @@ import { getErrorMessage } from "../calendar/error-message";
 import { FileTypeIcon, fileExtension, fileKind } from "./file-icon";
 import { PersonAvatar, personColor } from "./person-avatar";
 
-const KIND_LABEL: Record<THubChannel["kind"], string> = {
-  TEAM: "Team",
-  PROJECT: "Project",
-  GENERAL: "General",
-  NEWS: "News",
-  DM: "Private",
-};
-
 // Messages less than this far apart sit together without a time line between them.
 // How long a new message takes to slide into view; the end of the list is not re-pinned meanwhile.
 const SMOOTH_MS = 450;
@@ -64,7 +58,6 @@ const stamp = (value: string) => {
   const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   return new Date().toDateString() === date.toDateString() ? `Today at ${time}` : `${day} at ${time}`;
 };
-const clock = (value: string) => new Date(value).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 
 const formatSize = (bytes: number) =>
   bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -145,23 +138,113 @@ type MessageProps = {
   parent?: THubMessage;
   replyCount: number;
   tokens: TToken[];
+  isEditing: boolean;
+  isMenuOpen: boolean;
   onReply: (message: THubMessage) => void;
   onOpenThread: (rootId: string) => void;
+  onOpenMenu: (message: THubMessage, x: number, y: number) => void;
   onEdit: (message: THubMessage, body: string) => Promise<void>;
-  onDelete: (message: THubMessage) => Promise<void>;
+  onEditDone: () => void;
   onOpenFile: (fileId: string) => Promise<void>;
 };
 
 const actionClass =
   "inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 text-caption-sm-medium text-secondary hover:bg-layer-1 hover:text-primary";
 
+// Swipe right this far to reply; past it the message moves slower, like it is on a spring.
+const SWIPE_TRIGGER = 64;
+const SWIPE_MAX = 110;
+// Holding a finger this long on a message opens its menu.
+const LONG_PRESS_MS = 450;
+const SPRING = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+const buzz = (ms: number) => {
+  if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(ms);
+};
+
+function EditBox({
+  message,
+  onEdit,
+  onDone,
+}: {
+  message: THubMessage;
+  onEdit: MessageProps["onEdit"];
+  onDone: () => void;
+}) {
+  const [draft, setDraft] = useState(message.body);
+  const save = () => {
+    if (draft.trim()) void onEdit(message, draft).then(onDone);
+  };
+  return (
+    <div className="flex w-[min(80vw,30rem)] flex-col gap-2 rounded-2xl border border-subtle bg-surface-1 p-2">
+      <textarea
+        value={draft}
+        rows={3}
+        aria-label="Edit message"
+        // oxlint-disable-next-line jsx-a11y/no-autofocus -- the box opens because the person chose Edit
+        autoFocus
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            save();
+          } else if (event.key === "Escape") {
+            onDone();
+          }
+        }}
+        className="resize-none rounded-xl bg-layer-1 px-3 py-2 text-body-sm-regular text-primary outline-none"
+      />
+      <div className="flex justify-end gap-2">
+        <button type="button" className={actionClass} onClick={onDone}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={!draft.trim()}
+          onClick={save}
+          className="inline-flex min-h-8 items-center rounded-full bg-[#0a84ff] px-3 text-caption-sm-medium text-white disabled:opacity-50"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type TGesture = { x: number; y: number; mode: "wait" | "swipe" | "none"; armed: boolean; timer?: number };
+
 function Message(props: MessageProps) {
   const { message, isOwn, showName, showAvatar, isGroupChat, isLast, parent, replyCount, tokens } = props;
-  const { onReply, onOpenThread, onEdit, onDelete, onOpenFile } = props;
-  const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState(message.body);
-  // On a phone the Reply / Edit / Delete row shows only for the message that was tapped.
-  const [showActions, setShowActions] = useState(false);
+  const { isEditing, isMenuOpen, onReply, onOpenThread, onOpenMenu, onEdit, onEditDone, onOpenFile } = props;
+  const row = useRef<HTMLDivElement>(null);
+  const hint = useRef<HTMLSpanElement>(null);
+  const gesture = useRef<TGesture | null>(null);
+
+  // Moves the message sideways while it is dragged; the reply arrow fades in behind it.
+  const shift = (dx: number, animate: boolean) => {
+    const transition = animate ? `transform 280ms ${SPRING}, opacity 200ms ease-out` : "none";
+    if (row.current) {
+      row.current.style.transition = transition;
+      row.current.style.transform = dx ? `translate3d(${dx}px, 0, 0)` : "";
+    }
+    if (hint.current) {
+      const progress = Math.min(dx / SWIPE_TRIGGER, 1);
+      hint.current.style.transition = transition;
+      hint.current.style.opacity = String(progress);
+      hint.current.style.transform = `scale(${0.4 + 0.6 * progress})`;
+    }
+  };
+
+  const endGesture = (released: boolean) => {
+    const current = gesture.current;
+    if (!current) return;
+    window.clearTimeout(current.timer);
+    if (current.mode === "swipe") {
+      if (released && current.armed) onReply(message);
+      shift(0, true);
+    }
+    gesture.current = null;
+  };
 
   if (message.is_deleted) {
     return (
@@ -178,190 +261,313 @@ function Message(props: MessageProps) {
 
   return (
     <article
-      onClick={(event) => {
-        if ((event.target as HTMLElement).closest("button, a, textarea, input")) return;
-        setShowActions((open) => !open);
+      title={stamp(message.created_at)}
+      // Right click (or a long press on Android) opens this message's menu instead of the browser's.
+      onContextMenu={(event) => {
+        if ((event.target as HTMLElement).closest("textarea, input")) return;
+        event.preventDefault();
+        endGesture(false);
+        onOpenMenu(message, event.clientX, event.clientY);
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") setShowActions(false);
+        if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+          event.preventDefault();
+          const box = event.currentTarget.getBoundingClientRect();
+          onOpenMenu(message, box.left + box.width / 2, box.top + box.height / 2);
+        }
       }}
-      title={stamp(message.created_at)}
+      // Touch: hold for the menu, swipe right to reply. Up and down still scroll the chat.
+      onPointerDown={(event) => {
+        if (event.pointerType !== "touch" || isEditing) return;
+        const { clientX: x, clientY: y } = event;
+        const timer = window.setTimeout(() => {
+          if (gesture.current?.mode !== "wait") return;
+          gesture.current.mode = "none";
+          buzz(10);
+          onOpenMenu(message, x, y);
+        }, LONG_PRESS_MS);
+        gesture.current = { x, y, mode: "wait", armed: false, timer };
+      }}
+      onPointerMove={(event) => {
+        const current = gesture.current;
+        if (!current || event.pointerType !== "touch") return;
+        const dx = event.clientX - current.x;
+        const dy = event.clientY - current.y;
+        if (current.mode === "wait") {
+          // Small wobbles of a held finger are not a swipe or a scroll yet.
+          if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+          window.clearTimeout(current.timer);
+          current.mode = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.4 ? "swipe" : "none";
+        }
+        if (current.mode !== "swipe") return;
+        const pulled = Math.max(0, dx);
+        const moved = Math.min(
+          pulled <= SWIPE_TRIGGER ? pulled : SWIPE_TRIGGER + (pulled - SWIPE_TRIGGER) * 0.3,
+          SWIPE_MAX
+        );
+        shift(moved, false);
+        if (moved >= SWIPE_TRIGGER && !current.armed) {
+          current.armed = true;
+          buzz(8);
+        } else if (moved < SWIPE_TRIGGER) {
+          current.armed = false;
+        }
+      }}
+      onPointerUp={() => endGesture(true)}
+      onPointerCancel={() => endGesture(false)}
       className={cn(
-        "group flex items-end gap-2 px-3",
-        isOwn ? "flex-row-reverse" : "flex-row",
-        isLast ? "pb-1.5" : "pb-0.5"
+        "relative touch-pan-y [-webkit-touch-callout:none] [@media(pointer:coarse)]:select-none",
+        isLast ? "pb-1.5" : "pb-0.5",
+        isMenuOpen && "z-10"
       )}
     >
-      {!isOwn && isGroupChat ? (
-        showAvatar ? (
-          <PersonAvatar person={message.author} size="sm" className="mb-0.5" />
-        ) : (
-          <span className="w-6 shrink-0" />
-        )
-      ) : null}
-      <div className={cn("flex max-w-[min(78%,36rem)] min-w-0 flex-col", isOwn ? "items-end" : "items-start")}>
-        {showName && !isOwn ? (
-          <span className="mb-0.5 px-3 text-caption-sm-medium" style={{ color: personColor(message.author.id) }}>
-            {message.author.display_name}
-          </span>
+      <span
+        ref={hint}
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 left-2 -mt-4 inline-flex size-8 items-center justify-center rounded-full bg-layer-1 text-secondary opacity-0"
+      >
+        <CornerUpLeft className="size-4" />
+      </span>
+      <div
+        ref={row}
+        className={cn(
+          "flex items-end gap-2 px-3 will-change-transform",
+          isOwn ? "flex-row-reverse" : "flex-row",
+          isMenuOpen && "scale-[1.02] transition-transform"
+        )}
+      >
+        {!isOwn && isGroupChat ? (
+          showAvatar ? (
+            <PersonAvatar person={message.author} size="sm" className="mb-0.5" />
+          ) : (
+            <span className="w-6 shrink-0" />
+          )
         ) : null}
-
-        {/* A reply shows the message it answers, small and outlined, joined to it by a curved line. */}
-        {parent ? (
-          <button
-            type="button"
-            onClick={() => onOpenThread(rootId)}
-            className={cn("flex max-w-full flex-col", isOwn ? "items-end" : "items-start")}
-          >
-            <span
-              className={cn(
-                "line-clamp-2 max-w-full rounded-2xl border px-3 py-1 text-left text-caption-sm-regular",
-                isOwn ? "border-[#0a84ff]/60 text-[#0a84ff]" : "border-subtle text-secondary"
-              )}
-              dir={RTL.test(parent.body) ? "rtl" : undefined}
-            >
-              {parent.is_deleted ? "Message deleted" : parent.body || "A file"}
+        <div className={cn("flex max-w-[min(78%,36rem)] min-w-0 flex-col", isOwn ? "items-end" : "items-start")}>
+          {showName && !isOwn ? (
+            <span className="mb-0.5 px-3 text-caption-sm-medium" style={{ color: personColor(message.author.id) }}>
+              {message.author.display_name}
             </span>
-            <span
-              aria-hidden
-              className={cn(
-                "h-3 w-3 border-subtle",
-                isOwn ? "mr-5 rounded-tr-xl border-t-2 border-r-2" : "ml-5 rounded-tl-xl border-t-2 border-l-2"
-              )}
-            />
-          </button>
-        ) : null}
-
-        {isEditing ? (
-          <div className="flex w-[min(80vw,30rem)] flex-col gap-2 rounded-2xl border border-subtle bg-surface-1 p-2">
-            <textarea
-              value={draft}
-              rows={3}
-              aria-label="Edit message"
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && draft.trim()) {
-                  event.preventDefault();
-                  void onEdit(message, draft).then(() => setIsEditing(false));
-                } else if (event.key === "Escape") {
-                  setIsEditing(false);
-                }
-              }}
-              className="resize-none rounded-xl bg-layer-1 px-3 py-2 text-body-sm-regular text-primary outline-none"
-            />
-            <div className="flex justify-end gap-2">
-              <button type="button" className={actionClass} onClick={() => setIsEditing(false)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!draft.trim()}
-                onClick={() => void onEdit(message, draft).then(() => setIsEditing(false))}
-                className="inline-flex min-h-8 items-center rounded-full bg-[#0a84ff] px-3 text-caption-sm-medium text-white disabled:opacity-50"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        ) : emojiOnly ? (
-          <span className="px-1 text-[44px] leading-tight select-text" aria-label={message.body}>
-            {message.body.trim()}
-          </span>
-        ) : message.body ? (
-          <div
-            dir={rtl ? "rtl" : undefined}
-            className={cn(
-              "relative rounded-[20px] px-3.5 py-2 text-body-md-regular leading-snug break-words whitespace-pre-wrap",
-              isOwn ? MINE : THEIRS,
-              isAttention && "ring-2 ring-warning-strong",
-              message.mentions_me && !isOwn && "ring-2 ring-[#0a84ff]/70"
-            )}
-          >
-            {renderBody(message.body, tokens, isOwn)}
-            {isLast ? <Tail isOwn={isOwn} /> : null}
-          </div>
-        ) : null}
-
-        {message.attachments.length > 0 ? (
-          <ul className={cn("mt-1 flex flex-col gap-1", isOwn ? "items-end" : "items-start")}>
-            {message.attachments.map((file) => {
-              const kind = fileKind(file.name);
-              return (
-                <li key={file.id}>
-                  <button
-                    type="button"
-                    className="flex max-w-[min(75vw,20rem)] min-w-0 items-center gap-3 rounded-2xl border border-subtle bg-surface-1 py-2 pr-4 pl-2 text-left hover:bg-layer-1"
-                    onClick={() =>
-                      onOpenFile(file.id).catch((error) =>
-                        setToast({ type: "error", title: "Could not open the file", message: getErrorMessage(error) })
-                      )
-                    }
-                  >
-                    <FileTypeIcon name={file.name} />
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate text-body-xs-medium text-primary">{file.name}</span>
-                      <span className="text-caption-sm-regular text-tertiary">
-                        {fileExtension(file.name) || kind.label} · {formatSize(file.size)}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
-
-        {isAttention || message.edited_at ? (
-          <span className="mt-0.5 px-2 text-[11px] text-tertiary">
-            {isAttention ? <span className="text-warning-primary">Needs attention</span> : null}
-            {isAttention && message.edited_at ? " · " : null}
-            {message.edited_at ? "Edited" : null}
-          </span>
-        ) : null}
-
-        {replyCount > 0 ? (
-          <button
-            type="button"
-            onClick={() => onOpenThread(message.id)}
-            className="mt-0.5 px-2 text-caption-sm-medium text-[#0a84ff] hover:underline"
-          >
-            {replyCount} {replyCount === 1 ? "Reply" : "Replies"}
-          </button>
-        ) : null}
-
-        <footer
-          className={cn(
-            // Touch: hidden until the message is tapped. Mouse: appears on hover.
-            showActions ? "flex" : "hidden",
-            "mt-0.5 items-center gap-0.5 transition-opacity [@media(hover:hover)]:flex [@media(hover:hover)]:opacity-0",
-            "[@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100",
-            isOwn && "flex-row-reverse"
-          )}
-        >
-          <span className="px-1.5 text-[11px] text-tertiary">{clock(message.created_at)}</span>
-          <button type="button" className={actionClass} onClick={() => onReply(message)}>
-            <CornerUpLeft className="size-3.5" aria-hidden />
-            Reply
-          </button>
-          {isOwn ? (
-            <>
-              <button type="button" className={actionClass} onClick={() => setIsEditing(true)}>
-                <Pencil className="size-3.5" aria-hidden />
-                Edit
-              </button>
-              <button
-                type="button"
-                className={cn(actionClass, "hover:text-danger-primary")}
-                onClick={() => onDelete(message)}
-              >
-                <Trash2 className="size-3.5" aria-hidden />
-                Delete
-              </button>
-            </>
           ) : null}
-        </footer>
+
+          {/* A reply shows the message it answers, small and outlined, joined to it by a curved line. */}
+          {parent ? (
+            <button
+              type="button"
+              onClick={() => onOpenThread(rootId)}
+              className={cn("flex max-w-full flex-col", isOwn ? "items-end" : "items-start")}
+            >
+              <span
+                className={cn(
+                  "line-clamp-2 max-w-full rounded-2xl border px-3 py-1 text-left text-caption-sm-regular",
+                  isOwn ? "border-[#0a84ff]/60 text-[#0a84ff]" : "border-subtle text-secondary"
+                )}
+                dir={RTL.test(parent.body) ? "rtl" : undefined}
+              >
+                {parent.is_deleted ? "Message deleted" : parent.body || "A file"}
+              </span>
+              <span
+                aria-hidden
+                className={cn(
+                  "h-3 w-3 border-subtle",
+                  isOwn ? "mr-5 rounded-tr-xl border-t-2 border-r-2" : "ml-5 rounded-tl-xl border-t-2 border-l-2"
+                )}
+              />
+            </button>
+          ) : null}
+
+          {isEditing ? (
+            <EditBox message={message} onEdit={onEdit} onDone={onEditDone} />
+          ) : emojiOnly ? (
+            <span className="px-1 text-[44px] leading-tight" aria-label={message.body}>
+              {message.body.trim()}
+            </span>
+          ) : message.body ? (
+            <div
+              dir={rtl ? "rtl" : undefined}
+              className={cn(
+                "relative rounded-[20px] px-3.5 py-2 text-body-md-regular leading-snug break-words whitespace-pre-wrap",
+                isOwn ? MINE : THEIRS,
+                isAttention && "ring-2 ring-warning-strong",
+                message.mentions_me && !isOwn && "ring-2 ring-[#0a84ff]/70"
+              )}
+            >
+              {renderBody(message.body, tokens, isOwn)}
+              {isLast ? <Tail isOwn={isOwn} /> : null}
+            </div>
+          ) : null}
+
+          {message.attachments.length > 0 ? (
+            <ul className={cn("mt-1 flex flex-col gap-1", isOwn ? "items-end" : "items-start")}>
+              {message.attachments.map((file) => {
+                const kind = fileKind(file.name);
+                return (
+                  <li key={file.id}>
+                    <button
+                      type="button"
+                      className="flex max-w-[min(75vw,20rem)] min-w-0 items-center gap-3 rounded-2xl border border-subtle bg-surface-1 py-2 pr-4 pl-2 text-left hover:bg-layer-1"
+                      onClick={() =>
+                        onOpenFile(file.id).catch((error) =>
+                          setToast({ type: "error", title: "Could not open the file", message: getErrorMessage(error) })
+                        )
+                      }
+                    >
+                      <FileTypeIcon name={file.name} />
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate text-body-xs-medium text-primary">{file.name}</span>
+                        <span className="text-caption-sm-regular text-tertiary">
+                          {fileExtension(file.name) || kind.label} · {formatSize(file.size)}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+
+          {isAttention || message.edited_at ? (
+            <span className="mt-0.5 px-2 text-[11px] text-tertiary">
+              {isAttention ? <span className="text-warning-primary">Needs attention</span> : null}
+              {isAttention && message.edited_at ? " · " : null}
+              {message.edited_at ? "Edited" : null}
+            </span>
+          ) : null}
+
+          {replyCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => onOpenThread(message.id)}
+              className="mt-0.5 px-2 text-caption-sm-medium text-[#0a84ff] hover:underline"
+            >
+              {replyCount} {replyCount === 1 ? "Reply" : "Replies"}
+            </button>
+          ) : null}
+        </div>
       </div>
     </article>
+  );
+}
+
+type TActionMenu = { message: THubMessage; x: number; y: number };
+
+type ActionMenuProps = {
+  menu: TActionMenu;
+  isOwn: boolean;
+  replyCount: number;
+  onClose: () => void;
+  onReply: () => void;
+  onThread: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+};
+
+const menuItemClass =
+  "flex min-h-11 w-full items-center justify-between gap-6 rounded-xl px-3 text-left text-body-sm-regular text-primary hover:bg-layer-1 focus-visible:bg-layer-1 focus-visible:outline-none";
+
+/** The menu of one message, where it was right-clicked or held. On phones the chat dims behind it. */
+function ActionMenu({ menu, isOwn, replyCount, onClose, onReply, onThread, onEdit, onDelete }: ActionMenuProps) {
+  const box = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+  const { message } = menu;
+
+  // Keep the whole menu on the screen.
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element) return;
+    const { width, height } = element.getBoundingClientRect();
+    const left = Math.max(8, Math.min(menu.x, window.innerWidth - width - 8));
+    const top = menu.y + height + 8 > window.innerHeight ? Math.max(8, menu.y - height) : menu.y;
+    setPlace({ left, top });
+    element.querySelector("button")?.focus();
+  }, [menu.x, menu.y]);
+
+  useEffect(() => {
+    const close = () => onClose();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  const pick = (action: () => void) => () => {
+    onClose();
+    action();
+  };
+  const copy = () =>
+    void navigator.clipboard
+      ?.writeText(message.body)
+      .then(() => setToast({ type: "success", title: "Copied" }))
+      .catch(() => setToast({ type: "error", title: "Could not copy" }));
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60]">
+      <div
+        aria-hidden
+        className="message-in absolute inset-0 [@media(pointer:coarse)]:bg-black/30 [@media(pointer:coarse)]:backdrop-blur-[2px]"
+        onPointerDown={onClose}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onClose();
+        }}
+      />
+      <div
+        ref={box}
+        role="menu"
+        aria-label="Message actions"
+        className="message-in absolute flex w-56 flex-col rounded-2xl border border-subtle bg-surface-1 p-1 shadow-raised-200"
+        style={place ? { left: place.left, top: place.top } : { left: menu.x, top: menu.y, visibility: "hidden" }}
+      >
+        {/* On a phone the chat is blurred behind the menu: show which message was held. */}
+        {message.body ? (
+          <p
+            dir={RTL.test(message.body) ? "rtl" : undefined}
+            className={cn(
+              "m-1 line-clamp-3 rounded-[16px] px-3 py-1.5 text-body-sm-regular whitespace-pre-wrap [@media(pointer:fine)]:hidden",
+              isOwn ? MINE : THEIRS
+            )}
+          >
+            {message.body}
+          </p>
+        ) : null}
+        <p className="px-3 pt-1.5 pb-1 text-[11px] text-tertiary">{stamp(message.created_at)}</p>
+        <button type="button" role="menuitem" className={menuItemClass} onClick={pick(onReply)}>
+          Reply <CornerUpLeft className="size-4 text-secondary" aria-hidden />
+        </button>
+        {replyCount > 0 ? (
+          <button type="button" role="menuitem" className={menuItemClass} onClick={pick(onThread)}>
+            View {replyCount} {replyCount === 1 ? "reply" : "replies"}
+            <MessagesSquare className="size-4 text-secondary" aria-hidden />
+          </button>
+        ) : null}
+        {message.body ? (
+          <button type="button" role="menuitem" className={menuItemClass} onClick={pick(copy)}>
+            Copy <Copy className="size-4 text-secondary" aria-hidden />
+          </button>
+        ) : null}
+        {isOwn && message.body ? (
+          <button type="button" role="menuitem" className={menuItemClass} onClick={pick(onEdit)}>
+            Edit <Pencil className="size-4 text-secondary" aria-hidden />
+          </button>
+        ) : null}
+        {isOwn ? (
+          <button
+            type="button"
+            role="menuitem"
+            className={cn(menuItemClass, "text-danger-primary")}
+            onClick={pick(onDelete)}
+          >
+            Delete <Trash2 className="size-4" aria-hidden />
+          </button>
+        ) : null}
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -399,6 +605,9 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
   const [active, setActive] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false);
   const [thread, setThread] = useState<string | null>(null);
+  // The message whose menu is open (right click, or a long press on a phone), and the one being edited.
+  const [actionMenu, setActionMenu] = useState<TActionMenu | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
@@ -638,10 +847,12 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
       requestAnimationFrame(() => textarea()?.focus());
     },
     onOpenThread: setThread,
+    onOpenMenu: (message: THubMessage, x: number, y: number) => setActionMenu({ message, x, y }),
     onEdit: (message: THubMessage, text: string) => guard(() => hub.edit(message.id, text)),
-    onDelete: (message: THubMessage) => guard(() => hub.remove(message.id)),
+    onEditDone: () => setEditingId(null),
     onOpenFile: hub.openFile,
   };
+  const closeActionMenu = useCallback(() => setActionMenu(null), []);
 
   const menuOpen = !!menu && options.length > 0;
   const canSend = !isSending && (!!body.trim() || files.length > 0);
@@ -649,24 +860,24 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface-1">
-      {/* Header: back, then the round picture and the name in a pill, centred. */}
-      <header className="relative flex flex-col items-center gap-1 border-b border-subtle px-12 pt-2 pb-2">
+      {/* Header: back, then the picture and the name in one row. Only who the chat is with. */}
+      <header className="flex min-h-14 items-center gap-2.5 border-b border-subtle px-2 py-2 md:px-4">
         {onBack ? (
           <button
             type="button"
             aria-label="Back to the Hub"
             onClick={onBack}
-            className="absolute top-3 left-3 inline-flex size-10 items-center justify-center rounded-full bg-layer-1 text-primary md:hidden"
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-primary active:bg-layer-1 md:hidden"
           >
-            <ChevronLeft className="size-5" />
+            <ChevronLeft className="size-6" />
           </button>
         ) : null}
         {other ? (
-          <PersonAvatar person={other} className="size-12 text-[18px]" />
+          <PersonAvatar person={other} className="size-10 shrink-0 text-[15px]" />
         ) : (
           <span
             aria-hidden
-            className="inline-flex size-12 items-center justify-center rounded-full text-[18px] font-semibold text-white"
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold text-white"
             style={{ backgroundColor: personColor(channel.id) }}
           >
             {channel.kind === "GENERAL" || channel.kind === "NEWS" ? (
@@ -676,19 +887,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
             )}
           </span>
         )}
-        <span
-          className="inline-flex max-w-full items-center gap-1 rounded-full bg-layer-1 px-3 py-1 text-body-sm-semibold text-primary"
-          title={hub.channel ? `${members.length} people can read this` : undefined}
-        >
-          <span className="truncate">{channel.name}</span>
-          <ChevronRight className="size-3.5 shrink-0 text-tertiary" aria-hidden />
-        </span>
-        {isGroupChat ? (
-          <span className="text-[11px] text-tertiary">
-            {KIND_LABEL[channel.kind]}
-            {hub.channel ? ` · ${members.length} people` : ""}
-          </span>
-        ) : null}
+        <h2 className="min-w-0 flex-1 truncate text-body-md-semibold text-primary">{channel.name}</h2>
       </header>
 
       {thread ? (
@@ -762,6 +961,8 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
                     parent={parent}
                     replyCount={thread ? 0 : (replyCounts.get(message.id) ?? 0)}
                     tokens={tokensFor(message)}
+                    isEditing={editingId === message.id}
+                    isMenuOpen={actionMenu?.message.id === message.id}
                     {...shared}
                   />
                 </div>
@@ -771,6 +972,19 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
           <div ref={bottom} />
         </div>
       </div>
+
+      {actionMenu ? (
+        <ActionMenu
+          menu={actionMenu}
+          isOwn={actionMenu.message.author.id === currentUser?.id}
+          replyCount={thread ? 0 : (replyCounts.get(actionMenu.message.id) ?? 0)}
+          onClose={closeActionMenu}
+          onReply={() => shared.onReply(actionMenu.message)}
+          onThread={() => setThread(actionMenu.message.id)}
+          onEdit={() => setEditingId(actionMenu.message.id)}
+          onDelete={() => void guard(() => hub.remove(actionMenu.message.id))}
+        />
+      ) : null}
 
       {!channel.can_post ? (
         <p className="border-t border-subtle p-3 text-center text-body-xs-regular text-tertiary">
