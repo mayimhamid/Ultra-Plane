@@ -4,8 +4,8 @@
  * See the LICENSE file for details.
  */
 
-import { useRef, useState } from "react";
-import { Brain, CircleHelp, Copy, FileUp, X } from "lucide-react";
+import { Fragment, useRef, useState } from "react";
+import { Brain, CircleHelp, Copy, FileUp, Minus, Pencil, X } from "lucide-react";
 import useSWR from "swr";
 import { Button } from "@makeplane/propel/components/button";
 import { setToast } from "@plane/blocks/toast";
@@ -16,6 +16,7 @@ import { cn } from "@plane/utils";
 import { dayReportService, refreshTeamOps } from "@/hooks/team-ops/use-day-report";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
+import { ImportRowEditor } from "./import-row-editor";
 
 type Props = {
   workspaceSlug: string;
@@ -64,10 +65,11 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
   const [error, setError] = useState("");
   const [pasted, setPasted] = useState("");
   const [description, setDescription] = useState("");
+  const [editing, setEditing] = useState<number | null>(null);
   const file = useRef<HTMLInputElement>(null);
 
   const { data: context } = useSWR(
-    open === "prompt" ? `TEAM_OPS_IMPORT_CONTEXT_${workspaceSlug}_${projectId ?? "micro"}` : null,
+    open === "prompt" || open === "import" ? `TEAM_OPS_IMPORT_CONTEXT_${workspaceSlug}_${projectId ?? "micro"}` : null,
     () => dayReportService.getImportContext(workspaceSlug, target === "project" ? projectId : undefined)
   );
 
@@ -124,12 +126,44 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
     }
   };
 
+  /** Shows the preview of a changed list again: the server checks every task, so a fix clears its problem. */
+  const recheck = async (list: TImportItem[]) => {
+    setEditing(null);
+    if (list.length === 0) {
+      setItems(null);
+      setRows([]);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const preview = await request(list, true);
+      setItems(list);
+      setRows(preview.rows);
+      setOk(preview.ok);
+    } catch (problem) {
+      setError(getErrorMessage(problem));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeTask = (index: number) => {
+    if (items) void recheck(items.filter((_, position) => position !== index));
+  };
+
+  const saveTask = (index: number, patch: Partial<TImportItem>) => {
+    if (items)
+      void recheck(items.map((item, position) => (position === index ? Object.assign({}, item, patch) : item)));
+  };
+
   const close = () => {
     setOpen(null);
     setItems(null);
     setRows([]);
     setError("");
     setPasted("");
+    setEditing(null);
   };
 
   const prompt = context
@@ -351,10 +385,10 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
                 <p className={cn("text-body-sm-medium", ok ? "text-success-primary" : "text-danger-primary")}>
                   {ok
                     ? `${rows.length} tasks are ready. Confirm to add them all.`
-                    : `${errors} problem${errors === 1 ? "" : "s"} found. Fix the file and try again; nothing was added.`}
+                    : `${errors} problem${errors === 1 ? "" : "s"} found. Fix the marked tasks with the pencil, or remove them; nothing was added.`}
                 </p>
                 <div className="overflow-x-auto rounded-md border border-subtle">
-                  <table className="w-full min-w-[36rem] text-left text-body-xs-regular">
+                  <table className="w-full min-w-[40rem] text-left text-body-xs-regular">
                     <thead className="bg-layer-1 text-caption-sm-medium text-tertiary">
                       <tr>
                         <th className="px-3 py-2">#</th>
@@ -362,36 +396,81 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
                         <th className="px-3 py-2">Planned</th>
                         <th className="px-3 py-2">Due</th>
                         <th className="px-3 py-2">{target === "micro" ? "For" : "People · module"}</th>
+                        <th className="px-3 py-2">
+                          <span className="sr-only">Edit or remove</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-subtle">
-                      {rows.map((row) => (
-                        <tr key={row.row} className={row.errors.length ? "bg-danger-subtle" : undefined}>
-                          <td className="px-3 py-2 text-tertiary">{row.row}</td>
-                          <td className="px-3 py-2">
-                            <span className="text-primary">{row.title || "—"}</span>
-                            {row.is_meeting ? <span className="ml-1 text-success-primary">(meeting)</span> : null}
-                            {row.errors.map((problem) => (
-                              <span key={problem} className="block text-danger-primary">
-                                {problem}
+                      {rows.map((row, index) => (
+                        <Fragment key={row.row}>
+                          <tr className={row.errors.length ? "bg-danger-subtle" : undefined}>
+                            <td className="px-3 py-2 text-tertiary">{index + 1}</td>
+                            <td className="px-3 py-2">
+                              <span className="text-primary">{row.title || "—"}</span>
+                              {row.is_meeting ? <span className="ml-1 text-success-primary">(meeting)</span> : null}
+                              {row.priority && row.priority !== "none" ? (
+                                <span className="ml-2 text-caption-sm-medium text-tertiary">{row.priority}</span>
+                              ) : null}
+                              {row.errors.map((problem) => (
+                                <span key={problem} className="block text-danger-primary">
+                                  {problem}
+                                </span>
+                              ))}
+                            </td>
+                            <td className="px-3 py-2 tabular-nums">
+                              {row.planned_amount ? `${row.planned_amount} ${row.unit === "DAYS" ? "d" : "h"}` : "—"}
+                            </td>
+                            <td className="px-3 py-2">{row.due_date ?? "—"}</td>
+                            <td className="px-3 py-2 text-secondary">
+                              {target === "micro"
+                                ? row.assignee?.display_name
+                                : [
+                                    (row.assignees ?? []).map((person) => person.display_name).join(", "),
+                                    row.module?.name,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ") || "—"}
+                            </td>
+                            <td className="px-3 py-1">
+                              <span className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  aria-label={`Edit task ${index + 1}`}
+                                  title="Edit"
+                                  disabled={busy}
+                                  onClick={() => setEditing(editing === index ? null : index)}
+                                  className="inline-flex size-9 items-center justify-center rounded-full text-secondary hover:bg-layer-1 disabled:opacity-50"
+                                >
+                                  <Pencil className="size-4" aria-hidden />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={`Remove task ${index + 1}`}
+                                  title="Remove"
+                                  disabled={busy}
+                                  onClick={() => removeTask(index)}
+                                  className="inline-flex size-9 items-center justify-center rounded-full bg-[#dc2626] text-white hover:opacity-90 disabled:opacity-50"
+                                >
+                                  <Minus className="size-4" aria-hidden />
+                                </button>
                               </span>
-                            ))}
-                          </td>
-                          <td className="px-3 py-2 tabular-nums">
-                            {row.planned_amount ? `${row.planned_amount} ${row.unit === "DAYS" ? "d" : "h"}` : "—"}
-                          </td>
-                          <td className="px-3 py-2">{row.due_date ?? "—"}</td>
-                          <td className="px-3 py-2 text-secondary">
-                            {target === "micro"
-                              ? row.assignee?.display_name
-                              : [
-                                  (row.assignees ?? []).map((person) => person.display_name).join(", "),
-                                  row.module?.name,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ") || "—"}
-                          </td>
-                        </tr>
+                            </td>
+                          </tr>
+                          {editing === index ? (
+                            <tr>
+                              <td colSpan={6} className="bg-layer-1/40 p-3">
+                                <ImportRowEditor
+                                  row={row}
+                                  target={target}
+                                  context={context}
+                                  onSave={(patch) => saveTask(index, patch)}
+                                  onCancel={() => setEditing(null)}
+                                />
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -403,7 +482,7 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
                     stretch="auto"
                     label={`Add ${rows.length} tasks`}
                     loading={busy}
-                    disabled={!ok}
+                    disabled={!ok || busy}
                     onClick={() => void confirm()}
                   />
                   <Button

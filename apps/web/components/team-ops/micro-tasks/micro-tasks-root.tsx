@@ -9,15 +9,18 @@ import { observer } from "mobx-react";
 import { Trash2, Users } from "lucide-react";
 import { Button } from "@makeplane/propel/components/button";
 import { setToast } from "@plane/blocks/toast";
+import { formatMinutes, toDateKey } from "@plane/services";
 import type { TMicroTask, TPlanUnit } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
 import { useUser } from "@/hooks/store/user";
-import { useMicroTasks } from "@/hooks/team-ops/use-day-report";
+import { dayReportService, refreshTeamOps, useMicroTasks } from "@/hooks/team-ops/use-day-report";
 import { useHubPeople } from "@/hooks/team-ops/use-hub";
 import { useCalendarSettings } from "@/hooks/team-ops/use-work-calendar";
 // components
 import { getErrorMessage } from "../calendar/error-message";
+import { FinishTaskDialog } from "../day-report/finish-task-dialog";
+import type { TFinishedWork } from "../day-report/finish-task-dialog";
 import { ProgressLine } from "../day-report/verdict-badge";
 import { TaskImportButtons } from "../import/task-import-button";
 
@@ -95,6 +98,8 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
   const [meeting, setMeeting] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  // The task whose "done" box is open: it asks how long the work took before the task is finished.
+  const [finishing, setFinishing] = useState<TMicroTask | null>(null);
   const meetingInput = useRef<HTMLInputElement>(null);
   const isNamingMeeting = meeting !== null;
 
@@ -133,6 +138,39 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
     if (!meeting?.trim()) return;
     const done = await guard(() => create({ title: meeting, is_meeting: true }), "Meeting added");
     if (done) setMeeting(null);
+  };
+
+  /** Ticking an open task asks how long it took (like a work item moved to Done); for someone else's task it only ticks. */
+  const finish = async (task: TMicroTask) => {
+    if (forSomeoneElse) {
+      await guard(() => update(task.id, { done: true }));
+      return;
+    }
+    setFinishing(task);
+  };
+
+  const reportFinished = async (task: TMicroTask, { day, minutes, start, end, place, note }: TFinishedWork) => {
+    try {
+      // The report row, marked finished, also marks the micro task done.
+      await dayReportService.addRow(workspaceSlug, day, {
+        micro_task: task.id,
+        minutes,
+        ...(start && end ? { start, end } : {}),
+        location: place,
+        finished: true,
+        note,
+      });
+      await refreshTeamOps();
+      setToast({
+        type: "success",
+        title: "Added to the Day Report",
+        message: `${task.title} · ${formatMinutes(minutes)}${day === toDateKey(new Date()) ? " today" : ` on ${day}`}.`,
+      });
+      setFinishing(null);
+    } catch (error) {
+      setToast({ type: "error", title: "Could not add it", message: getErrorMessage(error) });
+      throw error;
+    }
   };
 
   const open = (tasks ?? []).filter((task) => !task.done);
@@ -279,11 +317,24 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
           <TaskRow
             key={task.id}
             task={task}
-            onToggle={async () => void (await guard(() => update(task.id, { done: true })))}
+            onToggle={() => finish(task)}
             onDelete={async () => void (await guard(() => remove(task.id)))}
           />
         ))}
       </ul>
+
+      {finishing ? (
+        <FinishTaskDialog
+          key={finishing.id}
+          heading={finishing.is_meeting ? "Meeting done" : "Task done"}
+          name={finishing.title}
+          onSubmit={(work) => reportFinished(finishing, work)}
+          onSkip={async () => {
+            if (await guard(() => update(finishing.id, { done: true }))) setFinishing(null);
+          }}
+          onClose={() => setFinishing(null)}
+        />
+      ) : null}
 
       {finished.length > 0 ? (
         <section className="flex flex-col gap-2">
