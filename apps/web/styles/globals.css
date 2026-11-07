@@ -208,3 +208,8 @@
     animation: none;
   }
 }
+
+/* Secrets: mask the value as text so password managers do not treat it as a login password */
+input[name="hub-secret-masked"] {
+  -webkit-text-security: disc;
+}

@@ -81,6 +81,14 @@ function KindSwitch({ value, onChange }: { value: THubSecretKind; onChange: (kin
   );
 }
 
+// Tells 1Password, LastPass and Bitwarden to leave these fields alone.
+const NO_MANAGER = {
+  "data-1p-ignore": true,
+  "data-lpignore": "true",
+  "data-bwignore": "true",
+  "data-form-type": "other",
+};
+
 const LENGTHS = [16, 20, 32];
 
 /** A hidden field (show / hide), with a strong random value one tap away. */
@@ -96,11 +104,16 @@ function HiddenInput({ label, value, onChange }: { label: string; value: string;
     setGenerated(true);
   };
 
+  const [canMask, setCanMask] = useState(false);
+  useEffect(() => setCanMask(CSS.supports("-webkit-text-security", "disc")), []);
+
   return (
     <div className="flex flex-col gap-1.5">
       <div className="relative">
         <InputField
-          type={visible ? "text" : "password"}
+          // Browsers fill and suggest the person's own saved login into a password input, whatever autocomplete says.
+          // Where the engine can mask a plain text input, use that so no password manager treats this as a login form.
+          type={visible || canMask ? "text" : "password"}
           size="lg"
           orientation="vertical"
           label={label}
@@ -109,8 +122,10 @@ function HiddenInput({ label, value, onChange }: { label: string; value: string;
             onChange(event.target.value);
             setGenerated(false);
           }}
-          autoComplete="off"
+          name={visible ? "hub-secret-shown" : "hub-secret-masked"}
+          autoComplete={canMask ? "off" : "new-password"}
           spellCheck={false}
+          {...NO_MANAGER}
         />
         <button
           type="button"
@@ -182,8 +197,10 @@ function SecretFields({ draft, onChange }: { draft: TDraft; onChange: (draft: TD
             label="Username"
             value={draft.username}
             onChange={(event) => onChange({ ...draft, username: event.target.value })}
+            name="hub-secret-account"
             autoComplete="off"
             spellCheck={false}
+            {...NO_MANAGER}
           />
           <HiddenInput
             label="Password"
@@ -575,6 +592,9 @@ export const SecretsView = observer(function SecretsView({ workspaceSlug }: Prop
               maxLength={200}
               onChange={(event) => setName(event.target.value)}
               placeholder="For example Production database"
+              name="hub-secret-name"
+              autoComplete="off"
+              {...NO_MANAGER}
             />
             <SecretFields draft={draft} onChange={setDraft} />
             <TextAreaField
