@@ -161,15 +161,27 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const target = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
-      for (const client of windows) {
-        if (client.url.startsWith(self.location.origin) && "focus" in client) {
-          return client
-            .focus()
-            .then((focused) => (focused && "navigate" in focused ? focused.navigate(target) : focused));
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
+      const client = windows.find((item) => item.url.startsWith(self.location.origin) && "focus" in item);
+      if (!client) return self.clients.openWindow(target);
+      const page = (await client.focus().catch(() => null)) || client;
+      // The open app goes to the page itself (no reload, no start-up screen) and answers when it has done so.
+      // A tab from before this release does not answer: it is navigated, which reloads it.
+      const handled = await new Promise((resolve) => {
+        const channel = new MessageChannel();
+        const timer = setTimeout(() => resolve(false), 1200);
+        channel.port1.onmessage = () => {
+          clearTimeout(timer);
+          resolve(true);
+        };
+        try {
+          page.postMessage({ type: "OPEN_URL", url: target }, [channel.port2]);
+        } catch (error) {
+          clearTimeout(timer);
+          resolve(false);
         }
-      }
-      return self.clients.openWindow(target);
+      });
+      if (!handled && "navigate" in page) return page.navigate(target);
     })
   );
 });

@@ -46,6 +46,8 @@ const KIND_LABEL: Record<THubChannel["kind"], string> = {
 };
 
 // Messages less than this far apart sit together without a time line between them.
+// How long a new message takes to slide into view; the end of the list is not re-pinned meanwhile.
+const SMOOTH_MS = 450;
 const GAP_MS = 60 * 60 * 1000;
 // Within a group, a new bubble from the same person this soon has no tail and no name above it.
 const GROUP_MS = 5 * 60 * 1000;
@@ -436,10 +438,17 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
     nearBottom.current = true;
   }, [channel.id, thread]);
 
+  // A message that arrives while the channel is open slides into view; opening a channel jumps to the end.
+  const seen = useRef<{ channel: string; id: string } | null>(null);
+  const smoothUntil = useRef(0);
   useEffect(() => {
     if (!lastMessage) return;
-    if (nearBottom.current || lastMessage.author.id === currentUser?.id)
-      bottom.current?.scrollIntoView?.({ block: "end" });
+    const arrived = seen.current?.channel === channel.id && seen.current.id !== lastMessage.id;
+    seen.current = { channel: channel.id, id: lastMessage.id };
+    if (nearBottom.current || lastMessage.author.id === currentUser?.id) {
+      if (arrived) smoothUntil.current = Date.now() + SMOOTH_MS;
+      bottom.current?.scrollIntoView?.({ block: "end", behavior: arrived ? "smooth" : "auto" });
+    }
   }, [lastMessage, channel.id, currentUser?.id, thread]);
 
   // Avatars and pictures load after the messages: keep the end in view while the reader is at the end.
@@ -448,7 +457,9 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
     const inner = content.current;
     if (!box || !inner || typeof ResizeObserver === "undefined") return;
     const keep = new ResizeObserver(() => {
-      if (nearBottom.current && !olderAnchor.current) box.scrollTop = box.scrollHeight;
+      // While a message is sliding in, the slide is the scroll: jumping now would cut it short.
+      if (nearBottom.current && !olderAnchor.current && Date.now() > smoothUntil.current)
+        box.scrollTop = box.scrollHeight;
     });
     keep.observe(inner);
     return () => keep.disconnect();
@@ -703,7 +714,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
           nearBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
           loadOlderIfAtTop(box);
         }}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain pt-2 pb-2"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain pt-2 pb-2 [will-change:scroll-position] [-webkit-overflow-scrolling:touch]"
         aria-live="polite"
       >
         <div ref={content}>
@@ -740,18 +751,20 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
                 {separator ? (
                   <p className="py-2 text-center text-[11px] font-medium text-tertiary">{stamp(message.created_at)}</p>
                 ) : null}
-                <Message
-                  message={message}
-                  isOwn={isOwn}
-                  isGroupChat={isGroupChat}
-                  showName={isGroupChat && (!sameAsPrevious || !!message.parent)}
-                  showAvatar={!sameAsNext}
-                  isLast={!sameAsNext}
-                  parent={parent}
-                  replyCount={thread ? 0 : (replyCounts.get(message.id) ?? 0)}
-                  tokens={tokensFor(message)}
-                  {...shared}
-                />
+                <div className="message-in">
+                  <Message
+                    message={message}
+                    isOwn={isOwn}
+                    isGroupChat={isGroupChat}
+                    showName={isGroupChat && (!sameAsPrevious || !!message.parent)}
+                    showAvatar={!sameAsNext}
+                    isLast={!sameAsNext}
+                    parent={parent}
+                    replyCount={thread ? 0 : (replyCounts.get(message.id) ?? 0)}
+                    tokens={tokensFor(message)}
+                    {...shared}
+                  />
+                </div>
               </Fragment>
             );
           })}

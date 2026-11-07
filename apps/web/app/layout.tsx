@@ -9,6 +9,7 @@ import { Outlet, redirect } from "react-router";
 import { cn } from "@plane/utils";
 // components
 import { AppUpdater } from "@/components/team-ops/pwa/app-updater";
+import { PushNavigation } from "@/components/team-ops/pwa/push-navigation";
 // local
 import { ensureTrailingSlash } from "./compat/next/helper";
 import { AppProvider } from "./provider";
@@ -41,6 +42,7 @@ export default function AppShellLayout() {
       </AppProvider>
       {/* Outside the provider: a tab that cannot start (e.g. a broken release) must still be offered the fix. */}
       <AppUpdater />
+      <PushNavigation />
     </>
   );
 }
