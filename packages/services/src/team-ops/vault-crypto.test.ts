@@ -5,7 +5,17 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { changePassphrase, createVault, fromBase64, open, rewrap, seal, toBase64, unlockVault } from "./vault-crypto";
+import {
+  changePassphrase,
+  createVault,
+  fromBase64,
+  generatePassword,
+  open,
+  rewrap,
+  seal,
+  toBase64,
+  unlockVault,
+} from "./vault-crypto";
 
 const PASS = "correct horse battery";
 
@@ -80,4 +90,19 @@ describe("vault crypto", () => {
     });
     await expect(changePassphrase(owner.vault, "wrong one!!", "another passphrase")).rejects.toThrow();
   }, 60_000);
+
+  it("generates strong random passwords", () => {
+    const passwords = Array.from({ length: 200 }, () => generatePassword(20));
+    expect(new Set(passwords).size).toBe(200);
+    for (const password of passwords) {
+      expect(password).toHaveLength(20);
+      expect(password).toMatch(/[a-z]/);
+      expect(password).toMatch(/[A-Z]/);
+      expect(password).toMatch(/[2-9]/);
+      expect(password).toMatch(/[!@#$%^&*\-_=+?]/);
+      expect(password).not.toMatch(/[0O1lI]/);
+    }
+    expect(generatePassword(16, false)).toMatch(/^[A-Za-z2-9]{16}$/);
+    expect(generatePassword(3)).toHaveLength(8);
+  });
 });

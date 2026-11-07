@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import useSWR from "swr";
-import { Eye, EyeOff, KeyRound, Lock, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Lock, ShieldCheck, Sparkles } from "lucide-react";
 import { Badge } from "@makeplane/propel/components/badge";
 import { Button } from "@makeplane/propel/components/button";
 import { CheckboxField } from "@makeplane/propel/components/checkbox-field";
@@ -305,28 +305,89 @@ function KindSwitch({ value, onChange }: { value: THubSecretKind; onChange: (kin
   );
 }
 
+const LENGTHS = [16, 20, 32];
+
+/** A hidden field (show / hide), with a strong random value one tap away. */
 function HiddenInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const [visible, setVisible] = useState(false);
+  const [length, setLength] = useState(20);
+  const [symbols, setSymbols] = useState(true);
+  const [generated, setGenerated] = useState(false);
+
+  const generate = (nextLength = length, nextSymbols = symbols) => {
+    onChange(vaultCrypto.generatePassword(nextLength, nextSymbols));
+    setVisible(true);
+    setGenerated(true);
+  };
+
   return (
-    <div className="relative">
-      <InputField
-        type={visible ? "text" : "password"}
-        size="lg"
-        orientation="vertical"
-        label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <button
-        type="button"
-        aria-label={visible ? `Hide ${label}` : `Show ${label}`}
-        onClick={() => setVisible(!visible)}
-        className="absolute right-2 bottom-1.5 inline-flex size-8 items-center justify-center rounded-md text-tertiary hover:bg-layer-1"
-      >
-        {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-      </button>
+    <div className="flex flex-col gap-1.5">
+      <div className="relative">
+        <InputField
+          type={visible ? "text" : "password"}
+          size="lg"
+          orientation="vertical"
+          label={label}
+          value={value}
+          onChange={(event) => {
+            onChange(event.target.value);
+            setGenerated(false);
+          }}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <button
+          type="button"
+          aria-label={visible ? `Hide ${label}` : `Show ${label}`}
+          onClick={() => setVisible(!visible)}
+          className="absolute right-2 bottom-1.5 inline-flex size-8 items-center justify-center rounded-md text-tertiary hover:bg-layer-1"
+        >
+          {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => generate()}
+          className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-subtle px-2.5 text-body-xs-medium text-accent-primary hover:bg-layer-1"
+        >
+          <Sparkles className="size-3.5" aria-hidden />
+          {generated ? "Generate another" : `Generate ${label.toLowerCase()}`}
+        </button>
+        {generated ? (
+          <>
+            <div role="radiogroup" aria-label="Length" className="inline-flex rounded-md bg-layer-1 p-0.5">
+              {LENGTHS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={length === option}
+                  onClick={() => {
+                    setLength(option);
+                    generate(option, symbols);
+                  }}
+                  className={cn(
+                    "min-h-7 rounded px-2 text-caption-sm-medium",
+                    length === option ? "bg-surface-1 text-primary shadow-raised-100" : "text-secondary"
+                  )}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            <CheckboxField
+              size="md"
+              label="Symbols"
+              checked={symbols}
+              onCheckedChange={() => {
+                setSymbols(!symbols);
+                generate(length, !symbols);
+              }}
+            />
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
