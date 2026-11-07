@@ -35,10 +35,19 @@ type Props = {
   onChange: (value: TTaskRef) => void;
   microTasks: TMicroTask[];
   disabled?: boolean;
+  /** The panel opens in the flow of the page (inside a dialog) instead of floating over it. */
+  inline?: boolean;
 };
 
 /** One button; it opens a panel: the project (or "No project" for micro tasks), then a searchable task list. */
-export const TaskCell = observer(function TaskCell({ workspaceSlug, value, onChange, microTasks, disabled }: Props) {
+export const TaskCell = observer(function TaskCell({
+  workspaceSlug,
+  value,
+  onChange,
+  microTasks,
+  disabled,
+  inline = false,
+}: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -113,7 +122,10 @@ export const TaskCell = observer(function TaskCell({ workspaceSlug, value, onCha
         <div
           role="dialog"
           aria-label="Choose the task"
-          className="absolute top-full left-0 z-30 mt-1 flex w-[min(92vw,26rem)] flex-col gap-2 rounded-lg border border-subtle bg-surface-1 p-2 shadow-raised-200"
+          className={cn(
+            "mt-1 flex flex-col gap-2 rounded-lg border border-subtle bg-surface-1 p-2",
+            inline ? "w-full" : "absolute top-full left-0 z-30 w-[min(92vw,26rem)] shadow-raised-200"
+          )}
         >
           <div className="flex flex-wrap gap-1">
             {joinedProjectIds.map((id) => (

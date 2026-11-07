@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { Button } from "@makeplane/propel/components/button";
 import { setToast } from "@plane/blocks/toast";
-import { durationText, formatMinutes, parseDuration, spanMinutes } from "@plane/services";
+import { durationText, formatMinutes } from "@plane/services";
 import type { TDayReport, TDayReportRowInput, TReportPlace } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
@@ -16,31 +16,10 @@ import { useDayReport, useDayReportHistory, useMicroTasks } from "@/hooks/team-o
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
 import { ReportHistory } from "./report-history";
-import { TaskCell } from "./task-cell";
-import type { TTaskRef } from "./task-cell";
-import { ProgressLine } from "./verdict-badge";
+import { ReportRowDialog, ReportRowLine } from "./report-row-parts";
+import { PLACE_LABEL, isFilled, minutesOf } from "./report-rows";
+import type { TRow } from "./report-rows";
 
-type TRow = {
-  key: string;
-  task: TTaskRef | null;
-  /** Work done in one go: from and to. */
-  start: string;
-  end: string;
-  /** Work spread over the day: only how long, typed as 1:30, 1.5 or 45m. */
-  spread: boolean;
-  duration: string;
-  place: TReportPlace | "";
-  finished: boolean;
-  note: string;
-  /** Progress from the server, for rows that were saved. */
-  saved?: TDayReport["entries"][number]["task"];
-};
-
-const PLACES: { value: TReportPlace; label: string }[] = [
-  { value: "REMOTE", label: "Remote" },
-  { value: "ONSITE", label: "Onsite" },
-];
-const PLACE_LABEL: Record<string, string> = { REMOTE: "Remote", ONSITE: "Onsite", HYBRID: "Hybrid" };
 // Waits after the last change before the draft is saved on the server by itself.
 const AUTOSAVE_MS = 3000;
 
@@ -83,10 +62,6 @@ const fromReport = (report: TDayReport): TRow[] =>
     note: entry.note,
     saved: entry.task,
   }));
-
-/** Minutes of a row, or `null` while its time is not filled in properly. */
-const minutesOf = (row: TRow) => (row.spread ? parseDuration(row.duration) : spanMinutes(row.start, row.end));
-const isFilled = (row: TRow) => Boolean(row.task || row.start || row.end || row.duration.trim() || row.note.trim());
 
 const dayTitle = new Intl.DateTimeFormat("en-US", { weekday: "long", day: "numeric", month: "long" });
 const parse = (key: string) => {
@@ -133,6 +108,8 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
   const [restored, setRestored] = useState(false);
   const [autoSavedAt, setAutoSavedAt] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
+  // The task whose details are open in the small box.
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const loadedFor = useRef<string | null>(null);
   const history = useDayReportHistory(workspaceSlug, day, user, showHistory && canSeeHistory);
   const localKey = storageKey(workspaceSlug, day);
@@ -195,6 +172,20 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
     setRows((current) =>
       current.map((row) => (row.key === key ? { ...row, ...patch, saved: patch.task ? undefined : row.saved } : row))
     );
+  };
+
+  const openRow = rows.find((row) => row.key === openKey);
+
+  const removeRow = (key: string) => {
+    setDirty(true);
+    setOpenKey(null);
+    setRows((current) => (current.length > 1 ? current.filter((item) => item.key !== key) : [emptyRow(defaultPlace)]));
+  };
+
+  /** Closing the box on a task nobody filled in drops it, so no empty line is left behind. */
+  const closeRow = () => {
+    if (openRow && !isFilled(openRow) && rows.length > 1) removeRow(openRow.key);
+    else setOpenKey(null);
   };
 
   const entriesOf = (list: TRow[]): TDayReportRowInput[] =>
@@ -288,9 +279,6 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
         ? "Draft, not sent yet"
         : "Not started";
 
-  const field =
-    "h-10 w-full rounded-md border bg-layer-1 px-2 text-body-sm-medium text-primary tabular-nums outline-none focus:border-accent-strong disabled:opacity-80";
-
   return (
     <section
       aria-label="Day report"
@@ -369,164 +357,26 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
         </p>
       ) : null}
 
-      <ul className="flex flex-col gap-3">
-        {rows.map((row, index) => {
-          const minutes = minutesOf(row);
-          return (
-            <li key={row.key} className="flex flex-col gap-2 rounded-lg border border-subtle p-3">
-              <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <TaskCell
-                    workspaceSlug={workspaceSlug}
-                    value={row.task}
-                    onChange={(task) => update(row.key, { task })}
-                    microTasks={microTasks ?? []}
-                    disabled={readOnly}
-                  />
-                  {row.saved ? (
-                    <div className="mt-1">
-                      <ProgressLine progress={row.saved} />
-                    </div>
-                  ) : null}
-                </div>
-                {!readOnly ? (
-                  <button
-                    type="button"
-                    aria-label={`Remove row ${index + 1}`}
-                    onClick={() => {
-                      setDirty(true);
-                      setRows((current) =>
-                        current.length > 1 ? current.filter((item) => item.key !== row.key) : [emptyRow(defaultPlace)]
-                      );
-                    }}
-                    className="inline-flex size-10 shrink-0 items-center justify-center rounded-md text-danger-primary hover:bg-danger-subtle"
-                  >
-                    ✕
-                  </button>
-                ) : null}
-              </div>
-
-              <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-                {row.spread ? (
-                  <label className="flex min-w-32 flex-1 flex-col gap-0.5 sm:max-w-40 sm:flex-none">
-                    <span className="text-caption-sm-medium text-tertiary">How long</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={row.duration}
-                      disabled={readOnly}
-                      placeholder="1:30"
-                      aria-label={`How long, row ${index + 1}`}
-                      onChange={(event) => update(row.key, { duration: event.target.value })}
-                      onBlur={() => {
-                        const value = parseDuration(row.duration);
-                        if (value) update(row.key, { duration: durationText(value) });
-                      }}
-                      className={cn(field, row.duration && !minutes ? "border-danger-strong" : "border-subtle")}
-                    />
-                  </label>
-                ) : (
-                  <>
-                    <label className="flex min-w-32 flex-1 flex-col gap-0.5 sm:max-w-40 sm:flex-none">
-                      <span className="text-caption-sm-medium text-tertiary">From</span>
-                      <input
-                        type="time"
-                        value={row.start}
-                        disabled={readOnly}
-                        aria-label={`Start time, row ${index + 1}`}
-                        onChange={(event) => update(row.key, { start: event.target.value })}
-                        className={cn(field, "border-subtle")}
-                      />
-                    </label>
-                    <label className="flex min-w-32 flex-1 flex-col gap-0.5 sm:max-w-40 sm:flex-none">
-                      <span className="text-caption-sm-medium text-tertiary">To</span>
-                      <input
-                        type="time"
-                        value={row.end}
-                        disabled={readOnly}
-                        aria-label={`End time, row ${index + 1}`}
-                        onChange={(event) => update(row.key, { end: event.target.value })}
-                        className={cn(
-                          field,
-                          row.start && row.end && !minutes ? "border-danger-strong" : "border-subtle"
-                        )}
-                      />
-                    </label>
-                  </>
-                )}
-                <span className="min-w-14 pb-2.5 text-body-sm-medium text-primary tabular-nums">
-                  {minutes ? formatMinutes(minutes) : "—"}
-                </span>
-                <label className="flex min-h-10 items-center gap-2 text-body-xs-medium text-secondary">
-                  <input
-                    type="checkbox"
-                    checked={row.spread}
-                    disabled={readOnly}
-                    onChange={(event) => {
-                      const spread = event.target.checked;
-                      // Keep the time already entered when switching between the two ways.
-                      const current = minutesOf(row);
-                      update(row.key, {
-                        spread,
-                        duration: spread && current ? durationText(current) : row.duration,
-                      });
-                    }}
-                    className="size-5"
-                  />
-                  Not continuous (only how long)
-                </label>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <div
-                  role="radiogroup"
-                  aria-label={`Place, row ${index + 1}`}
-                  className="flex rounded-md border border-subtle p-0.5"
-                >
-                  {PLACES.map((place) => (
-                    <button
-                      key={place.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={row.place === place.value}
-                      disabled={readOnly}
-                      onClick={() => update(row.key, { place: place.value })}
-                      className={cn(
-                        "min-h-9 rounded px-3 text-body-xs-medium",
-                        row.place === place.value
-                          ? "bg-accent-primary text-on-color"
-                          : "text-secondary hover:bg-layer-1"
-                      )}
-                    >
-                      {place.label}
-                    </button>
-                  ))}
-                </div>
-                <label className="flex min-h-10 items-center gap-2 text-body-xs-medium text-secondary">
-                  <input
-                    type="checkbox"
-                    checked={row.finished}
-                    disabled={readOnly}
-                    onChange={(event) => update(row.key, { finished: event.target.checked })}
-                    className="size-5"
-                  />
-                  Task done
-                </label>
-              </div>
-
-              <input
-                type="text"
-                value={row.note}
-                disabled={readOnly}
-                placeholder="What was done (optional)"
-                aria-label={`Note of row ${index + 1}`}
-                onChange={(event) => update(row.key, { note: event.target.value })}
-                className="h-10 w-full rounded-md border border-subtle bg-layer-1 px-3 text-body-sm-regular text-primary outline-none focus:border-accent-strong"
-              />
-            </li>
-          );
-        })}
+      <ul className="flex flex-col gap-2">
+        {rows.map((row, index) => (
+          <li key={row.key}>
+            <ReportRowLine row={row} index={index} onOpen={() => setOpenKey(row.key)} />
+          </li>
+        ))}
       </ul>
+
+      {openRow ? (
+        <ReportRowDialog
+          workspaceSlug={workspaceSlug}
+          row={openRow}
+          index={rows.indexOf(openRow)}
+          microTasks={microTasks ?? []}
+          readOnly={readOnly}
+          onChange={(patch) => update(openRow.key, patch)}
+          onRemove={() => removeRow(openRow.key)}
+          onClose={closeRow}
+        />
+      ) : null}
 
       {readOnly ? null : (
         <>
@@ -535,7 +385,9 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
             onClick={() => {
               setDirty(true);
               const last = rows[rows.length - 1];
-              setRows((current) => [...current, emptyRow(last?.place || defaultPlace)]);
+              const added = emptyRow(last?.place || defaultPlace);
+              setRows((current) => [...current, added]);
+              setOpenKey(added.key);
             }}
             className="min-h-10 self-start rounded-md border border-dashed border-strong px-4 text-body-sm-medium text-secondary hover:bg-layer-1"
           >
@@ -609,10 +461,9 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
             </span>
           </div>
           <p className="text-caption-sm-regular text-tertiary">
-            Give each task its from and to time. When the work was spread over the day, tick "Not continuous" and type
-            only how long (1:30, 1.5 or 45m). Remote and onsite in one day make it a hybrid day. Tick "Task done" when a
-            task is finished: it is also set to Done in its project, and Speedy, On time or OverTime compares all its
-            reported time with its plan.
+            Press a task to write its time (from and to, or only how long), where it was done and what was done. Tick
+            "Task done" when it is finished: it is also set to Done in its project, and Speedy, On time or OverTime
+            compares all its reported time with its plan.
           </p>
         </>
       )}
