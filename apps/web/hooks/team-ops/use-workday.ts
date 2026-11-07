@@ -4,13 +4,15 @@
  * See the LICENSE file for details.
  */
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import useSWR from "swr";
 // plane imports
 import { WorkdayService } from "@plane/services";
 import type { TDayMode, TFinishWorkPayload, TTeamflowParams, TWorkPlace, TWorkdayState } from "@plane/types";
 
 const workdayService = new WorkdayService();
+// After the last notification came into view, how long to wait before they are marked read.
+const SEEN_DELAY_MS = 400;
 
 /** Finished work and time per work item for a range of days, and the action that finishes work. */
 export const useWorkday = (workspaceSlug: string, userId: string | undefined, from: string, to: string) => {
@@ -109,5 +111,23 @@ export const useOpsNotifications = (workspaceSlug: string) => {
     },
     [workspaceSlug, mutate]
   );
-  return { notifications: data?.results, unread: data?.unread ?? 0, markRead };
+  // Notifications that were seen are marked read together a moment later, one request each but one refresh.
+  const seen = useRef(new Set<string>());
+  const timer = useRef<number | undefined>(undefined);
+  const markSeen = useCallback(
+    (id: string) => {
+      seen.current.add(id);
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => {
+        const ids = [...seen.current];
+        seen.current.clear();
+        void Promise.all(ids.map((item) => workdayService.markNotificationsRead(workspaceSlug, item)))
+          .then(() => mutate())
+          .catch(() => undefined);
+      }, SEEN_DELAY_MS);
+    },
+    [workspaceSlug, mutate]
+  );
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return { notifications: data?.results, unread: data?.unread ?? 0, markRead, markSeen };
 };

@@ -106,7 +106,7 @@ export const TeamNotificationCenter = observer(function TeamNotificationCenter({
 }) {
   const [filter, setFilter] = useState<TFilter>("all");
   const { channels, unreadMentions } = useHubChannels(workspaceSlug);
-  const { notifications, unread, markRead } = useOpsNotifications(workspaceSlug);
+  const { notifications, unread, markRead, markSeen } = useOpsNotifications(workspaceSlug);
   const items = useMemo(() => notifications ?? [], [notifications]);
   const unreadChannels = (channels ?? []).filter((channel) => channel.unread > 0);
   const unreadMessages = unreadChannels.reduce((sum, channel) => sum + channel.unread, 0);
@@ -233,6 +233,7 @@ export const TeamNotificationCenter = observer(function TeamNotificationCenter({
                       workspaceSlug={workspaceSlug}
                       item={item}
                       onOpen={() => !item.read && void markRead(item.id)}
+                      onSeen={() => markSeen(item.id)}
                       action={{
                         label: item.read ? "Mark unread" : "Mark read",
                         onClick: () => void markRead(item.id, !item.read),

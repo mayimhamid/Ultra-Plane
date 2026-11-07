@@ -21,7 +21,7 @@ import { NotificationItem } from "./notification-item";
  */
 export const HubNotifications = observer(function HubNotifications({ workspaceSlug }: { workspaceSlug: string }) {
   const { channels, unreadMentions } = useHubChannels(workspaceSlug);
-  const { notifications, unread, markRead } = useOpsNotifications(workspaceSlug);
+  const { notifications, unread, markRead, markSeen } = useOpsNotifications(workspaceSlug);
   const [showTeam, setShowTeam] = useState(true);
   const unreadChannels = (channels ?? []).filter((channel) => channel.unread > 0);
   const team = (notifications ?? []).slice(0, 15);
@@ -92,6 +92,7 @@ export const HubNotifications = observer(function HubNotifications({ workspaceSl
                     item={item}
                     compact
                     onOpen={() => !item.read && void markRead(item.id)}
+                    onSeen={() => markSeen(item.id)}
                     action={{
                       label: item.read ? "Unread" : "Read",
                       onClick: () => void markRead(item.id, !item.read),

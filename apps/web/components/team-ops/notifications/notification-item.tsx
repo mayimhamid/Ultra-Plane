@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   AlarmClock,
@@ -60,21 +61,58 @@ export const notificationHref = (workspaceSlug: string, link: string) => {
   return `/${workspaceSlug}/${path.replace(/\/+$/, "")}/${query ? `?${query}` : ""}`;
 };
 
+// A notification counts as seen when most of it has been on screen for this long.
+const SEEN_AFTER_MS = 1000;
+const SEEN_SHARE = 0.6;
+
+/** Calls `onSeen` once when the element has been mostly visible for a second (not while scrolling past). */
+const useSeen = (enabled: boolean, onSeen: () => void) => {
+  const box = useRef<HTMLDivElement>(null);
+  const callback = useRef(onSeen);
+  callback.current = onSeen;
+  useEffect(() => {
+    const element = box.current;
+    if (!enabled || !element || typeof IntersectionObserver === "undefined") return;
+    let timer: number | undefined;
+    const watch = new IntersectionObserver(
+      ([entry]) => {
+        window.clearTimeout(timer);
+        if (entry?.isIntersecting && document.visibilityState === "visible") {
+          timer = window.setTimeout(() => {
+            callback.current();
+            watch.disconnect();
+          }, SEEN_AFTER_MS);
+        }
+      },
+      { threshold: SEEN_SHARE }
+    );
+    watch.observe(element);
+    return () => {
+      window.clearTimeout(timer);
+      watch.disconnect();
+    };
+  }, [enabled]);
+  return box;
+};
+
 type Props = {
   workspaceSlug: string;
   item: TOpsNotification;
   onOpen: () => void;
+  /** Called once when the notification has been seen on screen; it is then marked read. */
+  onSeen?: () => void;
   /** The small button on the right: mark read or unread, or dismiss. */
   action?: { label: string; onClick: () => void };
   compact?: boolean;
 };
 
 /** One notification: a colored icon for its kind, the title (bold while unread), the detail and when. */
-export function NotificationItem({ workspaceSlug, item, onOpen, action, compact = false }: Props) {
+export function NotificationItem({ workspaceSlug, item, onOpen, onSeen, action, compact = false }: Props) {
+  const seen = useSeen(Boolean(onSeen) && !item.read, () => onSeen?.());
   const kind = NOTIFICATION_KIND[item.kind] ?? FALLBACK;
   const Icon = kind.icon;
   return (
-    <div className={cn("flex items-start gap-3", compact ? "py-2" : "py-2.5")}>
+    <div ref={seen} className={cn("flex items-start gap-3", compact ? "py-2" : "py-2.5")}>
       <span
         aria-hidden
         className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full"

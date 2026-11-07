@@ -22,7 +22,7 @@ export const TeamNotificationsStrip = observer(function TeamNotificationsStrip({
   workspaceSlug: string;
 }) {
   const [open, setOpen] = useState(false);
-  const { notifications, unread, markRead } = useOpsNotifications(workspaceSlug);
+  const { notifications, unread, markRead, markSeen } = useOpsNotifications(workspaceSlug);
   const items = notifications ?? [];
   if (items.length === 0) return <PushPrompt workspaceSlug={workspaceSlug} mode="settings" />;
 
@@ -54,6 +54,7 @@ export const TeamNotificationsStrip = observer(function TeamNotificationsStrip({
                   workspaceSlug={workspaceSlug}
                   item={item}
                   onOpen={() => !item.read && void markRead(item.id)}
+                  onSeen={() => markSeen(item.id)}
                   action={{
                     label: item.read ? "Mark unread" : "Mark read",
                     onClick: () => void markRead(item.id, !item.read),

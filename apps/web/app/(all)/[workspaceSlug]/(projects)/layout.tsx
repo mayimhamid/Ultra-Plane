@@ -7,6 +7,7 @@
 import { observer } from "mobx-react";
 import { Outlet, useParams } from "react-router";
 import { DonePrompt } from "@/components/team-ops/day-report/done-prompt";
+import { NotificationAutoRead } from "@/components/team-ops/notifications/notification-auto-read";
 import { PushPrompt } from "@/components/team-ops/notifications/push-prompt";
 import { PageTransition } from "@/components/team-ops/pwa/page-transition";
 import { ProjectsAppPowerKProvider } from "@/components/power-k/projects-app-provider";
@@ -26,6 +27,7 @@ function WorkspaceLayout() {
           <ExtendedProjectSidebar />
           <main className="relative flex h-full w-full flex-col overflow-hidden bg-surface-1">
             {workspaceSlug ? <PushPrompt workspaceSlug={workspaceSlug} mode="alert" /> : null}
+            {workspaceSlug ? <NotificationAutoRead workspaceSlug={workspaceSlug} /> : null}
             {/* A task moved to Done in a project can go straight into the Day Report. */}
             <DonePrompt />
             <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
