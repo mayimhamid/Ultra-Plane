@@ -13,6 +13,7 @@ from rest_framework import status
 
 from plane.db.models import Issue, IssueAssignee, State
 from plane.team_ops.models import HubChannel, HubSecret, HubSecretLog, OpsNotification
+from plane.team_ops.services import secrets as secret_service
 from plane.tests.contract.app.team_ops_support import (
     _no_broker,
     admin,
@@ -269,24 +270,72 @@ class TestFilesLibrary:
 
 @pytest.mark.contract
 class TestSecrets:
-    def make(self, client, workspace, **extra):
+    """End-to-end: the browser encrypts. These tests send stand-in base64 blobs, as the browser would."""
+
+    CIPHER = "Y2lwaGVydGV4dA=="  # "ciphertext"
+    IV = "bm9uY2Vub25jZTEy"
+    OWNER = "b3duZXIta2V5"
+    LEAD_KEY = "bGVhZC1rZXk="
+
+    @staticmethod
+    def vault(client, workspace, public="cHVibGljLWtleQ=="):
         return client.post(
-            h(workspace, "secrets/"),
-            {"name": "DB password", "description": "prod", "value": "s3cr3t!", **extra},
+            h(workspace, "vault/"),
+            {"public_key": public, "private_key": "bG9ja2Vk", "salt": "c2FsdA==", "iv": "aXY=", "iterations": 600000},
             format="json",
         )
 
-    def test_the_value_is_encrypted_and_never_listed(self, member_client, workspace):
-        response = self.make(member_client, workspace)
-        assert response.status_code == 201 and "value" not in response.data and "ciphertext" not in response.data
-        stored = HubSecret.objects.get().ciphertext
-        assert "s3cr3t" not in stored and stored.startswith("gAAAA")
-        assert "s3cr3t" not in str(member_client.get(h(workspace, "secrets/")).data)
+    def make(self, client, workspace, **extra):
+        self.vault(client, workspace)
+        return client.post(
+            h(workspace, "secrets/"),
+            {
+                "name": "DB password",
+                "description": "prod",
+                "kind": "LOGIN",
+                "ciphertext": self.CIPHER,
+                "iv": self.IV,
+                "owner_key": self.OWNER,
+                **extra,
+            },
+            format="json",
+        )
 
-    def test_the_publisher_reveals_it_and_it_is_logged(self, member_client, workspace):
+    def test_the_server_only_stores_what_the_browser_sealed(self, member_client, workspace):
+        response = self.make(member_client, workspace)
+        assert response.status_code == 201 and "ciphertext" not in response.data
+        stored = HubSecret.objects.get()
+        assert stored.e2e and stored.kind == "LOGIN" and stored.ciphertext == self.CIPHER
+        assert self.CIPHER not in str(member_client.get(h(workspace, "secrets/")).data)
+
+    def test_a_value_in_the_clear_is_refused(self, member_client, workspace):
+        response = self.make(member_client, workspace, value="s3cr3t!")
+        assert response.status_code == 400 and HubSecret.objects.count() == 0
+
+    def test_a_vault_is_needed_first(self, member_client, workspace):
+        response = member_client.post(
+            h(workspace, "secrets/"),
+            {"name": "x", "ciphertext": self.CIPHER, "iv": self.IV, "owner_key": self.OWNER},
+            format="json",
+        )
+        assert response.status_code == 400
+
+    def test_bad_blobs_and_names_are_refused(self, member_client, workspace):
+        assert self.make(member_client, workspace, ciphertext="not base64!").status_code == 400
+        assert self.make(member_client, workspace, name="").status_code == 400
+        assert self.make(member_client, workspace, kind="OTHER").status_code == 400
+
+    def test_the_publisher_gets_the_sealed_value_and_it_is_logged(self, member_client, workspace):
         secret = self.make(member_client, workspace).data["id"]
         response = member_client.post(h(workspace, f"secrets/{secret}/reveal/"))
-        assert response.data["value"] == "s3cr3t!" and response["Cache-Control"] == "no-store"
+        assert response.data == {
+            "e2e": True,
+            "kind": "LOGIN",
+            "ciphertext": self.CIPHER,
+            "iv": self.IV,
+            "key": self.OWNER,
+        }
+        assert response["Cache-Control"] == "no-store"
         assert HubSecretLog.objects.filter(action="REVEAL").count() == 1
 
     def test_nobody_else_sees_it_not_even_the_admin(self, member_client, admin_client, lead_client, workspace):
@@ -294,30 +343,59 @@ class TestSecrets:
         for other in (admin_client, lead_client):
             assert other.get(h(workspace, "secrets/")).data["results"] == []
             assert other.post(h(workspace, f"secrets/{secret}/reveal/")).status_code == 404
-            assert other.patch(h(workspace, f"secrets/{secret}/"), {"value": "x"}, format="json").status_code == 404
+            assert other.patch(h(workspace, f"secrets/{secret}/"), {"name": "x"}, format="json").status_code == 404
             assert other.delete(h(workspace, f"secrets/{secret}/")).status_code == 404
             assert other.put(h(workspace, f"secrets/{secret}/access/"), {"users": []}, format="json").status_code == 404
+            assert other.post(h(workspace, f"secrets/{secret}/convert/"), {}, format="json").status_code == 404
         assert HubSecretLog.objects.filter(action="REVEAL").count() == 0
 
-    def test_the_publisher_chooses_who_may_read(self, member_client, lead_client, lead, admin_client, workspace):
+    def test_a_reader_gets_their_own_wrapped_key(self, member_client, lead_client, lead, admin_client, workspace):
+        self.vault(lead_client, workspace, public="bGVhZC1wdWI=")
         secret = self.make(member_client, workspace).data["id"]
+        keys = member_client.get(h(workspace, f"vault/keys/?users={lead.id}")).data["keys"]
+        assert keys == {str(lead.id): "bGVhZC1wdWI="}
         response = member_client.put(
-            h(workspace, f"secrets/{secret}/access/"), {"users": [str(lead.id)]}, format="json"
+            h(workspace, f"secrets/{secret}/access/"),
+            {"users": [str(lead.id)], "keys": {str(lead.id): self.LEAD_KEY}},
+            format="json",
         )
         assert response.status_code == 200 and response.data["shared_with"] == [str(lead.id)]
+        assert response.data["waiting"] == [] and response.data["owner_key"] == self.OWNER
         assert OpsNotification.objects.filter(user=lead, kind="SECRET").count() == 1
         seen = lead_client.get(h(workspace, "secrets/")).data["results"]
-        assert len(seen) == 1 and seen[0]["is_publisher"] is False and "shared_with" not in seen[0]
-        assert lead_client.post(h(workspace, f"secrets/{secret}/reveal/")).data["value"] == "s3cr3t!"
+        assert len(seen) == 1 and seen[0]["is_publisher"] is False and seen[0]["is_waiting"] is False
+        assert "shared_with" not in seen[0] and "owner_key" not in seen[0]
+        assert lead_client.post(h(workspace, f"secrets/{secret}/reveal/")).data["key"] == self.LEAD_KEY
         # a reader cannot pass it on or change it
         assert (
             lead_client.put(h(workspace, f"secrets/{secret}/access/"), {"users": []}, format="json").status_code == 404
         )
-        assert lead_client.patch(h(workspace, f"secrets/{secret}/"), {"value": "x"}, format="json").status_code == 404
+        assert lead_client.patch(h(workspace, f"secrets/{secret}/"), {"name": "x"}, format="json").status_code == 404
         assert admin_client.post(h(workspace, f"secrets/{secret}/reveal/")).status_code == 404
 
-    def test_access_can_be_taken_back(self, member_client, lead_client, lead, workspace):
+    def test_someone_without_a_vault_waits_until_the_publisher_wraps_their_key(
+        self, member_client, lead_client, lead, workspace
+    ):
         secret = self.make(member_client, workspace, users=[str(lead.id)]).data["id"]
+        assert lead_client.get(h(workspace, "secrets/")).data["results"][0]["is_waiting"] is True
+        assert lead_client.post(h(workspace, f"secrets/{secret}/reveal/")).status_code == 400
+        # nothing to do for the publisher until the reader has a vault
+        assert member_client.get(h(workspace, "vault/pending/")).data["results"] == []
+        self.vault(lead_client, workspace, public="bGVhZC1wdWI=")
+        waiting = member_client.get(h(workspace, "vault/pending/")).data["results"]
+        assert waiting == [
+            {"secret": str(secret), "user": str(lead.id), "owner_key": self.OWNER, "public_key": "bGVhZC1wdWI="}
+        ]
+        items = [{"secret": str(secret), "user": str(lead.id), "wrapped_key": self.LEAD_KEY}]
+        assert member_client.post(h(workspace, "vault/pending/"), {"items": items}, format="json").data["done"] == 1
+        assert lead_client.post(h(workspace, f"secrets/{secret}/reveal/")).data["key"] == self.LEAD_KEY
+        # a reader cannot fill keys for someone else's secret
+        assert lead_client.post(h(workspace, "vault/pending/"), {"items": items}, format="json").data["done"] == 0
+
+    def test_access_can_be_taken_back(self, member_client, lead_client, lead, workspace):
+        self.vault(lead_client, workspace)
+        secret = self.make(member_client, workspace, users=[str(lead.id)], keys={str(lead.id): self.LEAD_KEY})
+        secret = secret.data["id"]
         assert lead_client.post(h(workspace, f"secrets/{secret}/reveal/")).status_code == 200
         member_client.put(h(workspace, f"secrets/{secret}/access/"), {"users": []}, format="json")
         assert lead_client.post(h(workspace, f"secrets/{secret}/reveal/")).status_code == 404
@@ -325,12 +403,14 @@ class TestSecrets:
         assert "GRANT" in actions and "REVOKE" in actions
 
     def test_log_is_for_the_publisher_and_has_no_value(self, member_client, lead_client, lead, workspace):
-        secret = self.make(member_client, workspace, users=[str(lead.id)]).data["id"]
+        self.vault(lead_client, workspace)
+        secret = self.make(member_client, workspace, users=[str(lead.id)], keys={str(lead.id): self.LEAD_KEY})
+        secret = secret.data["id"]
         lead_client.post(h(workspace, f"secrets/{secret}/reveal/"))
         log = member_client.get(h(workspace, f"secrets/{secret}/access/"))
         actions = [row["action"] for row in log.data["results"]]
         assert actions[0] == "REVEAL" and {"GRANT", "CREATE"} == set(actions[1:3])
-        assert "s3cr3t" not in str(log.data)
+        assert self.CIPHER not in str(log.data)
         assert lead_client.get(h(workspace, f"secrets/{secret}/access/")).status_code == 404
 
     def test_can_only_share_with_colleagues(self, member_client, guest, other_workspace, workspace):
@@ -340,28 +420,91 @@ class TestSecrets:
                 h(workspace, f"secrets/{secret}/access/"), {"users": [str(user.id)]}, format="json"
             )
             assert response.status_code == 400
+        assert member_client.get(h(workspace, f"vault/keys/?users={other_workspace.owner.id}")).data["keys"] == {}
 
-    def test_update_changes_the_value(self, member_client, workspace):
-        secret = self.make(member_client, workspace).data["id"]
-        member_client.patch(h(workspace, f"secrets/{secret}/"), {"value": "new-one", "name": "DB"}, format="json")
-        assert member_client.post(h(workspace, f"secrets/{secret}/reveal/")).data["value"] == "new-one"
+    def test_a_new_value_comes_with_new_keys(self, member_client, lead_client, lead, workspace):
+        self.vault(lead_client, workspace)
+        secret = self.make(member_client, workspace, users=[str(lead.id)], keys={str(lead.id): self.LEAD_KEY})
+        secret = secret.data["id"]
+        response = member_client.patch(
+            h(workspace, f"secrets/{secret}/"),
+            {"name": "DB", "kind": "SECRET", "ciphertext": "bmV3", "iv": self.IV, "owner_key": "bmV3LW93bmVy"},
+            format="json",
+        )
+        # no new key was sent for the reader: they wait for it
+        assert response.data["name"] == "DB" and response.data["waiting"] == [str(lead.id)]
+        assert member_client.post(h(workspace, f"secrets/{secret}/reveal/")).data["ciphertext"] == "bmV3"
+        assert (
+            member_client.patch(h(workspace, f"secrets/{secret}/"), {"value": "plain"}, format="json").status_code
+            == 400
+        )
 
-    def test_a_value_and_a_name_are_required(self, member_client, workspace):
-        assert member_client.post(h(workspace, "secrets/"), {"name": "x"}, format="json").status_code == 400
-        assert member_client.post(h(workspace, "secrets/"), {"value": "x"}, format="json").status_code == 400
+    def test_old_secrets_are_read_the_old_way_then_converted(self, member, member_client, lead, lead_client, workspace):
+        old = HubSecret.objects.create(
+            workspace=workspace, publisher=member, name="Old", ciphertext=secret_service.encrypt("s3cr3t!")
+        )
+        member_client.put(h(workspace, f"secrets/{old.id}/access/"), {"users": [str(lead.id)]}, format="json")
+        assert lead_client.post(h(workspace, f"secrets/{old.id}/reveal/")).data == {"e2e": False, "value": "s3cr3t!"}
+        assert member_client.get(h(workspace, "secrets/")).data["results"][0]["e2e"] is False
+        self.vault(member_client, workspace)
+        payload = {"kind": "SECRET", "ciphertext": self.CIPHER, "iv": self.IV, "owner_key": self.OWNER}
+        response = member_client.post(h(workspace, f"secrets/{old.id}/convert/"), payload, format="json")
+        assert response.status_code == 200 and response.data["e2e"] is True
+        old.refresh_from_db()
+        assert old.ciphertext == self.CIPHER and "gAAAA" not in old.ciphertext
+        # the reader had no vault: they wait for their key
+        assert response.data["waiting"] == [str(lead.id)]
+        again = member_client.post(h(workspace, f"secrets/{old.id}/convert/"), payload, format="json")
+        assert again.status_code == 400
+
+    def test_a_wrong_server_key_does_not_leak_old_secrets(self, member, member_client, workspace):
+        old = HubSecret.objects.create(
+            workspace=workspace, publisher=member, name="Old", ciphertext=secret_service.encrypt("s3cr3t!")
+        )
+        with mock.patch.dict("os.environ", {"TEAM_OPS_SECRET_KEY": "8w1o6mZyVJvX8s0Rk1y5l2m3n4o5p6q7r8s9t0u1v2w="}):
+            assert member_client.post(h(workspace, f"secrets/{old.id}/reveal/")).status_code == 400
+
+    def test_the_vault(self, member_client, workspace):
+        assert member_client.get(h(workspace, "vault/")).data["vault"] is None
+        assert self.vault(member_client, workspace).status_code == 201
+        assert self.vault(member_client, workspace).status_code == 400  # only one
+        vault = member_client.get(h(workspace, "vault/"))
+        assert vault.data["vault"]["iterations"] == 600000 and vault["Cache-Control"] == "no-store"
+        changed = {**vault.data["vault"], "private_key": "bmV3LWxvY2s=", "salt": "bmV3LXNhbHQ="}
+        assert member_client.put(h(workspace, "vault/"), changed, format="json").status_code == 200
+        assert member_client.get(h(workspace, "vault/")).data["vault"]["private_key"] == "bmV3LWxvY2s="
+        # the key pair itself cannot be swapped by a passphrase change
+        swapped = {**changed, "public_key": "b3RoZXI="}
+        assert member_client.put(h(workspace, "vault/"), swapped, format="json").status_code == 400
+
+    def test_a_weak_passphrase_stretch_is_refused(self, member_client, workspace):
+        response = member_client.post(
+            h(workspace, "vault/"),
+            {"public_key": "cHVi", "private_key": "bG9ja2Vk", "salt": "c2FsdA==", "iv": "aXY=", "iterations": 1000},
+            format="json",
+        )
+        assert response.status_code == 400
+
+    def test_resetting_the_vault(self, member_client, lead_client, lead, workspace):
+        self.vault(lead_client, workspace)
+        lead_secret = self.make(lead_client, workspace).data["id"]
+        mine = self.make(member_client, workspace, users=[str(lead.id)], keys={str(lead.id): self.LEAD_KEY})
+        mine = mine.data["id"]
+        result = lead_client.delete(h(workspace, "vault/")).data
+        assert result == {"deleted": 1, "waiting": 1}
+        assert not HubSecret.objects.filter(pk=lead_secret).exists()
+        assert lead_client.get(h(workspace, "vault/")).data["vault"] is None
+        assert lead_client.get(h(workspace, "secrets/")).data["results"][0]["is_waiting"] is True
+        assert member_client.get(h(workspace, "secrets/")).data["results"][0]["id"] == mine
 
     def test_other_workspaces_cannot_reach_it(self, member_client, other_workspace, workspace):
         secret = self.make(member_client, workspace).data["id"]
         foreign = make_client(other_workspace.owner)
         assert foreign.post(url(other_workspace, f"hub/secrets/{secret}/reveal/")).status_code == 404
 
-    def test_a_wrong_key_does_not_leak_anything(self, member_client, workspace):
-        secret = self.make(member_client, workspace).data["id"]
-        with mock.patch.dict("os.environ", {"TEAM_OPS_SECRET_KEY": "8w1o6mZyVJvX8s0Rk1y5l2m3n4o5p6q7r8s9t0u1v2w="}):
-            assert member_client.post(h(workspace, f"secrets/{secret}/reveal/")).status_code == 400
-
     def test_guests_have_no_secrets(self, guest_client, workspace):
         assert guest_client.get(h(workspace, "secrets/")).status_code == 403
+        assert guest_client.get(h(workspace, "vault/")).status_code == 403
 
 
 @pytest.mark.contract

@@ -263,25 +263,61 @@ export type THubDocPayload = { title: string; body: string; tags: string[]; proj
 
 export type TLibraryFile = TFileInfo & { uploaded_by: THubPerson; created_at: string; source: string };
 
+export type THubSecretKind = "SECRET" | "LOGIN";
+
 export type THubSecret = {
   id: string;
   name: string;
+  /** Info: not encrypted, shown in the list. */
   description: string;
+  kind: THubSecretKind;
+  /** Encrypted in the browser (false: an old secret, encrypted with a server key, not converted yet). */
+  e2e: boolean;
   publisher: THubPerson;
   project: { id: string; name: string } | null;
   is_publisher: boolean;
   updated_at: string;
   /** Only for the publisher. */
   shared_with?: string[];
+  /** Only for the publisher: readers who had no vault yet and wait for their key. */
+  waiting?: string[];
+  /** Only for the publisher: the secret's key, wrapped for the publisher's own vault. */
+  owner_key?: string;
+  /** Only for a reader: shared before they had a vault; opens once the publisher opens theirs. */
+  is_waiting?: boolean;
 };
 
-export type THubSecretPayload = {
+/** What a person's browser stores on the server: a public key and the private key locked by a passphrase. */
+export type THubVault = {
+  public_key: string;
+  private_key: string;
+  salt: string;
+  iv: string;
+  iterations: number;
+};
+
+/** A value sealed in the browser: never the value itself. */
+export type THubSealed = {
+  ciphertext: string;
+  iv: string;
+  owner_key: string;
+  /** The secret's key wrapped for each reader who has a vault, by user id. */
+  keys: Record<string, string>;
+};
+
+export type THubSecretPayload = THubSealed & {
   name: string;
   description: string;
-  value: string;
+  kind: THubSecretKind;
   project?: string | null;
   users?: string[];
 };
+
+export type THubSecretReveal =
+  | { e2e: true; kind: THubSecretKind; ciphertext: string; iv: string; key: string }
+  | { e2e: false; value: string };
+
+export type THubPendingKey = { secret: string; user: string; owner_key: string; public_key: string };
 
 export type THubSecretLog = {
   action: "CREATE" | "REVEAL" | "UPDATE" | "GRANT" | "REVOKE";

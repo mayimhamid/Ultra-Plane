@@ -71,23 +71,41 @@ describe("HubExtraService", () => {
     expect((post.mock.calls[0][1] as FormData).has("doc")).toBe(false);
   });
 
-  it("reveals a secret through POST and returns only the value", async () => {
-    const post = vi.spyOn(service, "post").mockResolvedValue({ data: { value: "s3cr3t" } } as never);
+  it("reveals a secret through POST and returns the sealed value, never a plain one", async () => {
+    const sealed = { e2e: true, kind: "SECRET", ciphertext: "Y2k=", iv: "aXY=", key: "a2V5" };
+    const post = vi.spyOn(service, "post").mockResolvedValue({ data: sealed } as never);
 
-    await expect(service.revealSecret("acme", "s1")).resolves.toBe("s3cr3t");
+    await expect(service.revealSecret("acme", "s1")).resolves.toEqual(sealed);
 
     expect(post).toHaveBeenCalledWith(`${HUB}/secrets/s1/reveal/`, {});
   });
 
-  it("sets who may read a secret and reads its log", async () => {
+  it("sets who may read a secret with their wrapped keys, and reads its log", async () => {
     const put = vi.spyOn(service, "put").mockResolvedValue({ data: { id: "s1" } } as never);
     const get = vi.spyOn(service, "get").mockResolvedValue({ data: { results: [{ action: "REVEAL" }] } } as never);
 
-    await service.setSecretAccess("acme", "s1", ["u1"]);
+    await service.setSecretAccess("acme", "s1", ["u1"], { u1: "d3JhcA==" });
     await expect(service.getSecretLog("acme", "s1")).resolves.toEqual([{ action: "REVEAL" }]);
 
-    expect(put).toHaveBeenCalledWith(`${HUB}/secrets/s1/access/`, { users: ["u1"] });
+    expect(put).toHaveBeenCalledWith(`${HUB}/secrets/s1/access/`, { users: ["u1"], keys: { u1: "d3JhcA==" } });
     expect(get).toHaveBeenCalledWith(`${HUB}/secrets/s1/access/`);
+  });
+
+  it("reads the vault, and no vault as null", async () => {
+    const get = vi.spyOn(service, "get").mockResolvedValue({ data: { vault: null } } as never);
+
+    await expect(service.getVault("acme")).resolves.toBeNull();
+
+    expect(get).toHaveBeenCalledWith(`${HUB}/vault/`);
+  });
+
+  it("asks for public keys only when there is someone to ask about", async () => {
+    const get = vi.spyOn(service, "get").mockResolvedValue({ data: { keys: { u1: "cHVi" } } } as never);
+
+    await expect(service.getPublicKeys("acme", [])).resolves.toEqual({});
+    expect(get).not.toHaveBeenCalled();
+    await expect(service.getPublicKeys("acme", ["u1", "u2"])).resolves.toEqual({ u1: "cHVi" });
+    expect(get).toHaveBeenCalledWith(`${HUB}/vault/keys/`, { params: { users: "u1,u2" } });
   });
 
   it("throws the error body of a failed request", async () => {

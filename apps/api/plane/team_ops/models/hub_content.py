@@ -33,7 +33,18 @@ class HubDoc(BaseModel):
 
 
 class HubSecret(BaseModel):
-    """A secret (password, key, token). The value is stored encrypted; the publisher decides who may read it."""
+    """A secret (a value, or a username and password). The publisher decides who may read it.
+
+    End-to-end (`e2e`): the browser encrypts the value with a random key, and wraps that key with the public key
+    of the publisher (`owner_key`) and of each reader (`HubSecretAccess.wrapped_key`). The private keys are locked
+    by each person's vault passphrase, which never reaches the server: the server, its database and anyone who
+    gets into them hold only ciphertext. Secrets from before (`e2e` false) are encrypted with a server key; the
+    publisher's browser converts them the next time the publisher opens their vault.
+    """
+
+    class Kind(models.TextChoices):
+        SECRET = "SECRET", "Secret"
+        LOGIN = "LOGIN", "Username and password"
 
     workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_hub_secrets")
     publisher = models.ForeignKey(
@@ -44,7 +55,12 @@ class HubSecret(BaseModel):
     )
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, default="")
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.SECRET)
     ciphertext = models.TextField()
+    e2e = models.BooleanField(default=False)
+    # AES-GCM nonce of the ciphertext, and the secret's key wrapped for the publisher (both base64)
+    iv = models.CharField(max_length=64, blank=True, default="")
+    owner_key = models.TextField(blank=True, default="")
 
     class Meta:
         verbose_name = "Hub Secret"
@@ -58,6 +74,9 @@ class HubSecretAccess(BaseModel):
 
     secret = models.ForeignKey(HubSecret, on_delete=models.CASCADE, related_name="access")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    # The secret's key wrapped with this person's public key. Empty while they have no vault yet: the
+    # publisher's browser fills it in the next time the publisher opens their vault.
+    wrapped_key = models.TextField(blank=True, default="")
 
     class Meta:
         db_table = "tops_hub_secret_access"
@@ -88,3 +107,24 @@ class HubSecretLog(BaseModel):
     class Meta:
         db_table = "tops_hub_secret_log"
         ordering = ("-created_at",)
+
+
+class HubVaultKey(BaseModel):
+    """A person's key pair for Secrets. The private key is encrypted in the browser with a key derived from the
+    person's vault passphrase (PBKDF2); the server never sees the passphrase or the private key in the clear."""
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="+")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    public_key = models.TextField()
+    private_key = models.TextField()
+    salt = models.CharField(max_length=64)
+    iv = models.CharField(max_length=64)
+    iterations = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = "tops_hub_vault_key"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "user"], condition=Q(deleted_at__isnull=True), name="tops_hub_vault_key_once"
+            )
+        ]
