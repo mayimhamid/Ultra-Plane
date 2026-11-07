@@ -24,6 +24,8 @@ class HubDoc(BaseModel):
     tags = models.JSONField(default=list, blank=True)
     # The Plane Page that holds the text, when the document belongs to a project
     page = models.ForeignKey("db.Page", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    # The document this one is inside, so documents can be organized as a tree (a folder of pages).
+    parent = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="children")
 
     class Meta:
         verbose_name = "Hub Doc"

@@ -374,7 +374,7 @@ function PeoplePicker({
 }) {
   return (
     <fieldset className="flex flex-col gap-1">
-      <legend className="mb-1 text-body-xs-medium text-secondary">Who may read it (you always can)</legend>
+      <legend className="mb-1 text-body-xs-medium text-secondary">Show for (you always can see it)</legend>
       {people.map((person) => (
         <div key={person.id} className="flex items-center gap-2">
           <CheckboxField
@@ -469,11 +469,21 @@ function SecretCard({ workspaceSlug, secret, people, withVault, unlocked, onChan
     }
   };
 
-  const reveal = () =>
+  /** Opens the secret on this device. Every opening is logged on the server, like a reveal. */
+  const read = async (): Promise<TContent> => {
+    const sealed = await hubExtraService.revealSecret(workspaceSlug, secret.id);
+    return sealed.e2e ? await vaultCrypto.open(sealed, unlocked) : { kind: "SECRET", secret: sealed.value };
+  };
+
+  const reveal = () => busy(async () => setContent(await read()), "Could not open the secret");
+
+  /** Copies one field without showing it on screen. */
+  const copy = (label: string, pick: (opened: TContent) => string) =>
     busy(async () => {
-      const sealed = await hubExtraService.revealSecret(workspaceSlug, secret.id);
-      setContent(sealed.e2e ? await vaultCrypto.open(sealed, unlocked) : { kind: "SECRET", secret: sealed.value });
-    }, "Could not open the secret");
+      const opened = content ?? (await read());
+      await navigator.clipboard.writeText(pick(opened));
+      setToast({ type: "success", title: `${label} copied` });
+    }, "Could not copy");
 
   const saveSharing = (selected: string[]) =>
     busy(async () => {
@@ -499,6 +509,9 @@ function SecretCard({ workspaceSlug, secret, people, withVault, unlocked, onChan
     }, "Could not save");
 
   const waiting = secret.waiting ?? [];
+  const readers = (secret.shared_with ?? [])
+    .map((id) => people.find((person) => person.id === id)?.display_name)
+    .filter((name): name is string => Boolean(name));
 
   return (
     <li className="flex flex-col gap-2 rounded-xl border border-subtle bg-surface-1 p-4">
@@ -520,12 +533,31 @@ function SecretCard({ workspaceSlug, secret, people, withVault, unlocked, onChan
             <p className="text-caption-sm-regular text-tertiary">
               {secret.is_publisher ? "Published by you" : `Shared by ${secret.publisher.display_name}`}
               {secret.project ? ` · ${secret.project.name}` : ""}
-              {secret.is_publisher ? ` · ${secret.shared_with?.length ?? 0} other person(s) can read it` : ""}
               {waiting.length ? ` · ${waiting.length} waiting for a vault` : ""}
             </p>
             {secret.description ? (
               <p className="mt-0.5 text-body-xs-regular whitespace-pre-line text-secondary">{secret.description}</p>
             ) : null}
+            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-caption-sm-regular text-tertiary">
+              <span className="font-medium">Show for</span>
+              <span className="rounded-full bg-layer-1 px-2 py-0.5 text-secondary">
+                {secret.is_publisher ? "You" : secret.publisher.display_name}
+              </span>
+              {readers.map((name) => (
+                <span key={name} className="rounded-full bg-layer-1 px-2 py-0.5 text-secondary">
+                  {name}
+                </span>
+              ))}
+              {secret.is_publisher ? (
+                <button
+                  type="button"
+                  className="rounded-full border border-dashed border-strong px-2 py-0.5 text-accent-primary hover:bg-layer-1"
+                  onClick={() => setSharing(sharing ? null : (secret.shared_with ?? []))}
+                >
+                  {readers.length ? "Add or remove" : "Add people"}
+                </button>
+              ) : null}
+            </p>
           </div>
         </div>
         {secret.is_waiting ? (
@@ -533,14 +565,45 @@ function SecretCard({ workspaceSlug, secret, people, withVault, unlocked, onChan
             Opens once {secret.publisher.display_name} opens their vault
           </span>
         ) : (
-          <Button
-            variant="secondary"
-            size="sm"
-            stretch="auto"
-            label={content === null ? "Reveal" : "Hide"}
-            disabled={isBusy}
-            onClick={() => (content === null ? void reveal() : setContent(null))}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            {secret.kind === "LOGIN" ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  stretch="auto"
+                  label="Copy username"
+                  disabled={isBusy}
+                  onClick={() => void copy("Username", (opened) => (opened.kind === "LOGIN" ? opened.username : ""))}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  stretch="auto"
+                  label="Copy password"
+                  disabled={isBusy}
+                  onClick={() => void copy("Password", (opened) => (opened.kind === "LOGIN" ? opened.password : ""))}
+                />
+              </>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                stretch="auto"
+                label="Copy"
+                disabled={isBusy}
+                onClick={() => void copy("Secret", (opened) => (opened.kind === "SECRET" ? opened.secret : ""))}
+              />
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              stretch="auto"
+              label={content === null ? "Reveal" : "Hide"}
+              disabled={isBusy}
+              onClick={() => (content === null ? void reveal() : setContent(null))}
+            />
+          </div>
         )}
       </div>
 
@@ -560,13 +623,6 @@ function SecretCard({ workspaceSlug, secret, people, withVault, unlocked, onChan
 
       {secret.is_publisher ? (
         <div className="flex flex-wrap gap-3 text-body-xs-medium">
-          <button
-            type="button"
-            className="text-accent-primary hover:underline"
-            onClick={() => setSharing(sharing ? null : (secret.shared_with ?? []))}
-          >
-            Sharing
-          </button>
           <button
             type="button"
             className="text-accent-primary hover:underline"
@@ -609,7 +665,7 @@ function SecretCard({ workspaceSlug, secret, people, withVault, unlocked, onChan
               variant="primary"
               size="sm"
               stretch="auto"
-              label="Save access"
+              label="Save who sees it"
               disabled={isBusy}
               onClick={() => void saveSharing(sharing)}
             />

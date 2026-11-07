@@ -4,9 +4,9 @@
  * See the LICENSE file for details.
  */
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
-import { Paperclip } from "lucide-react";
+import { FilePlus2, FileText, Folder, Paperclip, X } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@makeplane/propel/components/button";
 import { InputField } from "@makeplane/propel/components/input-field";
@@ -14,7 +14,7 @@ import { SelectField } from "@makeplane/propel/components/select-field";
 import { TextAreaField } from "@makeplane/propel/components/text-area-field";
 import { setToast } from "@plane/blocks/toast";
 import { FILE_ACCEPT, MAX_FILE_MB, fileLimitError } from "@plane/services";
-import type { THubDoc } from "@plane/types";
+import type { THubDoc, TLibraryFile } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
 import { useUser } from "@/hooks/store/user";
@@ -22,7 +22,9 @@ import { useProject } from "@/hooks/store/use-project";
 import { hubExtraService, hubService, useHubDocs, useHubFiles } from "@/hooks/team-ops/use-hub";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
+import { DocTree, buildTree, flattenTree, withDescendants } from "./doc-tree";
 import { FilesView } from "./files-view";
+import { MarkdownView } from "./markdown-view";
 
 type Props = { workspaceSlug: string };
 
@@ -34,32 +36,99 @@ const formatSize = (bytes: number) =>
 /** A picked file is told apart by its name, size and date, so the same file is never added twice. */
 const identity = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
 
-type Draft = { id?: string; title: string; body: string; tags: string; project: string; page?: string | null };
-const emptyDraft: Draft = { title: "", body: "", tags: "", project: NONE };
+// Files the app can show as a page: Markdown (like a README) and plain text.
+const READABLE = /\.(md|markdown|txt)$/i;
+const MARKDOWN = /\.(md|markdown)$/i;
+const MAX_READ_BYTES = 1024 * 1024;
 
-/** Written documents with tags, an optional project and their own files: the text and its files are one document. */
+type Draft = {
+  id?: string;
+  title: string;
+  body: string;
+  tags: string;
+  project: string;
+  /** The document it is inside. */
+  parent: string;
+  page?: string | null;
+};
+const emptyDraft: Draft = { title: "", body: "", tags: "", project: NONE, parent: NONE };
+
+type TReading = { name: string; text: string; markdown: boolean };
+
+/** A file shown as a page in a box over the document. */
+function FileReader({ reading, onClose }: { reading: TReading; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" role="presentation">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={reading.name}
+        className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-xl border border-subtle bg-surface-1 shadow-raised-300 sm:rounded-xl"
+      >
+        <header className="flex items-center justify-between gap-2 border-b border-subtle px-4 py-2">
+          <h2 className="min-w-0 truncate text-body-md-medium text-primary">{reading.name}</h2>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-layer-1"
+          >
+            <X className="size-5" />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          {reading.markdown ? (
+            <MarkdownView source={reading.text} />
+          ) : (
+            <pre className="font-mono text-body-sm-regular break-words whitespace-pre-wrap text-primary">
+              {reading.text}
+            </pre>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Documents as a tree of folders and pages (factory-monitor, then nginx inside it, then a page inside that), each
+ * written in Markdown and shown like a GitHub README, with its own files. A text or Markdown file can be read in
+ * the app too, or just kept as a file.
+ */
 export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
   // states
   const [query, setQuery] = useState("");
   const [tag, setTag] = useState("");
   const [projectFilter, setProjectFilter] = useState(NONE);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [preview, setPreview] = useState(false);
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState("");
   const [open, setOpen] = useState<THubDoc | null>(null);
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const [reading, setReading] = useState<TReading | null>(null);
   const [showOther, setShowOther] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
+  const mdPicker = useRef<HTMLInputElement>(null);
   // hooks
   const { data: currentUser } = useUser();
   const { joinedProjectIds, getPartialProjectById } = useProject();
+  const filtering = Boolean(query || tag || projectFilter !== NONE);
   const { docs, tags, refresh } = useHubDocs(workspaceSlug, {
     q: query || undefined,
     tag: tag || undefined,
     project: projectFilter === NONE ? undefined : projectFilter,
   });
+  // The whole tree, for the list of choices of "Inside" and for the pages inside the open one.
+  const { docs: allDocs } = useHubDocs(workspaceSlug, {});
   const { files: otherFiles } = useHubFiles(workspaceSlug);
+
+  const tree = useMemo(() => buildTree(allDocs ?? []), [allDocs]);
+  const filteredTree = useMemo(() => buildTree(docs ?? []), [docs]);
+  const inside = useMemo(() => (open ? (allDocs ?? []).filter((doc) => doc.parent === open.id) : []), [allDocs, open]);
+  const expandedSet = useMemo(() => new Set(expanded), [expanded]);
 
   const projectOptions = [
     { value: NONE, label: "No project" },
@@ -67,12 +136,28 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
   ];
   const filterOptions = [{ value: NONE, label: "All projects" }, ...projectOptions.slice(1)];
 
-  const show = async (doc: THubDoc) => {
+  const parentOptions = useMemo(() => {
+    const blocked = draft?.id ? withDescendants(tree, draft.id) : new Set<string>();
+    return [
+      { value: NONE, label: "Top level" },
+      ...flattenTree(tree)
+        .filter(({ doc }) => !blocked.has(doc.id))
+        .map(({ doc, depth }) => ({ value: doc.id, label: `${"– ".repeat(depth)}${doc.title}` })),
+    ];
+  }, [tree, draft?.id]);
+
+  const toggle = (id: string) =>
+    setExpanded((now) => (now.includes(id) ? now.filter((item) => item !== id) : [...now, id]));
+
+  const show = async (doc: { id: string }) => {
     try {
-      setOpen(await hubExtraService.getDoc(workspaceSlug, doc.id));
+      const full = await hubExtraService.getDoc(workspaceSlug, doc.id);
+      setOpen(full);
       setDraft(null);
       setNewFiles([]);
       setShowOther(false);
+      // The folders above it open, so the list shows where it is.
+      setExpanded((now) => [...new Set([...now, ...(full.path ?? []).map((item) => item.id), full.id])]);
     } catch (error) {
       setToast({ type: "error", title: "Could not open", message: getErrorMessage(error) });
     }
@@ -89,6 +174,22 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
     if (picker.current) picker.current.value = "";
   };
 
+  /** A Markdown (or text) file becomes the text of the document, to be edited here. */
+  const loadMarkdown = async (list: FileList | null) => {
+    const chosen = list?.[0];
+    if (mdPicker.current) mdPicker.current.value = "";
+    if (!chosen || !draft) return;
+    if (chosen.size > MAX_READ_BYTES) {
+      return setToast({ type: "error", title: "Too large", message: "A text file here can be up to 1 MB." });
+    }
+    const text = await chosen.text();
+    setDraft({
+      ...draft,
+      body: draft.body ? `${draft.body}\n\n${text}` : text,
+      title: draft.title || chosen.name.replace(/\.(md|markdown|txt)$/i, ""),
+    });
+  };
+
   const save = async () => {
     if (!draft) return;
     setIsSaving(true);
@@ -103,6 +204,7 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
             .map((item) => item.trim())
             .filter(Boolean),
           project: draft.project === NONE ? null : draft.project,
+          parent: draft.parent === NONE ? null : draft.parent,
         },
         draft.id
       );
@@ -121,9 +223,10 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
       }
       await refresh();
       setDraft(null);
+      setPreview(false);
       setNewFiles([]);
       setFileError("");
-      setOpen(saved);
+      await show(saved);
     } catch (error) {
       setToast({ type: "error", title: "Could not save", message: getErrorMessage(error) });
     } finally {
@@ -169,6 +272,25 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
     }
   };
 
+  /** Reads a text or Markdown file in the app, like a page. */
+  const readFile = async (file: TLibraryFile) => {
+    if (file.size > MAX_READ_BYTES) {
+      return setToast({
+        type: "error",
+        title: "Too large to read here",
+        message: "Open it instead; it is more than 1 MB.",
+      });
+    }
+    try {
+      const { url } = await hubService.getFileLink(workspaceSlug, file.id);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`The file answered ${response.status}.`);
+      setReading({ name: file.name, text: await response.text(), markdown: MARKDOWN.test(file.name) });
+    } catch (error) {
+      setToast({ type: "error", title: "Could not read it here", message: getErrorMessage(error) });
+    }
+  };
+
   const removeFile = async (doc: THubDoc, id: string) => {
     try {
       await hubExtraService.deleteFile(workspaceSlug, id);
@@ -188,38 +310,38 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
     setShowOther(false);
   };
 
+  const startNew = (parent: string) => {
+    setOpen(null);
+    setShowOther(false);
+    setNewFiles([]);
+    setFileError("");
+    setPreview(false);
+    setDraft({ ...emptyDraft, parent });
+  };
+
   const edit = (doc: THubDoc) => {
     setNewFiles([]);
     setFileError("");
+    setPreview(false);
     setDraft({
       id: doc.id,
       title: doc.title,
       body: doc.body ?? "",
       tags: doc.tags.join(", "),
       project: doc.project?.id ?? NONE,
+      parent: doc.parent ?? NONE,
       page: doc.page,
     });
   };
 
   const editingDoc = draft?.id ? open : null;
+  const canChange = (doc: THubDoc) => doc.author.id === currentUser?.id;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-subtle px-4 py-3">
         <h2 className="text-body-md-medium text-primary">Doc Hub</h2>
-        <Button
-          variant="primary"
-          size="sm"
-          stretch="auto"
-          label="New document"
-          onClick={() => {
-            setOpen(null);
-            setShowOther(false);
-            setNewFiles([]);
-            setFileError("");
-            setDraft(emptyDraft);
-          }}
-        />
+        <Button variant="primary" size="sm" stretch="auto" label="New document" onClick={() => startNew(NONE)} />
       </header>
       <div className="flex min-h-0 flex-1">
         <aside
@@ -264,38 +386,20 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
               ))}
             </div>
           ) : null}
-          <ul className="flex flex-col gap-1.5">
-            {(docs ?? []).length === 0 ? (
-              <li className="text-body-xs-regular text-tertiary">No documents for this filter.</li>
-            ) : null}
-            {(docs ?? []).map((doc) => (
-              <li key={doc.id}>
-                <button
-                  type="button"
-                  onClick={() => void show(doc)}
-                  className={cn(
-                    "flex w-full flex-col gap-0.5 rounded-md border px-3 py-2 text-left hover:bg-layer-1",
-                    open?.id === doc.id ? "border-accent-strong" : "border-subtle"
-                  )}
-                >
-                  <span className="truncate text-body-sm-medium text-primary">{doc.title}</span>
-                  <span className="flex items-center gap-1.5 truncate text-caption-sm-regular text-tertiary">
-                    <span className="truncate">
-                      {doc.project ? `${doc.project.identifier} · ` : ""}
-                      {doc.author.display_name} · {dateFormat.format(new Date(doc.updated_at))}
-                    </span>
-                    {doc.file_count > 0 ? (
-                      <span className="ml-auto inline-flex shrink-0 items-center gap-0.5">
-                        <Paperclip className="size-3" aria-hidden />
-                        {doc.file_count}
-                        <span className="sr-only"> files</span>
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          {(docs ?? []).length === 0 ? (
+            <p className="text-body-xs-regular text-tertiary">
+              {filtering ? "No documents for this filter." : "No documents yet. Write the first one."}
+            </p>
+          ) : (
+            <DocTree
+              nodes={filtering ? filteredTree : tree}
+              openId={open?.id}
+              // Searching shows every match, opened out; otherwise the folders open as they are pressed.
+              expanded={filtering ? new Set((docs ?? []).map((doc) => doc.id)) : expandedSet}
+              onToggle={toggle}
+              onOpen={(doc) => void show(doc)}
+            />
+          )}
           {(otherFiles ?? []).length > 0 ? (
             <button
               type="button"
@@ -339,18 +443,85 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
                 placeholder="Title"
                 aria-label="Title"
               />
+              <div className="max-w-sm [&_button]:min-w-0">
+                <SelectField
+                  size="lg"
+                  label="Inside"
+                  options={parentOptions}
+                  value={draft.parent}
+                  onValueChange={(value) => setDraft({ ...draft, parent: value ?? NONE })}
+                />
+              </div>
               {draft.page ? (
                 <p className="text-body-sm-regular text-secondary">
                   The text of this document is a Plane Page. Save, then use "Open in Pages" to write it.
                 </p>
               ) : (
-                <TextAreaField
-                  size="lg"
-                  label="Description"
-                  value={draft.body}
-                  rows={14}
-                  onChange={(event) => setDraft({ ...draft, body: event.target.value })}
-                />
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div
+                      role="tablist"
+                      aria-label="Write or preview"
+                      className="flex rounded-md border border-subtle p-0.5"
+                    >
+                      {[
+                        { key: false, label: "Write" },
+                        { key: true, label: "Preview" },
+                      ].map((tab) => (
+                        <button
+                          key={tab.label}
+                          type="button"
+                          role="tab"
+                          aria-selected={preview === tab.key}
+                          onClick={() => setPreview(tab.key)}
+                          className={cn(
+                            "min-h-8 rounded px-3 text-body-xs-medium",
+                            preview === tab.key ? "bg-accent-primary text-on-color" : "text-secondary hover:bg-layer-1"
+                          )}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div>
+                      <input
+                        ref={mdPicker}
+                        id="doc-markdown-file"
+                        type="file"
+                        accept=".md,.markdown,.txt,text/markdown,text/plain"
+                        className="sr-only"
+                        onChange={(event) => void loadMarkdown(event.target.files)}
+                      />
+                      <label
+                        htmlFor="doc-markdown-file"
+                        className="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md border border-subtle px-3 text-body-xs-medium text-accent-primary hover:bg-layer-1"
+                      >
+                        <FilePlus2 className="size-3.5" aria-hidden />
+                        Load a .md file
+                      </label>
+                    </div>
+                  </div>
+                  {preview ? (
+                    <div className="min-h-48 rounded-md border border-subtle bg-surface-1 p-4">
+                      {draft.body.trim() ? (
+                        <MarkdownView source={draft.body} />
+                      ) : (
+                        <p className="text-body-sm-regular text-tertiary">Nothing to preview yet.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <TextAreaField
+                      size="lg"
+                      label="Text (Markdown)"
+                      value={draft.body}
+                      rows={16}
+                      onChange={(event) => setDraft({ ...draft, body: event.target.value })}
+                    />
+                  )}
+                  <p className="text-caption-sm-regular text-tertiary">
+                    Markdown works: # headings, **bold**, lists, `code`, code blocks, tables and - [ ] task lists.
+                  </p>
+                </div>
               )}
               <InputField
                 type="text"
@@ -461,6 +632,28 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
             </div>
           ) : open ? (
             <article className="flex max-w-3xl flex-col gap-3">
+              {(open.path ?? []).length > 0 ? (
+                <nav
+                  aria-label="Where this document is"
+                  className="flex flex-wrap items-center gap-1 text-caption-sm-regular"
+                >
+                  {(open.path ?? []).map((item) => (
+                    <span key={item.id} className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => void show(item)}
+                        className="text-accent-primary hover:underline"
+                      >
+                        {item.title}
+                      </button>
+                      <span aria-hidden className="text-tertiary">
+                        /
+                      </span>
+                    </span>
+                  ))}
+                  <span className="text-secondary">{open.title}</span>
+                </nav>
+              ) : null}
               <header className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <h3 className="text-h5-medium text-primary">{open.title}</h3>
@@ -474,7 +667,14 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
                     </p>
                   ) : null}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    stretch="auto"
+                    label="Add a page inside"
+                    onClick={() => startNew(open.id)}
+                  />
                   {open.page && open.project ? (
                     <Link
                       className="rounded-md border border-subtle px-2.5 py-1 text-body-xs-medium text-accent-primary hover:bg-layer-1"
@@ -483,7 +683,7 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
                       Open in Pages
                     </Link>
                   ) : null}
-                  {open.author.id === currentUser?.id ? (
+                  {canChange(open) ? (
                     <>
                       <Button variant="secondary" size="sm" stretch="auto" label="Edit" onClick={() => edit(open)} />
                       <Button
@@ -497,11 +697,45 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
                   ) : null}
                 </div>
               </header>
-              <p className="text-body-sm-regular break-words whitespace-pre-wrap text-primary">{open.body}</p>
+              {open.page ? (
+                <p className="text-body-sm-regular break-words whitespace-pre-wrap text-primary">{open.body}</p>
+              ) : open.body?.trim() ? (
+                <MarkdownView source={open.body} className="rounded-lg border border-subtle bg-surface-1 p-5" />
+              ) : (
+                <p className="text-body-sm-regular text-tertiary">This document has no text yet.</p>
+              )}
+              {inside.length > 0 ? (
+                <section aria-label="Pages inside" className="flex flex-col gap-2 border-t border-subtle pt-3">
+                  <h4 className="text-body-sm-medium text-primary">Inside ({inside.length})</h4>
+                  <ul className="grid gap-2 sm:grid-cols-2">
+                    {inside.map((child) => (
+                      <li key={child.id}>
+                        <button
+                          type="button"
+                          onClick={() => void show(child)}
+                          className="flex w-full items-center gap-2 rounded-lg border border-subtle px-3 py-2 text-left hover:bg-layer-1"
+                        >
+                          {(allDocs ?? []).some((doc) => doc.parent === child.id) ? (
+                            <Folder className="size-4 shrink-0 text-accent-primary" aria-hidden />
+                          ) : (
+                            <FileText className="size-4 shrink-0 text-tertiary" aria-hidden />
+                          )}
+                          <span className="min-w-0 flex-1 truncate text-body-sm-medium text-primary">
+                            {child.title}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
               <section aria-label="Files" className="flex flex-col gap-2 border-t border-subtle pt-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-body-sm-medium text-primary">Files ({(open.files ?? []).length})</h4>
-                  {open.author.id === currentUser?.id ? (
+                  <h4 className="flex items-center gap-1.5 text-body-sm-medium text-primary">
+                    <Paperclip className="size-3.5" aria-hidden />
+                    Files ({(open.files ?? []).length})
+                  </h4>
+                  {canChange(open) ? (
                     <div>
                       <input
                         ref={picker}
@@ -540,15 +774,26 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
                             {dateFormat.format(new Date(file.created_at))}
                           </p>
                         </div>
-                        {open.author.id === currentUser?.id || file.uploaded_by.id === currentUser?.id ? (
-                          <button
-                            type="button"
-                            className="text-body-xs-regular text-tertiary hover:text-danger-primary"
-                            onClick={() => void removeFile(open, file.id)}
-                          >
-                            Remove
-                          </button>
-                        ) : null}
+                        <div className="flex items-center gap-3">
+                          {READABLE.test(file.name) ? (
+                            <button
+                              type="button"
+                              className="text-body-xs-medium text-accent-primary hover:underline"
+                              onClick={() => void readFile(file)}
+                            >
+                              Read here
+                            </button>
+                          ) : null}
+                          {canChange(open) || file.uploaded_by.id === currentUser?.id ? (
+                            <button
+                              type="button"
+                              className="text-body-xs-regular text-tertiary hover:text-danger-primary"
+                              onClick={() => void removeFile(open, file.id)}
+                            >
+                              Remove
+                            </button>
+                          ) : null}
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -560,6 +805,7 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
           )}
         </section>
       </div>
+      {reading ? <FileReader reading={reading} onClose={() => setReading(null)} /> : null}
     </div>
   );
 });

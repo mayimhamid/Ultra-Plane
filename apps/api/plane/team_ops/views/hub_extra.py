@@ -74,10 +74,27 @@ def _tags(value):
     return cleaned
 
 
+MAX_DOC_DEPTH = 8
+
+
+def _ancestors(doc):
+    """The documents a document is inside, the top one first."""
+    chain, seen, parent_id = [], {doc.pk}, doc.parent_id
+    while parent_id and parent_id not in seen and len(chain) < MAX_DOC_DEPTH:
+        seen.add(parent_id)
+        parent = HubDoc.objects.filter(pk=parent_id).only("id", "title", "parent_id").first()
+        if parent is None:
+            break
+        chain.append(parent)
+        parent_id = parent.parent_id
+    return list(reversed(chain))
+
+
 def _doc_payload(doc, full=False, files=None):
     data = {
         "id": doc.id,
         "title": doc.title,
+        "parent": doc.parent_id,
         "tags": doc.tags,
         "project": {"id": doc.project_id, "name": doc.project.name, "identifier": doc.project.identifier}
         if doc.project_id
@@ -92,6 +109,7 @@ def _doc_payload(doc, full=False, files=None):
     if full:
         data["body"] = doc_pages.text_of(doc)
         data["files"] = [_file_payload(item, "Document") for item in files or []]
+        data["path"] = [{"id": item.id, "title": item.title} for item in _ancestors(doc)]
     return data
 
 
@@ -121,6 +139,24 @@ def _project_of(workspace, user, is_admin, raw):
     return project
 
 
+def _parent_of(workspace, user, is_admin, raw, doc=None):
+    """The document a document is put inside: one the person can read, never itself or something inside it."""
+    if raw in (None, ""):
+        return None
+    parent = _visible_docs(workspace, user, is_admin).filter(pk=parse_uuid(raw, "parent")).first()
+    if parent is None:
+        raise ParseError(detail="Choose a document you can read to put it inside.")
+    depth, node = 1, parent
+    while node is not None:
+        if doc is not None and node.pk == doc.pk:
+            raise ParseError(detail="A document cannot be inside itself.")
+        depth += 1
+        if depth > MAX_DOC_DEPTH:
+            raise ParseError(detail=f"Documents can be nested up to {MAX_DOC_DEPTH} levels.")
+        node = HubDoc.objects.filter(pk=node.parent_id).first() if node.parent_id else None
+    return parent
+
+
 class HubDocListEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def get(self, request, slug):
@@ -134,7 +170,7 @@ class HubDocListEndpoint(BaseAPIView):
             queryset = queryset.filter(title__icontains=params["q"][:100])
         if params.get("project"):
             queryset = queryset.filter(project_id=parse_uuid(params["project"], "project"))
-        docs = list(queryset[:200])
+        docs = list(queryset[:500])
         if params.get("tag"):
             wanted = params["tag"].strip().lower()
             docs = [doc for doc in docs if wanted in doc.tags]
@@ -161,6 +197,7 @@ class HubDocListEndpoint(BaseAPIView):
             body=body,
             tags=_tags(data.get("tags")),
             project=_project_of(workspace, request.user, is_admin, data.get("project")),
+            parent=_parent_of(workspace, request.user, is_admin, data.get("parent")),
         )
         doc_pages.link_page(doc)
         return Response(_doc_payload(doc, full=True, files=[]), status=status.HTTP_201_CREATED)
@@ -204,6 +241,8 @@ class HubDocDetailEndpoint(BaseAPIView):
             doc.tags = _tags(data["tags"])
         if "project" in data:
             doc.project = _project_of(workspace, request.user, is_admin, data["project"])
+        if "parent" in data:
+            doc.parent = _parent_of(workspace, request.user, is_admin, data["parent"], doc)
         doc.save()
         doc_pages.rename_page(doc)
         doc_pages.link_page(doc)
@@ -218,6 +257,8 @@ class HubDocDetailEndpoint(BaseAPIView):
             raise ParseError(detail="You can only delete your own documents.")
         for attachment in HubAttachment.objects.filter(doc=doc):
             attachment.delete()
+        # What was inside moves up one level instead of being lost.
+        HubDoc.objects.filter(parent=doc).update(parent_id=doc.parent_id)
         doc.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

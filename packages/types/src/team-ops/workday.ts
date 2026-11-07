@@ -244,6 +244,8 @@ export type TOpsNotification = {
 export type THubDoc = {
   id: string;
   title: string;
+  /** The document this one is inside (a folder of pages), or `null` at the top. */
+  parent: string | null;
   tags: string[];
   project: { id: string; name: string; identifier: string } | null;
   author: THubPerson;
@@ -257,9 +259,17 @@ export type THubDoc = {
   body?: string;
   /** Only in the full document: the files kept with it. */
   files?: TLibraryFile[];
+  /** Only in the full document: the documents it is inside, the top one first. */
+  path?: { id: string; title: string }[];
 };
 
-export type THubDocPayload = { title: string; body: string; tags: string[]; project: string | null };
+export type THubDocPayload = {
+  title: string;
+  body: string;
+  tags: string[];
+  project: string | null;
+  parent?: string | null;
+};
 
 export type TLibraryFile = TFileInfo & { uploaded_by: THubPerson; created_at: string; source: string };
 
