@@ -130,9 +130,9 @@ class HubMessageListEndpoint(BaseAPIView):
             changed = list(queryset.filter(updated_at__gt=stamp).order_by("created_at")[: PAGE_SIZE * 2])
             if any(m.author_id != request.user.id and m.created_at > stamp for m in changed):
                 hub.mark_read(channel, request.user)
-                HubMention.objects.filter(
-                    user=request.user, message__channel=channel, read_at__isnull=True
-                ).update(read_at=now)
+                HubMention.objects.filter(user=request.user, message__channel=channel, read_at__isnull=True).update(
+                    read_at=now
+                )
             return Response(
                 {
                     "results": [_message_payload(m, request.user) for m in changed],

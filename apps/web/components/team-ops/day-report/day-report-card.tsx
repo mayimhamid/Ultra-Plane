@@ -17,7 +17,7 @@ import { useDayReport, useDayReportHistory, useMicroTasks } from "@/hooks/team-o
 import { getErrorMessage } from "../calendar/error-message";
 import { ReportHistory } from "./report-history";
 import { ReportRowDialog, ReportRowLine } from "./report-row-parts";
-import { PLACE_LABEL, isFilled, minutesOf } from "./report-rows";
+import { PLACE_LABEL, dayMinutes, isFilled, minutesOf } from "./report-rows";
 import type { TRow } from "./report-rows";
 
 // Waits after the last change before the draft is saved on the server by itself.
@@ -146,7 +146,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
     if (!readOnly && dirty) writeLocal(localKey, rows);
   }, [rows, dirty, readOnly, localKey]);
 
-  const total = rows.reduce((sum, row) => sum + (minutesOf(row) ?? 0), 0);
+  const total = dayMinutes(rows);
   const places = new Set(rows.filter((row) => isFilled(row) && row.place).map((row) => row.place));
   const dayPlace = places.size > 1 ? "HYBRID" : places.size === 1 ? [...places][0] : (report?.mode ?? "");
 

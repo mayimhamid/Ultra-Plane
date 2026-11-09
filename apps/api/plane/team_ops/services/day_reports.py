@@ -50,6 +50,26 @@ COMPLETED_GROUPS = ("completed",)
 MAX_ROWS = 50
 
 
+def _minute_of_day(value):
+    return value.hour * 60 + value.minute
+
+
+def counted_minutes(entries):
+    """Minutes of each entry that count towards the day, as {id: minutes}. Work with a start and an end that
+    overlaps an earlier row is counted once: two tasks done from 12:00 to 15:00 are 3 hours of the day, not 6.
+    Rows with only a duration (spread over the day) count in full."""
+    counted = {}
+    covered = 0
+    timed = [e for e in entries if e.start_time and e.end_time]
+    for e in sorted(timed, key=lambda e: (e.start_time, e.end_time)):
+        start, end = _minute_of_day(e.start_time), _minute_of_day(e.end_time)
+        counted[e.id] = max(0, end - max(start, covered))
+        covered = max(covered, end)
+    for e in entries:
+        counted.setdefault(e.id, e.minutes)
+    return counted
+
+
 def to_minutes(amount, unit):
     """Planned amount in hours or days to minutes."""
     try:
@@ -266,7 +286,7 @@ def report_payload(workspace, user, day):
         "is_late": report.is_late if report else False,
         "edit_count": report.edit_count if report else 0,
         "last_edited_at": report.last_edited_at if report else None,
-        "total_minutes": sum(entry.minutes for entry in entries),
+        "total_minutes": sum(counted_minutes(entries).values()),
         # A change from now on is recorded and the managers are told.
         "changes_are_recorded": submitted or day < today,
         "entries": rows,
@@ -350,7 +370,13 @@ def _clean_rows(workspace, user, rows):
                 "note": str(row.get("note") or "")[:2000],
             }
         )
-    if sum(row["minutes"] for row in cleaned) > DAY_MINUTES:
+    spans = sorted((r["start_time"], r["end_time"]) for r in cleaned if r["start_time"])
+    union = covered = 0
+    for start, end in spans:
+        start, end = _minute_of_day(start), _minute_of_day(end)
+        union += max(0, end - max(start, covered))
+        covered = max(covered, end)
+    if union + sum(r["minutes"] for r in cleaned if not r["start_time"]) > DAY_MINUTES:
         raise ParseError(detail="A day has 24 hours: the rows add up to more than that.")
     return cleaned
 

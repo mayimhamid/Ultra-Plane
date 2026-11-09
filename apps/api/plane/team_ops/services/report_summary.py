@@ -11,13 +11,20 @@ worked, which reports are missing, time per project, and how the tasks are going
 from collections import defaultdict
 
 # Django imports
-from django.db.models import Sum
 from django.utils import timezone
 
 # Module imports
 from plane.db.models import Issue, User
 from plane.team_ops.models import DayReport, DayReportEntry
-from plane.team_ops.services.day_reports import OVERTIME, ON_TIME, SPEEDY, day_place, issue_progress, micro_progress
+from plane.team_ops.services.day_reports import (
+    counted_minutes,
+    OVERTIME,
+    ON_TIME,
+    SPEEDY,
+    day_place,
+    issue_progress,
+    micro_progress,
+)
 from plane.team_ops.services.day_resolution import iter_days, resolve_days
 
 NOT_EXPECTED = ("OFF", "LEAVE")
@@ -106,26 +113,35 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
             "edits": edits,
         }
 
+    # Overlapping work counts once in the totals of a person and a day (per-task figures keep every row's minutes)
+    by_day = defaultdict(list)
+    for entry in entries:
+        by_day[(entry.report.user_id, entry.report.date)].append(entry)
+    counted = {}
+    for day_entries in by_day.values():
+        counted.update(counted_minutes(day_entries))
+
     for entry in entries:
         user_id = entry.report.user_id
         if user_id not in people:
             continue
         person = people[user_id]
         key = entry.report.date.isoformat()
-        person["total_minutes"] += entry.minutes
-        person["days"][key] = person["days"].get(key, 0) + entry.minutes
+        mins = counted[entry.id]
+        person["total_minutes"] += mins
+        person["days"][key] = person["days"].get(key, 0) + mins
         person["places"][key] = day_kind.get((user_id, entry.report.date), "")
         if entry.location == "REMOTE":
-            person["remote_minutes"] += entry.minutes
+            person["remote_minutes"] += mins
         elif entry.location == "ONSITE":
-            person["onsite_minutes"] += entry.minutes
+            person["onsite_minutes"] += mins
         day = team_days[key]
-        day["minutes"] += entry.minutes
+        day["minutes"] += mins
         day["people"].add(user_id)
         if entry.location == "REMOTE":
-            day["remote"] += entry.minutes
+            day["remote"] += mins
         elif entry.location == "ONSITE":
-            day["onsite"] += entry.minutes
+            day["onsite"] += mins
 
         if entry.issue_id and entry.issue:
             project = entry.issue.project
@@ -267,10 +283,10 @@ def _date(value):
 
 
 def total_minutes(workspace, user_ids, start, end):
-    """Minutes reported by `user_ids` in the period (used by quick totals)."""
-    return (
-        DayReportEntry.objects.filter(
-            report__workspace=workspace, report__user_id__in=user_ids, report__date__gte=start, report__date__lte=end
-        ).aggregate(total=Sum("minutes"))["total"]
-        or 0
-    )
+    """Minutes reported by `user_ids` in the period (used by quick totals); overlapping work counts once."""
+    by_day = defaultdict(list)
+    for entry in DayReportEntry.objects.filter(
+        report__workspace=workspace, report__user_id__in=user_ids, report__date__gte=start, report__date__lte=end
+    ).select_related("report"):
+        by_day[(entry.report.user_id, entry.report.date)].append(entry)
+    return sum(sum(counted_minutes(es).values()) for es in by_day.values())

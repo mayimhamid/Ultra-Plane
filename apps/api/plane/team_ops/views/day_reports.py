@@ -151,10 +151,13 @@ class DayReportTeamEndpoint(BaseAPIView):
             .annotate(total=Sum("entries__minutes"), rows=Count("entries"))
         }
         places = {}
-        for user_id, location in DayReportEntry.objects.filter(
+        day_entries = {}
+        for entry in DayReportEntry.objects.filter(
             report__workspace=workspace, report__user_id__in=ids, report__date=day
-        ).values_list("report__user_id", "location"):
-            places.setdefault(user_id, []).append(location)
+        ).select_related("report"):
+            places.setdefault(entry.report.user_id, []).append(entry.location)
+            day_entries.setdefault(entry.report.user_id, []).append(entry)
+        totals = {uid: sum(day_reports.counted_minutes(es).values()) for uid, es in day_entries.items()}
         people = User.objects.filter(pk__in=ids)
         rows = [
             {
@@ -163,7 +166,7 @@ class DayReportTeamEndpoint(BaseAPIView):
                 "submitted_at": reports.get(p.id, {}).get("submitted_at"),
                 "is_late": reports.get(p.id, {}).get("is_late", False),
                 "edit_count": reports.get(p.id, {}).get("edit_count", 0),
-                "total_minutes": reports.get(p.id, {}).get("total") or 0,
+                "total_minutes": totals.get(p.id, 0),
                 # Where the person worked that day: from the rows (both places: HYBRID), else their plan.
                 "mode": day_reports.day_place(places.get(p.id, []), day_reports.day_mode(workspace, p, day)),
             }

@@ -40,3 +40,29 @@ export const isFilled = (row: TRow) =>
 
 /** A row someone started but did not finish: no task, no usable time or no place. */
 export const isIncomplete = (row: TRow) => isFilled(row) && (!row.task || minutesOf(row) === null || !row.place);
+
+/**
+ * Minutes of the day. Rows with a start and an end that overlap are counted once (two tasks done from 12:00 to
+ * 15:00 are 3 hours, not 6); rows with only a duration count in full.
+ */
+export const dayMinutes = (rows: TRow[]) => {
+  let total = 0;
+  let covered = 0;
+  const timed: { start: number; end: number }[] = [];
+  for (const row of rows) {
+    const minutes = minutesOf(row);
+    if (minutes === null) continue;
+    if (row.spread) {
+      total += minutes;
+      continue;
+    }
+    const [sh, sm] = row.start.split(":").map(Number);
+    timed.push({ start: sh * 60 + sm, end: sh * 60 + sm + minutes });
+  }
+  timed.sort((a, b) => a.start - b.start || a.end - b.end);
+  for (const span of timed) {
+    total += Math.max(0, span.end - Math.max(span.start, covered));
+    covered = Math.max(covered, span.end);
+  }
+  return total;
+};
