@@ -12,7 +12,7 @@ from .calendar import (
 )
 from .calendar_entry import WORKING_MODES, CalendarEntry, CalendarTemplate, LeaveType, WorkMode
 from .team import OpsTeam, OpsTeamMember
-from .hub import HubAttachment, HubChannel, HubMention, HubMessage, HubReadState, WorkSession
+from .hub import HubAttachment, HubChannel, HubMention, HubMessage, HubReaction, HubReadState, WorkSession
 from .flow import Flow, FlowStage, FlowStageModule
 from .hub_content import HubDoc, HubSecret, HubSecretAccess, HubSecretLog
 from .leave_request import LeaveRequest
@@ -40,6 +40,7 @@ __all__ = [
     "WorkSession",
     "HubReadState",
     "HubMessage",
+    "HubReaction",
     "HubMention",
     "HubChannel",
     "HubAttachment",

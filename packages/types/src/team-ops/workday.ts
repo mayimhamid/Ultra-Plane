@@ -67,6 +67,8 @@ export type THubChannelDetail = THubChannel & { members: THubPerson[] };
 
 export type THubChannelList = { results: THubChannel[]; unread_mentions: number };
 
+export type THubReaction = { emoji: string; count: number; mine: boolean; people: string[] };
+
 export type THubMessage = {
   id: string;
   channel: string;
@@ -81,6 +83,7 @@ export type THubMessage = {
   mentions: THubPerson[];
   mentions_me: boolean;
   attachments: TFileInfo[];
+  reactions: THubReaction[];
 };
 
 export type THubMessagePayload = {

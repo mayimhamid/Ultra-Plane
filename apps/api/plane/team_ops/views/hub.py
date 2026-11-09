@@ -36,6 +36,22 @@ def _ids(request, key):
     return {parse_uuid(value, key) for value in values}
 
 
+def _reactions(message, viewer):
+    """[{emoji, count, mine, people}] in the order the emojis first appeared."""
+    grouped = {}
+    for reaction in message.reactions.all():
+        grouped.setdefault(reaction.emoji, []).append(reaction.user)
+    return [
+        {
+            "emoji": emoji,
+            "count": len(users),
+            "mine": any(user.id == viewer.id for user in users),
+            "people": [user.display_name for user in users][:20],
+        }
+        for emoji, users in grouped.items()
+    ]
+
+
 def _message_payload(message, viewer):
     deleted = message.is_deleted
     return {
@@ -51,6 +67,7 @@ def _message_payload(message, viewer):
         "is_deleted": deleted,
         "mentions": [] if deleted else [person(mention.user) for mention in message.mentions.all()],
         "mentions_me": (not deleted) and any(mention.user_id == viewer.id for mention in message.mentions.all()),
+        "reactions": [] if deleted else _reactions(message, viewer),
         "attachments": []
         if deleted
         else [
@@ -111,7 +128,7 @@ class HubMessageListEndpoint(BaseAPIView):
         return (
             HubMessage.objects.filter(channel=channel)
             .select_related("author")
-            .prefetch_related("mentions__user", "attachments")
+            .prefetch_related("mentions__user", "attachments", "reactions__user")
         )
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
@@ -213,7 +230,7 @@ class HubMessageDetailEndpoint(BaseAPIView):
         message = hub.edit_message(self._message(workspace, request, pk), request.user, request.data.get("body"))
         message = (
             HubMessage.objects.select_related("author")
-            .prefetch_related("mentions__user", "attachments")
+            .prefetch_related("mentions__user", "attachments", "reactions__user")
             .get(pk=message.pk)
         )
         return Response(_message_payload(message, request.user))
@@ -224,6 +241,28 @@ class HubMessageDetailEndpoint(BaseAPIView):
         message = self._message(workspace, request, pk)
         hub.delete_message(message, request.user, CalendarAccess(request.user, workspace).is_admin)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class HubMessageReactionEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug, pk):
+        """Put an emoji on a message, or take it off (send the same emoji again)."""
+        workspace = Workspace.objects.get(slug=slug)
+        message = HubMessage.objects.filter(pk=pk, channel__workspace=workspace).first()
+        if message is None:
+            raise NotFound("Message not found.")
+        # Anyone who can read the channel can react, even in a locked one (News).
+        hub.get_channel(workspace, message.channel_id, request.user)
+        emoji = request.data.get("emoji")
+        if not isinstance(emoji, str):
+            raise ParseError(detail="Choose an emoji.")
+        hub.toggle_reaction(message, request.user, emoji)
+        message = (
+            HubMessage.objects.select_related("author")
+            .prefetch_related("mentions__user", "attachments", "reactions__user")
+            .get(pk=message.pk)
+        )
+        return Response(_message_payload(message, request.user))
 
 
 class HubAttachmentDownloadEndpoint(BaseAPIView):

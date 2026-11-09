@@ -28,6 +28,7 @@ from plane.team_ops.views import (
     HubChannelListEndpoint,
     HubMentionEndpoint,
     HubMessageDetailEndpoint,
+    HubMessageReactionEndpoint,
     HubMessageListEndpoint,
     NotificationEndpoint,
     FlowDetailEndpoint,
@@ -382,6 +383,11 @@ urlpatterns = [
         "workspaces/<str:slug>/team-ops/hub/messages/<uuid:pk>/",
         HubMessageDetailEndpoint.as_view(),
         name="team-ops-hub-message-detail",
+    ),
+    path(
+        "workspaces/<str:slug>/team-ops/hub/messages/<uuid:pk>/reactions/",
+        HubMessageReactionEndpoint.as_view(),
+        name="team-ops-hub-message-reactions",
     ),
     path(
         "workspaces/<str:slug>/team-ops/hub/files/<uuid:pk>/",

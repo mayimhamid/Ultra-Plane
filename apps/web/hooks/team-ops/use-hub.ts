@@ -134,6 +134,14 @@ export const useHubChannel = (workspaceSlug: string, channelId: string | null, o
     [workspaceSlug, poll]
   );
 
+  const react = useCallback(
+    async (messageId: string, emoji: string) => {
+      const message = await hubService.reactToMessage(workspaceSlug, messageId, emoji);
+      setMessages((list) => merge(list ?? [], [message]));
+    },
+    [workspaceSlug]
+  );
+
   const remove = useCallback(
     async (messageId: string) => {
       await hubService.deleteMessage(workspaceSlug, messageId);
@@ -157,6 +165,7 @@ export const useHubChannel = (workspaceSlug: string, channelId: string | null, o
     hasMore,
     isLoadingOlder,
     loadOlder,
+    react,
     error,
     isLoading: messages === undefined && !error,
     send,

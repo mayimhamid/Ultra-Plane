@@ -87,6 +87,15 @@ export class HubService extends APIService {
       });
   }
 
+  /** Puts an emoji on a message, or takes it off when the person already put it there. */
+  async reactToMessage(workspaceSlug: string, messageId: string, emoji: string): Promise<THubMessage> {
+    return this.post(`${this.base(workspaceSlug)}/messages/${messageId}/reactions/`, { emoji })
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
   async deleteMessage(workspaceSlug: string, messageId: string): Promise<void> {
     return this.delete(`${this.base(workspaceSlug)}/messages/${messageId}/`)
       .then(() => undefined)

@@ -25,6 +25,7 @@ from plane.team_ops.models import (
     HubChannel,
     HubMention,
     HubMessage,
+    HubReaction,
     HubReadState,
     OpsTeam,
     OpsTeamMember,
@@ -272,6 +273,23 @@ def edit_message(message, author, body):
     message.edited_at = timezone.now()
     message.save()
     return message
+
+
+def toggle_reaction(message, user, emoji):
+    """Put an emoji on a message, or take it off again when the person already put it there."""
+    emoji = (emoji or "").strip()
+    # Any emoji, but not plain letters or digits: this is a reaction, not a second message.
+    if not emoji or len(emoji) > 16 or any(ch.isascii() and ch.isalnum() for ch in emoji):
+        raise ParseError(detail="Choose an emoji.")
+    if message.is_deleted:
+        raise ParseError(detail="This message was deleted.")
+    existing = HubReaction.objects.filter(message=message, user=user, emoji=emoji)
+    if existing.exists():
+        existing.delete()
+    else:
+        HubReaction.objects.create(message=message, user=user, emoji=emoji)
+    # Polling looks for changed messages by their update time.
+    HubMessage.objects.filter(pk=message.pk).update(updated_at=timezone.now())
 
 
 def delete_message(message, user, is_admin):

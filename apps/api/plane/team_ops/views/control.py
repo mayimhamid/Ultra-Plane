@@ -144,7 +144,7 @@ class ControlHubChannelEndpoint(BaseAPIView):
         messages = list(
             HubMessage.objects.filter(channel=channel)
             .select_related("author")
-            .prefetch_related("mentions__user", "attachments")
+            .prefetch_related("mentions__user", "attachments", "reactions__user")
             .order_by("-created_at")[:50]
         )
         return Response({"results": [_message_payload(m, request.user) for m in messages]})

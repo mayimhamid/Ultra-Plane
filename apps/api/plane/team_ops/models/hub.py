@@ -144,6 +144,27 @@ class HubMessage(BaseModel):
         return f"{self.channel_id} {self.author_id}"
 
 
+class HubReaction(BaseModel):
+    """An emoji a person put on a message. One person can put each emoji once."""
+
+    message = models.ForeignKey(HubMessage, on_delete=models.CASCADE, related_name="reactions")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    emoji = models.CharField(max_length=16)
+
+    class Meta:
+        verbose_name = "Hub Reaction"
+        verbose_name_plural = "Hub Reactions"
+        db_table = "tops_hub_reaction"
+        ordering = ("created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=["message", "user", "emoji"],
+                condition=Q(deleted_at__isnull=True),
+                name="tops_hub_reaction_once",
+            )
+        ]
+
+
 class HubMention(BaseModel):
     """A person tagged in a message (directly or through a team). It doubles as their notification."""
 

@@ -141,6 +141,7 @@ type MessageProps = {
   isEditing: boolean;
   isMenuOpen: boolean;
   onReply: (message: THubMessage) => void;
+  onReact: (message: THubMessage, emoji: string) => void;
   onOpenThread: (rootId: string) => void;
   onOpenMenu: (message: THubMessage, x: number, y: number) => void;
   onEdit: (message: THubMessage, body: string) => Promise<void>;
@@ -215,13 +216,19 @@ type TGesture = { x: number; y: number; mode: "wait" | "swipe" | "none"; armed: 
 
 function Message(props: MessageProps) {
   const { message, isOwn, showName, showAvatar, isGroupChat, isLast, parent, replyCount, tokens } = props;
-  const { isEditing, isMenuOpen, onReply, onOpenThread, onOpenMenu, onEdit, onEditDone, onOpenFile } = props;
+  const { isEditing, isMenuOpen, onReply, onReact, onOpenThread, onOpenMenu, onEdit, onEditDone, onOpenFile } = props;
   const row = useRef<HTMLDivElement>(null);
   const hint = useRef<HTMLSpanElement>(null);
   const gesture = useRef<TGesture | null>(null);
 
+  const article = useRef<HTMLElement>(null);
+  const latest = useRef({ message, onReply, onOpenMenu });
+  useEffect(() => {
+    latest.current = { message, onReply, onOpenMenu };
+  });
+
   // Moves the message sideways while it is dragged; the reply arrow fades in behind it.
-  const shift = (dx: number, animate: boolean) => {
+  const shift = useCallback((dx: number, animate: boolean) => {
     const transition = animate ? `transform 280ms ${SPRING}, opacity 200ms ease-out` : "none";
     if (row.current) {
       row.current.style.transition = transition;
@@ -233,18 +240,79 @@ function Message(props: MessageProps) {
       hint.current.style.opacity = String(progress);
       hint.current.style.transform = `scale(${0.4 + 0.6 * progress})`;
     }
-  };
+  }, []);
 
-  const endGesture = (released: boolean) => {
-    const current = gesture.current;
-    if (!current) return;
-    window.clearTimeout(current.timer);
-    if (current.mode === "swipe") {
-      if (released && current.armed) onReply(message);
-      shift(0, true);
-    }
-    gesture.current = null;
-  };
+  const endGesture = useCallback(
+    (released: boolean) => {
+      const current = gesture.current;
+      if (!current) return;
+      window.clearTimeout(current.timer);
+      if (current.mode === "swipe") {
+        if (released && current.armed) latest.current.onReply(latest.current.message);
+        shift(0, true);
+      }
+      gesture.current = null;
+    },
+    [shift]
+  );
+
+  // Touch: hold for the menu, swipe right to reply. Up and down still scroll the chat. These are touch events
+  // (not pointer events) so a swipe that starts on text, a bubble or a picture works the same in every browser,
+  // and a sideways swipe is not taken over by the browser (back gesture, page scroll).
+  useEffect(() => {
+    const element = article.current;
+    if (!element || isEditing) return;
+    const onStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1 || (event.target as HTMLElement).closest("textarea, input")) return;
+      const { clientX: x, clientY: y } = event.touches[0];
+      window.clearTimeout(gesture.current?.timer);
+      const timer = window.setTimeout(() => {
+        if (gesture.current?.mode !== "wait") return;
+        gesture.current.mode = "none";
+        buzz(10);
+        latest.current.onOpenMenu(latest.current.message, x, y);
+      }, LONG_PRESS_MS);
+      gesture.current = { x, y, mode: "wait", armed: false, timer };
+    };
+    const onMove = (event: TouchEvent) => {
+      const current = gesture.current;
+      if (!current || event.touches.length !== 1) return;
+      const dx = event.touches[0].clientX - current.x;
+      const dy = event.touches[0].clientY - current.y;
+      if (current.mode === "wait") {
+        // Small wobbles of a held finger are not a swipe or a scroll yet.
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        window.clearTimeout(current.timer);
+        current.mode = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.2 ? "swipe" : "none";
+      }
+      if (current.mode !== "swipe") return;
+      if (event.cancelable) event.preventDefault();
+      const pulled = Math.max(0, dx);
+      const moved = Math.min(
+        pulled <= SWIPE_TRIGGER ? pulled : SWIPE_TRIGGER + (pulled - SWIPE_TRIGGER) * 0.3,
+        SWIPE_MAX
+      );
+      shift(moved, false);
+      if (moved >= SWIPE_TRIGGER && !current.armed) {
+        current.armed = true;
+        buzz(8);
+      } else if (moved < SWIPE_TRIGGER) {
+        current.armed = false;
+      }
+    };
+    const onEnd = () => endGesture(true);
+    const onCancel = () => endGesture(false);
+    element.addEventListener("touchstart", onStart, { passive: true });
+    element.addEventListener("touchmove", onMove, { passive: false });
+    element.addEventListener("touchend", onEnd);
+    element.addEventListener("touchcancel", onCancel);
+    return () => {
+      element.removeEventListener("touchstart", onStart);
+      element.removeEventListener("touchmove", onMove);
+      element.removeEventListener("touchend", onEnd);
+      element.removeEventListener("touchcancel", onCancel);
+    };
+  }, [isEditing, shift, endGesture, message.is_deleted]);
 
   if (message.is_deleted) {
     return (
@@ -261,6 +329,7 @@ function Message(props: MessageProps) {
 
   return (
     <article
+      ref={article}
       title={stamp(message.created_at)}
       // Right click (or a long press on Android) opens this message's menu instead of the browser's.
       onContextMenu={(event) => {
@@ -276,45 +345,6 @@ function Message(props: MessageProps) {
           onOpenMenu(message, box.left + box.width / 2, box.top + box.height / 2);
         }
       }}
-      // Touch: hold for the menu, swipe right to reply. Up and down still scroll the chat.
-      onPointerDown={(event) => {
-        if (event.pointerType !== "touch" || isEditing) return;
-        const { clientX: x, clientY: y } = event;
-        const timer = window.setTimeout(() => {
-          if (gesture.current?.mode !== "wait") return;
-          gesture.current.mode = "none";
-          buzz(10);
-          onOpenMenu(message, x, y);
-        }, LONG_PRESS_MS);
-        gesture.current = { x, y, mode: "wait", armed: false, timer };
-      }}
-      onPointerMove={(event) => {
-        const current = gesture.current;
-        if (!current || event.pointerType !== "touch") return;
-        const dx = event.clientX - current.x;
-        const dy = event.clientY - current.y;
-        if (current.mode === "wait") {
-          // Small wobbles of a held finger are not a swipe or a scroll yet.
-          if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-          window.clearTimeout(current.timer);
-          current.mode = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.4 ? "swipe" : "none";
-        }
-        if (current.mode !== "swipe") return;
-        const pulled = Math.max(0, dx);
-        const moved = Math.min(
-          pulled <= SWIPE_TRIGGER ? pulled : SWIPE_TRIGGER + (pulled - SWIPE_TRIGGER) * 0.3,
-          SWIPE_MAX
-        );
-        shift(moved, false);
-        if (moved >= SWIPE_TRIGGER && !current.armed) {
-          current.armed = true;
-          buzz(8);
-        } else if (moved < SWIPE_TRIGGER) {
-          current.armed = false;
-        }
-      }}
-      onPointerUp={() => endGesture(true)}
-      onPointerCancel={() => endGesture(false)}
       className={cn(
         "relative touch-pan-y [-webkit-touch-callout:none] [@media(pointer:coarse)]:select-none",
         isLast ? "pb-1.5" : "pb-0.5",
@@ -426,6 +456,31 @@ function Message(props: MessageProps) {
             </ul>
           ) : null}
 
+          {message.reactions.length > 0 ? (
+            <ul className={cn("mt-0.5 flex flex-wrap gap-1 px-1.5", isOwn ? "justify-end" : "justify-start")}>
+              {message.reactions.map((reaction) => (
+                <li key={reaction.emoji}>
+                  <button
+                    type="button"
+                    onClick={() => onReact(message, reaction.emoji)}
+                    title={reaction.people.join(", ")}
+                    aria-pressed={reaction.mine}
+                    aria-label={`${reaction.emoji} ${reaction.count}: ${reaction.people.join(", ")}`}
+                    className={cn(
+                      "inline-flex min-h-6 items-center gap-1 rounded-full border px-1.5 text-caption-sm-medium",
+                      reaction.mine
+                        ? "border-[#0a84ff] bg-[#0a84ff]/15 text-[#0a84ff]"
+                        : "border-subtle bg-surface-1 text-secondary hover:bg-layer-1"
+                    )}
+                  >
+                    <span className="text-[14px] leading-none">{reaction.emoji}</span>
+                    {reaction.count > 1 ? <span>{reaction.count}</span> : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
           {isAttention || message.edited_at ? (
             <span className="mt-0.5 px-2 text-[11px] text-tertiary">
               {isAttention ? <span className="text-warning-primary">Needs attention</span> : null}
@@ -457,16 +512,29 @@ type ActionMenuProps = {
   replyCount: number;
   onClose: () => void;
   onReply: () => void;
+  onReact: (emoji: string) => void;
   onThread: () => void;
   onEdit: () => void;
   onDelete: () => void;
 };
 
+const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
 const menuItemClass =
   "flex min-h-11 w-full items-center justify-between gap-6 rounded-xl px-3 text-left text-body-sm-regular text-primary hover:bg-layer-1 focus-visible:bg-layer-1 focus-visible:outline-none";
 
 /** The menu of one message, where it was right-clicked or held. On phones the chat dims behind it. */
-function ActionMenu({ menu, isOwn, replyCount, onClose, onReply, onThread, onEdit, onDelete }: ActionMenuProps) {
+function ActionMenu({
+  menu,
+  isOwn,
+  replyCount,
+  onClose,
+  onReply,
+  onReact,
+  onThread,
+  onEdit,
+  onDelete,
+}: ActionMenuProps) {
   const box = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
   const { message } = menu;
@@ -535,6 +603,26 @@ function ActionMenu({ menu, isOwn, replyCount, onClose, onReply, onThread, onEdi
             {message.body}
           </p>
         ) : null}
+        <div role="group" aria-label="React" className="flex justify-between gap-0.5 px-1 pt-1">
+          {REACTIONS.map((emoji) => {
+            const mine = message.reactions.some((reaction) => reaction.emoji === emoji && reaction.mine);
+            return (
+              <button
+                key={emoji}
+                type="button"
+                aria-label={`React with ${emoji}`}
+                aria-pressed={mine}
+                onClick={pick(() => onReact(emoji))}
+                className={cn(
+                  "inline-flex size-9 items-center justify-center rounded-full text-[20px] leading-none hover:bg-layer-1 focus-visible:bg-layer-1 focus-visible:outline-none active:scale-90",
+                  mine && "bg-[#0a84ff]/15"
+                )}
+              >
+                {emoji}
+              </button>
+            );
+          })}
+        </div>
         <p className="px-3 pt-1.5 pb-1 text-[11px] text-tertiary">{stamp(message.created_at)}</p>
         <button type="button" role="menuitem" className={menuItemClass} onClick={pick(onReply)}>
           Reply <CornerUpLeft className="size-4 text-secondary" aria-hidden />
@@ -846,6 +934,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
       setReplyTo(message.parent ? (byId.get(message.parent) ?? message) : message);
       requestAnimationFrame(() => textarea()?.focus());
     },
+    onReact: (message: THubMessage, emoji: string) => guard(() => hub.react(message.id, emoji)),
     onOpenThread: setThread,
     onOpenMenu: (message: THubMessage, x: number, y: number) => setActionMenu({ message, x, y }),
     onEdit: (message: THubMessage, text: string) => guard(() => hub.edit(message.id, text)),
@@ -980,6 +1069,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
           replyCount={thread ? 0 : (replyCounts.get(actionMenu.message.id) ?? 0)}
           onClose={closeActionMenu}
           onReply={() => shared.onReply(actionMenu.message)}
+          onReact={(emoji) => shared.onReact(actionMenu.message, emoji)}
           onThread={() => setThread(actionMenu.message.id)}
           onEdit={() => setEditingId(actionMenu.message.id)}
           onDelete={() => void guard(() => hub.remove(actionMenu.message.id))}
