@@ -32,10 +32,10 @@ export const buildFinishForm = (payload: TFinishWorkPayload): FormData => {
   const form = new FormData();
   form.append("summary", payload.summary);
   if (payload.document_text) form.append("document_text", payload.document_text);
-  form.append("no_document", payload.no_document ? "true" : "false");
   if (payload.timer) form.append("timer", payload.timer);
-  if (payload.attention_message.trim()) {
-    form.append("attention_message", payload.attention_message);
+  if (payload.attention_teams.length > 0 || payload.attention_users.length > 0 || payload.attention_message.trim()) {
+    form.append("needs_attention", "true");
+    if (payload.attention_message.trim()) form.append("attention_message", payload.attention_message);
     payload.attention_teams.forEach((team) => form.append("attention_teams", team));
     payload.attention_users.forEach((user) => form.append("attention_users", user));
   }

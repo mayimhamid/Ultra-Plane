@@ -50,8 +50,8 @@ def finish_work(
         raise ParseError(detail="Write what you did.")
     if not (document_text or no_document or attachments_expected):
         raise ParseError(detail="Add a document, or confirm that there is none.")
-    if attention and not (attention.get("message") or "").strip():
-        raise ParseError(detail="Say what needs attention.")
+    if attention and not (attention.get("message") or attention.get("team_ids") or attention.get("user_ids")):
+        raise ParseError(detail="Say what needs attention, or tag who should know.")
 
     with transaction.atomic():
         stopped = stop_timer(workspace, user, timer_id)
@@ -91,7 +91,7 @@ def finish_work(
 
 def _hand_over(workspace, user, session, attention):
     """Post the attention message in the project's channel and in the channel of every team asked."""
-    text = f"{session.summary}\n\n{session.attention_message}"
+    text = f"{session.summary}\n\n{session.attention_message}".strip()
     user_ids = {uid for uid in attention.get("user_ids", [])}
     team_ids = {tid for tid in attention.get("team_ids", [])}
 

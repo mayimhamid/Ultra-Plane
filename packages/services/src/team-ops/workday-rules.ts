@@ -82,22 +82,22 @@ const extensionOf = (name: string) => (name.includes(".") ? (name.split(".").pop
 export type TFinishFormValues = {
   summary: string;
   documentText: string;
-  noDocument: boolean;
   fileCount: number;
-  needsAttention: boolean;
-  attentionMessage: string;
+  /** Teams and people tagged for attention. */
+  taggedCount: number;
+  /** The person chose "None": nobody needs to look at this. */
+  noTags: boolean;
 };
 
 /**
  * What still stops the person from finishing work, or `null` when the form is complete.
- * A report is always needed; so is a document (text or files) or the confirmation that there is none.
+ * A report is needed, and a document (written, a link, or a file: a file is enough). Tagging is a choice
+ * that has to be made, but "None" is a fine choice: tags are for attention, not an obligation.
  */
 export const finishBlocker = (values: TFinishFormValues): string | null => {
   if (!values.summary.trim()) return "Write what you did.";
-  if (!values.documentText.trim() && values.fileCount === 0 && !values.noDocument) {
-    return "Add a document, or confirm that there is none.";
-  }
-  if (values.needsAttention && !values.attentionMessage.trim()) return "Say what needs attention.";
+  if (!values.documentText.trim() && values.fileCount === 0) return "Attach a document or a README.";
+  if (values.taggedCount === 0 && !values.noTags) return "Tag who should know, or choose None.";
   return null;
 };
 

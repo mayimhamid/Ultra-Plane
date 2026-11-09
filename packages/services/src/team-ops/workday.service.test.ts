@@ -13,7 +13,6 @@ const BASE = "/api/workspaces/acme/team-ops";
 const payload = (overrides: Partial<TFinishWorkPayload> = {}): TFinishWorkPayload => ({
   summary: "Fixed the redirect",
   document_text: "",
-  no_document: false,
   attention_message: "",
   attention_teams: [],
   attention_users: [],
@@ -22,11 +21,10 @@ const payload = (overrides: Partial<TFinishWorkPayload> = {}): TFinishWorkPayloa
 });
 
 describe("buildFinishForm", () => {
-  it("always sends the summary and the no-document confirmation", () => {
-    const form = buildFinishForm(payload({ no_document: true }));
+  it("always sends the summary", () => {
+    const form = buildFinishForm(payload());
 
     expect(form.get("summary")).toBe("Fixed the redirect");
-    expect(form.get("no_document")).toBe("true");
     expect(form.has("document_text")).toBe(false);
     expect(form.has("attention_message")).toBe(false);
   });
@@ -48,13 +46,15 @@ describe("buildFinishForm", () => {
     expect(form.getAll("attention_users")).toEqual(["u9"]);
     expect(form.getAll("files")).toHaveLength(1);
     expect(form.get("document_text")).toBe("notes");
-    expect(form.get("no_document")).toBe("false");
   });
 
-  it("drops the teams when there is no attention message", () => {
-    const form = buildFinishForm(payload({ attention_message: "   ", attention_teams: ["t1"] }));
+  it("tags teams and people even without a message, and sends nothing when nobody is tagged", () => {
+    const tagged = buildFinishForm(payload({ attention_message: "   ", attention_teams: ["t1"] }));
+    expect(tagged.get("needs_attention")).toBe("true");
+    expect(tagged.getAll("attention_teams")).toEqual(["t1"]);
+    expect(tagged.has("attention_message")).toBe(false);
 
-    expect(form.has("attention_teams")).toBe(false);
+    expect(buildFinishForm(payload()).has("needs_attention")).toBe(false);
   });
 });
 
@@ -70,7 +70,7 @@ describe("WorkdayService", () => {
       .spyOn(service, "post")
       .mockResolvedValue({ data: { session: { id: "s1" }, capped: false } } as never);
 
-    await expect(service.finishWork("acme", payload({ no_document: true }))).resolves.toEqual({
+    await expect(service.finishWork("acme", payload())).resolves.toEqual({
       session: { id: "s1" },
       capped: false,
     });

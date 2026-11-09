@@ -30,9 +30,8 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
   // states
   const [summary, setSummary] = useState("");
   const [documentText, setDocumentText] = useState("");
-  const [noDocument, setNoDocument] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
-  const [needsAttention, setNeedsAttention] = useState(false);
+  const [noTags, setNoTags] = useState(false);
   const [attentionMessage, setAttentionMessage] = useState("");
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [userIds, setUserIds] = useState<string[]>([]);
@@ -42,14 +41,12 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
   const [fileError, setFileError] = useState("");
   const input = useRef<HTMLInputElement>(null);
 
-  const hasDocument = documentText.trim().length > 0 || files.length > 0;
   const blocker = finishBlocker({
     summary,
     documentText,
-    noDocument,
     fileCount: files.length,
-    needsAttention,
-    attentionMessage,
+    taggedCount: teamIds.length + userIds.length,
+    noTags,
   });
 
   const addFiles = (list: FileList | null) => {
@@ -69,10 +66,9 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
       await onFinish({
         summary,
         document_text: documentText,
-        no_document: noDocument && !hasDocument,
-        attention_message: needsAttention ? attentionMessage : "",
-        attention_teams: needsAttention ? teamIds : [],
-        attention_users: needsAttention ? userIds : [],
+        attention_message: noTags ? "" : attentionMessage,
+        attention_teams: noTags ? [] : teamIds,
+        attention_users: noTags ? [] : userIds,
         files,
       });
     } finally {
@@ -89,8 +85,23 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
     }
   };
 
-  const toggleTeam = (id: string) =>
+  // Tagging someone clears "None"; choosing "None" clears the tags.
+  const toggleTeam = (id: string) => {
+    setNoTags(false);
     setTeamIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]));
+  };
+  const toggleUser = (id: string) => {
+    setNoTags(false);
+    setUserIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]));
+  };
+  const chooseNone = (checked: boolean) => {
+    setNoTags(checked);
+    if (checked) {
+      setTeamIds([]);
+      setUserIds([]);
+      setAttentionMessage("");
+    }
+  };
 
   return (
     <section
@@ -115,10 +126,10 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
       />
 
       <div className="flex flex-col gap-2 rounded-md border border-subtle p-3">
-        <p className="text-body-sm-medium text-primary">Document</p>
+        <p className="text-body-sm-medium text-primary">Document or README (required)</p>
         <TextAreaField
           size="lg"
-          label="Notes or link (optional)"
+          label="Notes or link (optional, a file is enough)"
           value={documentText}
           onChange={(event) => setDocumentText(event.target.value)}
           rows={3}
@@ -169,67 +180,57 @@ export function FinishWorkPanel({ title, elapsedLabel, teams, people, onFinish, 
             ))}
           </ul>
         ) : null}
-        {!hasDocument ? (
-          <CheckboxField
-            size="lg"
-            label="There is no document for this work"
-            checked={noDocument}
-            onCheckedChange={(checked) => setNoDocument(Boolean(checked))}
-          />
-        ) : null}
       </div>
 
       <div className="flex flex-col gap-2 rounded-md border border-subtle p-3">
+        <p className="text-body-sm-medium text-primary">Tag who should know (required)</p>
+        <p className="text-caption-sm-regular text-tertiary">
+          Tags are for attention. If nobody needs to look at this, choose None.
+        </p>
         <CheckboxField
           size="lg"
-          label="Needs attention from other teams"
-          checked={needsAttention}
-          onCheckedChange={(checked) => setNeedsAttention(Boolean(checked))}
+          label="None"
+          checked={noTags}
+          onCheckedChange={(checked) => chooseNone(Boolean(checked))}
         />
-        {needsAttention ? (
-          <>
-            <TextAreaField
-              size="lg"
-              label="What should they look at?"
-              value={attentionMessage}
-              onChange={(event) => setAttentionMessage(event.target.value)}
-              rows={2}
-              maxLength={4000}
-              placeholder="It is posted in the Hub, in the project channel and in the channel of each team you choose."
-            />
-            {teams.length > 0 ? (
-              <fieldset className="flex flex-wrap gap-x-4 gap-y-1">
-                <legend className="mb-1 text-body-xs-medium text-secondary">Tell these teams</legend>
-                {teams.map((team) => (
-                  <CheckboxField
-                    key={team.id}
-                    size="lg"
-                    label={team.name}
-                    checked={teamIds.includes(team.id)}
-                    onCheckedChange={() => toggleTeam(team.id)}
-                  />
-                ))}
-              </fieldset>
-            ) : null}
-            {people.length > 0 ? (
-              <fieldset className="flex flex-wrap gap-x-4 gap-y-1">
-                <legend className="mb-1 text-body-xs-medium text-secondary">Tell these people</legend>
-                {people.map((person) => (
-                  <CheckboxField
-                    key={person.id}
-                    size="lg"
-                    label={person.display_name}
-                    checked={userIds.includes(person.id)}
-                    onCheckedChange={() =>
-                      setUserIds((current) =>
-                        current.includes(person.id) ? current.filter((id) => id !== person.id) : [...current, person.id]
-                      )
-                    }
-                  />
-                ))}
-              </fieldset>
-            ) : null}
-          </>
+        {teams.length > 0 ? (
+          <fieldset className="flex flex-wrap gap-x-4 gap-y-1">
+            <legend className="mb-1 text-body-xs-medium text-secondary">Teams</legend>
+            {teams.map((team) => (
+              <CheckboxField
+                key={team.id}
+                size="lg"
+                label={team.name}
+                checked={teamIds.includes(team.id)}
+                onCheckedChange={() => toggleTeam(team.id)}
+              />
+            ))}
+          </fieldset>
+        ) : null}
+        {people.length > 0 ? (
+          <fieldset className="flex flex-wrap gap-x-4 gap-y-1">
+            <legend className="mb-1 text-body-xs-medium text-secondary">People</legend>
+            {people.map((person) => (
+              <CheckboxField
+                key={person.id}
+                size="lg"
+                label={person.display_name}
+                checked={userIds.includes(person.id)}
+                onCheckedChange={() => toggleUser(person.id)}
+              />
+            ))}
+          </fieldset>
+        ) : null}
+        {teamIds.length + userIds.length > 0 ? (
+          <TextAreaField
+            size="lg"
+            label="What should they look at? (optional)"
+            value={attentionMessage}
+            onChange={(event) => setAttentionMessage(event.target.value)}
+            rows={2}
+            maxLength={4000}
+            placeholder="It is posted in the Hub, in the project channel and in the channel of each team you choose."
+          />
         ) : null}
       </div>
 

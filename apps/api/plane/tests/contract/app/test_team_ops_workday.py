@@ -542,9 +542,14 @@ class TestAttentionAndTeamflow:
         lead_view = make_client(lead).get(url(workspace, "hub/mentions/")).data["results"]
         assert lead_view[0]["kind"] == "ATTENTION" and lead_view[0]["via_team"] == "QA"
 
-    def test_attention_needs_a_message(self, member_client, workspace, member, issue, qa_team):
+    def test_tagging_a_team_needs_no_message_but_attention_needs_someone(
+        self, member_client, workspace, member, issue, qa_team
+    ):
         run_timer(workspace, member, issue)
-        response = finish(
+        nobody = finish(member_client, workspace, summary="x", no_document="true", needs_attention="true")
+        assert nobody.status_code == status.HTTP_400_BAD_REQUEST
+        assert ActiveTimer.objects.filter(user=member).exists()
+        tagged = finish(
             member_client,
             workspace,
             summary="x",
@@ -552,8 +557,7 @@ class TestAttentionAndTeamflow:
             needs_attention="true",
             attention_teams=[str(qa_team.id)],
         )
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert ActiveTimer.objects.filter(user=member).exists()
+        assert tagged.status_code == status.HTTP_201_CREATED
 
     def test_teamflow_pending_then_delivered(
         self, member_client, workspace, member, colleague, lead, issue, project, dev_team, qa_team

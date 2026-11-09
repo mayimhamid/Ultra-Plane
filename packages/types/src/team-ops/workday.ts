@@ -34,7 +34,6 @@ export type TWorkSession = {
 export type TFinishWorkPayload = {
   summary: string;
   document_text: string;
-  no_document: boolean;
   attention_message: string;
   attention_teams: string[];
   /** Colleagues tagged one by one, besides the teams. */

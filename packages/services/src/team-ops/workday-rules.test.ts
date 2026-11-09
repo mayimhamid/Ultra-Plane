@@ -21,33 +21,29 @@ import {
 const complete = {
   summary: "Fixed the redirect",
   documentText: "",
-  noDocument: true,
-  fileCount: 0,
-  needsAttention: false,
-  attentionMessage: "",
+  fileCount: 1,
+  taggedCount: 0,
+  noTags: true,
 };
 
 describe("finishBlocker", () => {
-  it("lets complete work finish, with or without a document", () => {
+  it("lets complete work finish: a file is enough as the document", () => {
     expect(finishBlocker(complete)).toBeNull();
-    expect(finishBlocker({ ...complete, noDocument: false, documentText: "notes" })).toBeNull();
-    expect(finishBlocker({ ...complete, noDocument: false, fileCount: 1 })).toBeNull();
+    expect(finishBlocker({ ...complete, fileCount: 0, documentText: "notes" })).toBeNull();
   });
 
   it("requires the report", () => {
     expect(finishBlocker({ ...complete, summary: "   " })).toBe("Write what you did.");
   });
 
-  it("requires a document or the explicit confirmation that there is none", () => {
-    expect(finishBlocker({ ...complete, noDocument: false })).toBe("Add a document, or confirm that there is none.");
-    expect(finishBlocker({ ...complete, noDocument: false, documentText: "  " })).toBe(
-      "Add a document, or confirm that there is none."
-    );
+  it("requires a document or a file, with no way around it", () => {
+    expect(finishBlocker({ ...complete, fileCount: 0 })).toBe("Attach a document or a README.");
+    expect(finishBlocker({ ...complete, fileCount: 0, documentText: "  " })).toBe("Attach a document or a README.");
   });
 
-  it("requires a message when others are asked to look", () => {
-    expect(finishBlocker({ ...complete, needsAttention: true })).toBe("Say what needs attention.");
-    expect(finishBlocker({ ...complete, needsAttention: true, attentionMessage: "Please test" })).toBeNull();
+  it("requires a tagging choice, and None is a choice", () => {
+    expect(finishBlocker({ ...complete, noTags: false })).toBe("Tag who should know, or choose None.");
+    expect(finishBlocker({ ...complete, noTags: false, taggedCount: 2 })).toBeNull();
   });
 });
 
