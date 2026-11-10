@@ -6,7 +6,6 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
-import Link from "next/link";
 import { useSearchParams } from "react-router";
 import { CALENDAR_KINDS, toDateKey } from "@plane/services";
 import type { TCalendarKind } from "@plane/types";
@@ -15,6 +14,7 @@ import { cn } from "@plane/utils";
 import { ButtonAvatars } from "@/components/dropdowns/member/avatar";
 import { DAY_KIND_META, DayKindDot } from "@/components/team-ops/calendar/work-mode";
 import { ControlRoot } from "@/components/team-ops/control";
+import { DashboardTabs } from "./dashboard-tabs";
 import {
   DayBars,
   ReportFilters,
@@ -262,21 +262,9 @@ const DashboardOverview = observer(function DashboardOverview({ workspaceSlug }:
   );
 });
 
-const TABS = [
-  { key: "overview", label: "Overview", managers: true },
-  { key: "tasks", label: "Tasks", managers: false },
-  { key: "control", label: "Control", managers: true },
-] as const;
-
-const CORE_LINKS = [
-  { label: "Views", path: "workspace-views/all-issues" },
-  { label: "Analytics", path: "analytics/overview" },
-  { label: "Archives", path: "projects/archives" },
-];
-
-/** The Dashboard: the overview, Control for managers, and the Views, Analytics and Archives pages as tabs. */
+/** The Dashboard: the overview, Tasks, Control for managers; its tabs also lead to Views, Analytics and Archives. */
 export const DashboardRoot = observer(function DashboardRoot({ workspaceSlug }: Props) {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const { permissions } = useCalendarSettings(workspaceSlug);
   const showControl = (permissions?.can_view_team ?? false) || (permissions?.can_manage ?? false);
   const requested = searchParams.get("view");
@@ -291,35 +279,7 @@ export const DashboardRoot = observer(function DashboardRoot({ workspaceSlug }: 
 
   return (
     <div className="flex w-full flex-col">
-      <nav
-        aria-label="Dashboard"
-        className="mx-auto flex w-full max-w-6xl gap-1 overflow-x-auto border-b border-subtle px-4 pt-4 sm:px-6"
-      >
-        {TABS.filter((tab) => !tab.managers || showControl).map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            aria-current={view === tab.key ? "page" : undefined}
-            onClick={() => setSearchParams(tab.key === "overview" ? {} : { view: tab.key })}
-            className={
-              view === tab.key
-                ? "-mb-px shrink-0 border-b-2 border-accent-strong px-3 py-2 text-body-sm-medium whitespace-nowrap text-primary"
-                : "-mb-px shrink-0 border-b-2 border-transparent px-3 py-2 text-body-sm-medium whitespace-nowrap text-tertiary hover:text-secondary"
-            }
-          >
-            {tab.label}
-          </button>
-        ))}
-        {CORE_LINKS.map((tab) => (
-          <Link
-            key={tab.label}
-            href={`/${workspaceSlug}/${tab.path}/`}
-            className="-mb-px shrink-0 border-b-2 border-transparent px-3 py-2 text-body-sm-medium whitespace-nowrap text-tertiary hover:text-secondary"
-          >
-            {tab.label}
-          </Link>
-        ))}
-      </nav>
+      <DashboardTabs workspaceSlug={workspaceSlug} active={view} />
       {view === "control" ? <ControlRoot workspaceSlug={workspaceSlug} embedded /> : null}
       {view === "tasks" ? <TasksView workspaceSlug={workspaceSlug} /> : null}
       {view === "overview" ? <DashboardOverview workspaceSlug={workspaceSlug} /> : null}
