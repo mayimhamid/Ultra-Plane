@@ -92,49 +92,51 @@ def finish_work(
 def _hand_over(workspace, user, session, attention):
     """Post the attention message in the project's channel and in the channel of every team asked."""
     text = f"{session.summary}\n\n{session.attention_message}".strip()
-    user_ids = {uid for uid in attention.get("user_ids", [])}
-    team_ids = {tid for tid in attention.get("team_ids", [])}
-
-    project_channel = channel_for_project(workspace, session.project)
-    # Only the people who can read the project channel can be tagged there; the rest are reached through their team.
-    from plane.team_ops.services.hub import channel_member_ids
-
-    in_project = channel_member_ids(project_channel)
-    post_message(
-        channel=project_channel,
-        author=user,
-        body=text,
-        user_ids=user_ids & in_project,
-        team_ids=team_ids,
-        kind=HubMessage.Kind.ATTENTION,
+    hand_over(
+        workspace,
+        user,
+        project=session.project,
+        text=text,
+        user_ids={uid for uid in attention.get("user_ids", [])},
+        team_ids={tid for tid in attention.get("team_ids", [])},
         session=session,
     )
+
+
+def hand_over(workspace, user, *, project, text, user_ids, team_ids, session=None, uploads=()):
+    """Tell people about a piece of work: a post in the project's channel (when there is a project) and in the
+    channel of every team asked, and a private message to people tagged who are in neither. Files given in
+    `uploads` are attached to every post, so each place has them. Returns the posted messages."""
+    from plane.db.models import User
+    from plane.team_ops.services import hub_files
+    from plane.team_ops.services.hub import channel_member_ids, dm_channel
+
+    user_ids, team_ids = set(user_ids), set(team_ids)
+    posted = []
+
+    def post(channel, **kwargs):
+        message = post_message(channel=channel, author=user, body=text, kind=HubMessage.Kind.ATTENTION, **kwargs)
+        for upload in uploads:
+            upload.seek(0)
+            hub_files.store_attachment(workspace=workspace, user=user, upload=upload, message=message)
+        posted.append(message)
+
+    in_project = set()
+    if project is not None:
+        project_channel = channel_for_project(workspace, project)
+        # Only the people who can read the project channel can be tagged there; the rest are reached otherwise.
+        in_project = channel_member_ids(project_channel)
+        post(project_channel, user_ids=user_ids & in_project, team_ids=team_ids, session=session)
     reached = set(in_project)
     for team in OpsTeam.objects.filter(workspace=workspace, pk__in=team_ids):
         channel = channel_for_team(workspace, team)
         members = set(OpsTeamMember.objects.filter(team=team).values_list("user_id", flat=True))
         reached |= members & channel_member_ids(channel)
-        post_message(
-            channel=channel,
-            author=user,
-            body=text,
-            user_ids=user_ids & members & channel_member_ids(channel),
-            team_ids=[team.id],
-            kind=HubMessage.Kind.ATTENTION,
-            session=session,
-        )
+        post(channel, user_ids=user_ids & members & channel_member_ids(channel), team_ids=[team.id], session=session)
     # People tagged one by one who are in neither the project nor a chosen team get it as a private message.
-    from plane.db.models import User
-    from plane.team_ops.services.hub import dm_channel
-
     for user_id in user_ids - reached - {user.id}:
         other = User.objects.filter(pk=user_id).first()
         if other is None:
             raise ParseError(detail="Unknown person.")
-        post_message(
-            channel=dm_channel(workspace, user, other),
-            author=user,
-            body=text,
-            kind=HubMessage.Kind.ATTENTION,
-            session=session,
-        )
+        post(dm_channel(workspace, user, other), session=session)
+    return posted

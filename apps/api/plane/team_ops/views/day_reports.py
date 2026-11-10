@@ -110,6 +110,61 @@ class DayReportRowEndpoint(BaseAPIView):
         return Response(payload, status=status.HTTP_201_CREATED)
 
 
+class DayReportShareEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        """Tell people about a task of the report: a note, files and the people (or teams) who should see it.
+        It is posted in the Hub (the project's channel, the teams' channels or a private message), so the people
+        tagged get a notification and the files stay with the task's story. Send multipart."""
+        from plane.team_ops.services import hub_files, work_sessions
+        from plane.team_ops.views.hub import _ids
+
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        data = request.data
+        users, teams = _ids(request, "users"), _ids(request, "teams")
+        files = request.FILES.getlist("files")
+        if not users and not teams:
+            raise ParseError(detail="Tag at least one person or team.")
+        if len(files) > hub_files.MAX_FILES_PER_MESSAGE:
+            raise ParseError(detail=f"At most {hub_files.MAX_FILES_PER_MESSAGE} files.")
+        for upload in files:
+            hub_files.validate_upload(upload)
+        note = str(data.get("note") or "").strip()[:4000]
+        project = None
+        if data.get("issue"):
+            issue = (
+                Issue.issue_objects.filter(pk=parse_uuid(data["issue"], "issue"), workspace=workspace)
+                .select_related("project")
+                .first()
+            )
+            member = (
+                issue is not None
+                and ProjectMember.objects.filter(
+                    project_id=issue.project_id, member=request.user, is_active=True
+                ).exists()
+            )
+            if not member:
+                raise ParseError(detail="Work item not found.")
+            project, label = issue.project, f"{issue.project.identifier}-{issue.sequence_id} {issue.name}"
+        elif data.get("micro_task"):
+            micro = MicroTask.objects.filter(
+                pk=parse_uuid(data["micro_task"], "micro_task"), workspace=workspace, assignee=request.user
+            ).first()
+            if micro is None:
+                raise ParseError(detail="Micro task not found.")
+            label = micro.title
+        else:
+            raise ParseError(detail="Choose a task.")
+        done = str(data.get("finished")).lower() in ("1", "true", "yes")
+        text = f"{'Done' if done else 'Update'}: {label}" + (f"\n\n{note}" if note else "")
+        posted = work_sessions.hand_over(
+            workspace, request.user, project=project, text=text, user_ids=users, team_ids=teams, uploads=files
+        )
+        return Response({"posted": len(posted), "files": len(files)}, status=status.HTTP_201_CREATED)
+
+
 class DayReportHistoryEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def get(self, request, slug, day):

@@ -4,12 +4,17 @@
  * See the LICENSE file for details.
  */
 
-import { useEffect } from "react";
-import { CheckCircle2, ChevronRight, X } from "lucide-react";
-import { durationText, formatMinutes, parseDuration } from "@plane/services";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, ChevronRight, Circle, Paperclip, X } from "lucide-react";
+import { setToast } from "@plane/blocks/toast";
+import { FILE_ACCEPT, durationText, fileLimitError, formatMinutes, parseDuration } from "@plane/services";
 import type { TMicroTask } from "@plane/types";
 import { cn } from "@plane/utils";
+// hooks
+import { dayReportService } from "@/hooks/team-ops/use-day-report";
+import { useHubPeople } from "@/hooks/team-ops/use-hub";
 // local imports
+import { getErrorMessage } from "../calendar/error-message";
 import { PLACES, PLACE_COLOR, PLACE_LABEL, isIncomplete, minutesOf } from "./report-rows";
 import type { TRow } from "./report-rows";
 import { TaskCell } from "./task-cell";
@@ -66,6 +71,152 @@ export function ReportRowLine({ row, index, onOpen }: { row: TRow; index: number
       {row.saved ? <VerdictBadge status={row.saved.status} className="hidden shrink-0 sm:inline-flex" /> : null}
       <ChevronRight className="size-4 shrink-0 text-tertiary" aria-hidden />
     </button>
+  );
+}
+
+/** Tell someone about this task: tag people, add files (a document, a README) and a note, all in one send. */
+function ShareTask({ workspaceSlug, row }: { workspaceSlug: string; row: TRow }) {
+  const { people } = useHubPeople(workspaceSlug);
+  const [isOpen, setIsOpen] = useState(false);
+  const [userIds, setUserIds] = useState<string[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
+  const [isSending, setIsSending] = useState(false);
+  const [fileError, setFileError] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const task = row.task;
+  if (!task) return null;
+
+  const addFiles = (list: FileList | null) => {
+    if (!list) return;
+    const next = [...files, ...Array.from(list)];
+    const problem = fileLimitError(next);
+    if (problem) return setFileError(problem);
+    setFileError("");
+    setFiles(next);
+    if (input.current) input.current.value = "";
+  };
+
+  const send = async () => {
+    setIsSending(true);
+    try {
+      await dayReportService.shareTask(workspaceSlug, {
+        task: { kind: task.kind, id: task.id },
+        finished: row.finished,
+        note: row.note,
+        users: userIds,
+        files,
+      });
+      setToast({ type: "success", title: "Sent", message: "The people you tagged were told." });
+      setUserIds([]);
+      setFiles([]);
+      setIsOpen(false);
+    } catch (error) {
+      setToast({ type: "error", title: "Could not send", message: getErrorMessage(error) });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  if (!isOpen) {
+    return (
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="inline-flex min-h-10 items-center gap-2 self-start rounded-md border border-subtle px-3 text-body-xs-medium text-accent-primary hover:bg-layer-1"
+      >
+        <Paperclip className="size-4" aria-hidden />
+        Add a document and tell someone
+      </button>
+    );
+  }
+
+  return (
+    <section aria-label="Tell someone" className="flex flex-col gap-2 rounded-lg border border-subtle p-3">
+      <p className="text-body-sm-medium text-primary">Tell someone about this task</p>
+      <p className="text-caption-sm-regular text-tertiary">
+        They are notified, and see the note above and the files. {row.finished ? "It says the task is done." : ""}
+      </p>
+      <fieldset className="flex max-h-40 flex-wrap gap-x-3 gap-y-1 overflow-y-auto">
+        <legend className="mb-1 text-caption-sm-medium text-secondary">Tag people</legend>
+        {(people ?? []).map((person) => (
+          <label key={person.id} className="flex min-h-9 items-center gap-1.5 text-body-xs-regular text-primary">
+            <input
+              type="checkbox"
+              checked={userIds.includes(person.id)}
+              onChange={() =>
+                setUserIds((current) =>
+                  current.includes(person.id) ? current.filter((id) => id !== person.id) : [...current, person.id]
+                )
+              }
+              className="size-4"
+            />
+            {person.display_name}
+          </label>
+        ))}
+      </fieldset>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          ref={input}
+          type="file"
+          multiple
+          accept={FILE_ACCEPT}
+          className="sr-only"
+          id="share-task-files"
+          onChange={(event) => addFiles(event.target.files)}
+        />
+        <label
+          htmlFor="share-task-files"
+          className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-md border border-subtle px-3 text-body-xs-medium text-secondary hover:bg-layer-1"
+        >
+          <Paperclip className="size-4" aria-hidden />
+          Attach files
+        </label>
+        <span className="text-caption-sm-regular text-tertiary">
+          {files.length > 0 ? `${files.length} file${files.length === 1 ? "" : "s"}` : "A document, a README, any file"}
+        </span>
+      </div>
+      {fileError ? (
+        <p role="alert" className="text-body-xs-regular text-danger-primary">
+          {fileError}
+        </p>
+      ) : null}
+      {files.length > 0 ? (
+        <ul className="flex flex-col gap-1">
+          {files.map((file, index) => (
+            <li
+              key={`${file.name}-${file.size}-${file.lastModified}`}
+              className="flex items-center justify-between gap-2 text-body-xs-regular"
+            >
+              <span className="truncate text-primary">{file.name}</span>
+              <button
+                type="button"
+                className="shrink-0 text-accent-primary hover:underline"
+                onClick={() => setFiles((current) => current.filter((_, i) => i !== index))}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setIsOpen(false)}
+          className="inline-flex min-h-10 items-center rounded-md px-3 text-body-sm-medium text-secondary hover:bg-layer-1"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={isSending || userIds.length === 0}
+          onClick={() => void send()}
+          className="inline-flex min-h-10 items-center rounded-md bg-accent-primary px-4 text-body-sm-medium text-on-color disabled:opacity-50"
+        >
+          {isSending ? "Sending..." : "Send"}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -140,6 +291,24 @@ export function ReportRowDialog({
             <div className="mt-1">
               <ProgressLine progress={row.saved} />
             </div>
+          ) : null}
+          {/* The state of the task, said plainly: done, or still being worked on. */}
+          {row.task ? (
+            <p
+              className={cn(
+                "mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption-sm-medium",
+                row.finished || row.saved?.finished
+                  ? "bg-success-subtle text-success-primary"
+                  : "bg-layer-1 text-secondary"
+              )}
+            >
+              {row.finished || row.saved?.finished ? (
+                <CheckCircle2 className="size-3.5" aria-hidden />
+              ) : (
+                <Circle className="size-3.5" aria-hidden />
+              )}
+              {row.finished || row.saved?.finished ? "Task done" : "In progress (not done yet)"}
+            </p>
           ) : null}
         </div>
 
@@ -239,15 +408,22 @@ export function ReportRowDialog({
           </label>
         </div>
 
-        <input
-          type="text"
-          value={row.note}
-          disabled={readOnly}
-          placeholder="What was done (optional)"
-          aria-label="What was done"
-          onChange={(event) => onChange({ note: event.target.value })}
-          className="h-10 w-full rounded-md border border-subtle bg-layer-1 px-3 text-body-sm-regular text-primary outline-none focus:border-accent-strong"
-        />
+        {/* The whole text, in a box that scrolls: a long note can be read from start to end. */}
+        <label className="flex flex-col gap-0.5">
+          <span className="text-caption-sm-medium text-tertiary">What was done</span>
+          <textarea
+            value={row.note}
+            readOnly={readOnly}
+            rows={5}
+            placeholder={readOnly ? "Nothing was written." : "What was done (optional)"}
+            aria-label="What was done"
+            dir="auto"
+            onChange={(event) => onChange({ note: event.target.value })}
+            className="max-h-64 min-h-28 w-full resize-y overflow-y-auto rounded-md border border-subtle bg-layer-1 px-3 py-2 text-body-sm-regular leading-relaxed whitespace-pre-wrap text-primary outline-none focus:border-accent-strong"
+          />
+        </label>
+
+        {readOnly || !row.task ? null : <ShareTask workspaceSlug={workspaceSlug} row={row} />}
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button

@@ -116,6 +116,35 @@ export class DayReportService extends APIService {
       .catch(unwrap);
   }
 
+  /**
+   * Tells people about a task of the report: a note and files for the people (or teams) tagged. It is posted in
+   * the Hub, so they are notified and keep the files.
+   */
+  async shareTask(
+    workspaceSlug: string,
+    payload: {
+      task: { kind: "issue" | "micro"; id: string };
+      finished: boolean;
+      note: string;
+      users: string[];
+      files: File[];
+    }
+  ): Promise<{ posted: number; files: number }> {
+    const form = new FormData();
+    form.append(payload.task.kind === "issue" ? "issue" : "micro_task", payload.task.id);
+    form.append("finished", payload.finished ? "true" : "false");
+    if (payload.note.trim()) form.append("note", payload.note);
+    payload.users.forEach((user) => form.append("users", user));
+    payload.files.forEach((file) => form.append("files", file));
+    return this.post(`${this.base(workspaceSlug)}/day-reports/share/`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
   async getHistory(workspaceSlug: string, day: string, user?: string): Promise<TDayReportRevision[]> {
     return this.get(`${this.base(workspaceSlug)}/day-reports/${day}/history/`, { params: user ? { user } : {} })
       .then((response) => response?.data?.results ?? [])

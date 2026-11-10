@@ -424,6 +424,7 @@ from plane.team_ops.views.day_reports import (  # noqa: E402
     DayReportSummaryEndpoint,
     DayReportHistoryEndpoint,
     DayReportRowEndpoint,
+    DayReportShareEndpoint,
     DayReportTeamEndpoint,
     MicroTaskDetailEndpoint,
     MicroTaskListEndpoint,
@@ -432,6 +433,11 @@ from plane.team_ops.views.day_reports import (  # noqa: E402
 )
 
 urlpatterns += [
+    path(
+        "workspaces/<str:slug>/team-ops/day-reports/share/",
+        DayReportShareEndpoint.as_view(),
+        name="team-ops-day-report-share",
+    ),
     path(
         "workspaces/<str:slug>/team-ops/day-reports/summary/",
         DayReportSummaryEndpoint.as_view(),
