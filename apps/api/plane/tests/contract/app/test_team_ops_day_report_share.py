@@ -73,3 +73,26 @@ class TestShareATask:
 
     def test_only_a_member_of_the_project_shares_its_work_items(self, lead_client, workspace, issue, colleague):
         assert share(lead_client, workspace, issue=str(issue.id), users=[str(colleague.id)]).status_code == 400
+
+
+@pytest.mark.contract
+class TestTaskDocument:
+    def test_files_of_a_finished_task_become_a_document_in_the_doc_hub(self, member_client, storage, workspace, issue):
+        from plane.team_ops.models import HubDoc
+
+        pdf = SimpleUploadedFile("report.pdf", b"%PDF-1.4", content_type="application/pdf")
+        response = member_client.post(
+            url(workspace, "day-reports/document/"),
+            {"issue": str(issue.id), "day": "2026-11-10", "files": [pdf]},
+            format="multipart",
+        )
+        assert response.status_code == 201, response.data
+        doc = HubDoc.objects.get(pk=response.data["id"])
+        assert doc.title == "SH-1 Draw the panel (2026-11-10)" and doc.project == issue.project
+        assert HubAttachment.objects.filter(doc=doc, name="report.pdf").exists()
+
+    def test_a_file_is_needed(self, member_client, workspace, issue):
+        response = member_client.post(
+            url(workspace, "day-reports/document/"), {"issue": str(issue.id), "day": "2026-11-10"}, format="multipart"
+        )
+        assert response.status_code == 400

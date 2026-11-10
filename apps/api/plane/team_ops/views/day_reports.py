@@ -165,6 +165,65 @@ class DayReportShareEndpoint(BaseAPIView):
         return Response({"posted": len(posted), "files": len(files)}, status=status.HTTP_201_CREATED)
 
 
+class DayReportDocumentEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        """Put the files of a finished task in the Doc Hub, as one document named after the task and the day.
+        Send multipart: `issue` or `micro_task`, `day`, an optional `note` (the document's text) and `files`."""
+        from plane.team_ops.models import HubDoc
+        from plane.team_ops.services import doc_pages, hub_files
+
+        workspace = _workspace_for(request, slug)
+        if workspace is None:
+            return _forbidden()
+        data = request.data
+        files = request.FILES.getlist("files")
+        if not files:
+            raise ParseError(detail="Attach a file.")
+        if len(files) > hub_files.MAX_FILES_PER_MESSAGE:
+            raise ParseError(detail=f"At most {hub_files.MAX_FILES_PER_MESSAGE} files.")
+        for upload in files:
+            hub_files.validate_upload(upload)
+        project = None
+        if data.get("issue"):
+            issue = (
+                Issue.issue_objects.filter(pk=parse_uuid(data["issue"], "issue"), workspace=workspace)
+                .select_related("project")
+                .first()
+            )
+            member = (
+                issue is not None
+                and ProjectMember.objects.filter(
+                    project_id=issue.project_id, member=request.user, is_active=True
+                ).exists()
+            )
+            if not member:
+                raise ParseError(detail="Work item not found.")
+            project, label = issue.project, f"{issue.project.identifier}-{issue.sequence_id} {issue.name}"
+        elif data.get("micro_task"):
+            micro = MicroTask.objects.filter(
+                pk=parse_uuid(data["micro_task"], "micro_task"), workspace=workspace, assignee=request.user
+            ).first()
+            if micro is None:
+                raise ParseError(detail="Micro task not found.")
+            label = micro.title
+        else:
+            raise ParseError(detail="Choose a task.")
+        day = _day(data.get("day"))
+        doc = HubDoc.objects.create(
+            workspace=workspace,
+            author=request.user,
+            title=f"{label} ({day.isoformat()})"[:200],
+            body=str(data.get("note") or "")[:100000],
+            tags=["day-report"],
+            project=project,
+        )
+        doc_pages.link_page(doc)
+        for upload in files:
+            hub_files.store_attachment(workspace=workspace, user=request.user, upload=upload, doc=doc)
+        return Response({"id": doc.id, "title": doc.title, "files": len(files)}, status=status.HTTP_201_CREATED)
+
+
 class DayReportHistoryEndpoint(BaseAPIView):
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def get(self, request, slug, day):

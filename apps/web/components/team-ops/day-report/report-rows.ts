@@ -66,3 +66,10 @@ export const dayMinutes = (rows: TRow[]) => {
   }
   return total;
 };
+
+/**
+ * A task that is marked done now needs a document: text (plain or Markdown) written in the note, a text or
+ * Markdown file read into it, or a file put in the Doc Hub (the note then names it). A task that was already done
+ * on an earlier day does not ask again.
+ */
+export const needsDocument = (row: TRow) => row.finished && !row.saved?.finished && row.note.trim().length === 0;

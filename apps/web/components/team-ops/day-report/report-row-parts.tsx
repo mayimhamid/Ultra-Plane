@@ -15,7 +15,7 @@ import { dayReportService } from "@/hooks/team-ops/use-day-report";
 import { useHubPeople } from "@/hooks/team-ops/use-hub";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
-import { PLACES, PLACE_COLOR, PLACE_LABEL, isIncomplete, minutesOf } from "./report-rows";
+import { PLACES, PLACE_COLOR, PLACE_LABEL, isIncomplete, minutesOf, needsDocument } from "./report-rows";
 import type { TRow } from "./report-rows";
 import { TaskCell } from "./task-cell";
 import { ProgressLine, VerdictBadge } from "./verdict-badge";
@@ -71,6 +71,86 @@ export function ReportRowLine({ row, index, onOpen }: { row: TRow; index: number
       {row.saved ? <VerdictBadge status={row.saved.status} className="hidden shrink-0 sm:inline-flex" /> : null}
       <ChevronRight className="size-4 shrink-0 text-tertiary" aria-hidden />
     </button>
+  );
+}
+
+const TEXT_FILE = /\.(md|markdown|txt)$/i;
+const MAX_TEXT_FILE = 100 * 1024;
+
+/**
+ * The document of a task that is done, whatever the person has: a text or Markdown file is read into the note
+ * (so it shows like a README), any other file goes to the Doc Hub and the note says where it is.
+ */
+function AttachDocument({
+  workspaceSlug,
+  row,
+  day,
+  onChange,
+}: {
+  workspaceSlug: string;
+  row: TRow;
+  day: string;
+  onChange: (patch: Partial<TRow>) => void;
+}) {
+  const [isBusy, setIsBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const task = row.task;
+  if (!task) return null;
+
+  const take = async (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    const chosen = Array.from(list);
+    const problem = fileLimitError(chosen);
+    if (problem) return setToast({ type: "error", title: "Cannot attach", message: problem });
+    setIsBusy(true);
+    try {
+      let note = row.note;
+      const isText = (file: File) => TEXT_FILE.test(file.name) && file.size <= MAX_TEXT_FILE;
+      const others = chosen.filter((file) => !isText(file));
+      const texts = await Promise.all(chosen.filter(isText).map((file) => file.text()));
+      for (const text of texts.map((value) => value.trim()).filter(Boolean)) {
+        note = note.trim()
+          ? `${note.trim()}
+
+${text}`
+          : text;
+      }
+      if (others.length > 0) {
+        const doc = await dayReportService.uploadTaskDocument(workspaceSlug, { task, day, files: others });
+        const line = `Document in the Doc Hub: ${doc.title} (${others.map((file) => file.name).join(", ")})`;
+        note = note.trim() ? `${note.trim()}\n\n${line}` : line;
+      }
+      onChange({ note });
+    } catch (error) {
+      setToast({ type: "error", title: "Could not attach", message: getErrorMessage(error) });
+    } finally {
+      setIsBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        ref={input}
+        type="file"
+        multiple
+        accept={FILE_ACCEPT}
+        className="sr-only"
+        id="row-document-files"
+        onChange={(event) => void take(event.target.files)}
+      />
+      <label
+        htmlFor="row-document-files"
+        className="inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-md border border-subtle px-3 text-body-xs-medium text-accent-primary hover:bg-layer-1"
+      >
+        <Paperclip className="size-4" aria-hidden />
+        {isBusy ? "Attaching..." : "Attach a file"}
+      </label>
+      <span className="text-caption-sm-regular text-tertiary">
+        Markdown and text files are read into the note; other files go to the Doc Hub.
+      </span>
+    </div>
   );
 }
 
@@ -222,6 +302,8 @@ function ShareTask({ workspaceSlug, row }: { workspaceSlug: string; row: TRow })
 
 type DialogProps = {
   workspaceSlug: string;
+  /** The day of the report, for naming the document. */
+  day: string;
   row: TRow;
   index: number;
   microTasks: TMicroTask[];
@@ -234,6 +316,7 @@ type DialogProps = {
 /** The details of one task of the report, in a small box in the middle of the page (a sheet on a phone). */
 export function ReportRowDialog({
   workspaceSlug,
+  day,
   row,
   index,
   microTasks,
@@ -410,7 +493,11 @@ export function ReportRowDialog({
 
         {/* The whole text, in a box that scrolls: a long note can be read from start to end. */}
         <label className="flex flex-col gap-0.5">
-          <span className="text-caption-sm-medium text-tertiary">What was done</span>
+          <span className="text-caption-sm-medium text-tertiary">
+            {needsDocument(row) || row.finished
+              ? "Document: what was done (required for a done task)"
+              : "What was done"}
+          </span>
           <textarea
             value={row.note}
             readOnly={readOnly}
@@ -419,9 +506,16 @@ export function ReportRowDialog({
             aria-label="What was done"
             dir="auto"
             onChange={(event) => onChange({ note: event.target.value })}
-            className="max-h-64 min-h-28 w-full resize-y overflow-y-auto rounded-md border border-subtle bg-layer-1 px-3 py-2 text-body-sm-regular leading-relaxed whitespace-pre-wrap text-primary outline-none focus:border-accent-strong"
+            className={cn(
+              "max-h-64 min-h-28 w-full resize-y overflow-y-auto rounded-md border bg-layer-1 px-3 py-2 text-body-sm-regular leading-relaxed whitespace-pre-wrap text-primary outline-none focus:border-accent-strong",
+              needsDocument(row) ? "border-danger-strong" : "border-subtle"
+            )}
           />
         </label>
+
+        {readOnly || !row.task || !row.finished ? null : (
+          <AttachDocument workspaceSlug={workspaceSlug} row={row} day={day} onChange={onChange} />
+        )}
 
         {readOnly || !row.task ? null : <ShareTask workspaceSlug={workspaceSlug} row={row} />}
 

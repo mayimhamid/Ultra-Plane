@@ -145,6 +145,24 @@ export class DayReportService extends APIService {
       });
   }
 
+  /** Puts files in the Doc Hub as one document named after the task and the day. */
+  async uploadTaskDocument(
+    workspaceSlug: string,
+    payload: { task: { kind: "issue" | "micro"; id: string }; day: string; files: File[] }
+  ): Promise<{ id: string; title: string; files: number }> {
+    const form = new FormData();
+    form.append(payload.task.kind === "issue" ? "issue" : "micro_task", payload.task.id);
+    form.append("day", payload.day);
+    payload.files.forEach((file) => form.append("files", file));
+    return this.post(`${this.base(workspaceSlug)}/day-reports/document/`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
   async getHistory(workspaceSlug: string, day: string, user?: string): Promise<TDayReportRevision[]> {
     return this.get(`${this.base(workspaceSlug)}/day-reports/${day}/history/`, { params: user ? { user } : {} })
       .then((response) => response?.data?.results ?? [])

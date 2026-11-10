@@ -17,7 +17,7 @@ import { useDayReport, useDayReportHistory, useMicroTasks } from "@/hooks/team-o
 import { getErrorMessage } from "../calendar/error-message";
 import { ReportHistory } from "./report-history";
 import { ReportRowDialog, ReportRowLine } from "./report-row-parts";
-import { PLACE_LABEL, dayMinutes, isFilled, minutesOf } from "./report-rows";
+import { PLACE_LABEL, dayMinutes, isFilled, minutesOf, needsDocument } from "./report-rows";
 import type { TRow } from "./report-rows";
 
 // Waits after the last change before the draft is saved on the server by itself.
@@ -162,6 +162,8 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
             : `Row ${index + 1}: enter the start and end time (the end after the start).`
         );
       if (!row.place) list.push(`Row ${index + 1}: choose remote or onsite.`);
+      if (needsDocument(row))
+        list.push(`Row ${index + 1}: a task that is done needs a document. Write it or attach a file.`);
     });
     if (total > 24 * 60) list.push("The rows add up to more than 24 hours.");
     return list;
@@ -368,6 +370,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
       {openRow ? (
         <ReportRowDialog
           workspaceSlug={workspaceSlug}
+          day={day}
           row={openRow}
           index={rows.indexOf(openRow)}
           microTasks={microTasks ?? []}
