@@ -162,8 +162,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
             : `Row ${index + 1}: enter the start and end time (the end after the start).`
         );
       if (!row.place) list.push(`Row ${index + 1}: choose remote or onsite.`);
-      if (needsDocument(row))
-        list.push(`Row ${index + 1}: a task that is done needs a document. Write it or attach a file.`);
+      if (needsDocument(row)) list.push(`Row ${index + 1}: a task that is done needs an explanation of what was done.`);
     });
     if (total > 24 * 60) list.push("The rows add up to more than 24 hours.");
     return list;

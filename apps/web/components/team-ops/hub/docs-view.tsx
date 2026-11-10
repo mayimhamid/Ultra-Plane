@@ -25,6 +25,7 @@ import { getErrorMessage } from "../calendar/error-message";
 import { DocTree, buildTree, flattenTree, withDescendants } from "./doc-tree";
 import { FilesView } from "./files-view";
 import { MarkdownView } from "./markdown-view";
+import { MentionPicker } from "./mention-picker";
 
 type Props = { workspaceSlug: string };
 
@@ -50,8 +51,10 @@ type Draft = {
   /** The document it is inside. */
   parent: string;
   page?: string | null;
+  /** Colleagues to tell when it is saved (not kept: a mention is a one-time notification). */
+  mentions: string[];
 };
-const emptyDraft: Draft = { title: "", body: "", tags: "", project: NONE, parent: NONE };
+const emptyDraft: Draft = { title: "", body: "", tags: "", project: NONE, parent: NONE, mentions: [] };
 
 type TReading = { name: string; text: string; markdown: boolean };
 
@@ -205,6 +208,7 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
             .filter(Boolean),
           project: draft.project === NONE ? null : draft.project,
           parent: draft.parent === NONE ? null : draft.parent,
+          mentions: draft.mentions,
         },
         draft.id
       );
@@ -331,6 +335,7 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
       project: doc.project?.id ?? NONE,
       parent: doc.parent ?? NONE,
       page: doc.page,
+      mentions: [],
     });
   };
 
@@ -523,6 +528,12 @@ export const DocsView = observer(function DocsView({ workspaceSlug }: Props) {
                   </p>
                 </div>
               )}
+              <MentionPicker
+                workspaceSlug={workspaceSlug}
+                value={draft.mentions}
+                onChange={(mentions) => setDraft({ ...draft, mentions })}
+                what="this document"
+              />
               <InputField
                 type="text"
                 size="lg"

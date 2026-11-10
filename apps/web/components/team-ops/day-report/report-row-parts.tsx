@@ -148,7 +148,7 @@ ${text}`
         {isBusy ? "Attaching..." : "Attach a file"}
       </label>
       <span className="text-caption-sm-regular text-tertiary">
-        Markdown and text files are read into the note; other files go to the Doc Hub.
+        Write what was done above. Markdown and text files are read into it; other files go to the Doc Hub as well.
       </span>
     </div>
   );
@@ -494,9 +494,7 @@ export function ReportRowDialog({
         {/* The whole text, in a box that scrolls: a long note can be read from start to end. */}
         <label className="flex flex-col gap-0.5">
           <span className="text-caption-sm-medium text-tertiary">
-            {needsDocument(row) || row.finished
-              ? "Document: what was done (required for a done task)"
-              : "What was done"}
+            {needsDocument(row) || row.finished ? "What was done (required for a done task)" : "What was done"}
           </span>
           <textarea
             value={row.note}

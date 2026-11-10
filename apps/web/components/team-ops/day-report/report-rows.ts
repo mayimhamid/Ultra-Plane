@@ -67,9 +67,14 @@ export const dayMinutes = (rows: TRow[]) => {
   return total;
 };
 
+const DOC_LINE = /^Document in the Doc Hub:.*$/gm;
+
+/** What the person wrote about the work: the note without the lines that only say where a file went. */
+export const explanationOf = (row: TRow) => row.note.replace(DOC_LINE, "").trim();
+
 /**
- * A task that is marked done now needs a document: text (plain or Markdown) written in the note, a text or
- * Markdown file read into it, or a file put in the Doc Hub (the note then names it). A task that was already done
- * on an earlier day does not ask again.
+ * A task that is marked done now needs an explanation of what was done: text (plain or Markdown) written in the
+ * note, or a text or Markdown file read into it. A file in the Doc Hub is added on top of that, not instead of it.
+ * A task that was already done on an earlier day does not ask again.
  */
-export const needsDocument = (row: TRow) => row.finished && !row.saved?.finished && row.note.trim().length === 0;
+export const needsDocument = (row: TRow) => row.finished && !row.saved?.finished && explanationOf(row).length === 0;

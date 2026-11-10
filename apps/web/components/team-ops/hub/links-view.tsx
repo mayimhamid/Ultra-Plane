@@ -16,11 +16,12 @@ import { useUser } from "@/hooks/store/user";
 import { hubExtraService, useHubLinks } from "@/hooks/team-ops/use-hub";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
+import { MentionPicker } from "./mention-picker";
 
 type Props = { workspaceSlug: string };
 
-type TDraft = { id: string | null; url: string; title: string; note: string; group: string };
-const EMPTY: TDraft = { id: null, url: "", title: "", note: "", group: "" };
+type TDraft = { id: string | null; url: string; title: string; note: string; group: string; mentions: string[] };
+const EMPTY: TDraft = { id: null, url: "", title: "", note: "", group: "", mentions: [] };
 
 const hostOf = (url: string) => {
   try {
@@ -56,7 +57,13 @@ export const LinksView = observer(function LinksView({ workspaceSlug }: Props) {
     if (!draft || !draft.url.trim()) return;
     setIsSaving(true);
     try {
-      const payload = { url: draft.url, title: draft.title, note: draft.note, group: draft.group };
+      const payload = {
+        url: draft.url,
+        title: draft.title,
+        note: draft.note,
+        group: draft.group,
+        mentions: draft.mentions,
+      };
       if (draft.id) await hubExtraService.updateLink(workspaceSlug, draft.id, payload);
       else await hubExtraService.createLink(workspaceSlug, payload);
       setDraft(null);
@@ -152,6 +159,12 @@ export const LinksView = observer(function LinksView({ workspaceSlug }: Props) {
               onChange={(event) => setDraft({ ...draft, note: event.target.value })}
               placeholder="What it is for"
             />
+            <MentionPicker
+              workspaceSlug={workspaceSlug}
+              value={draft.mentions}
+              onChange={(mentions) => setDraft({ ...draft, mentions })}
+              what="this link"
+            />
             <div className="flex justify-end gap-2">
               <Button variant="secondary" size="md" stretch="auto" label="Cancel" onClick={() => setDraft(null)} />
               <Button
@@ -243,6 +256,7 @@ export const LinksView = observer(function LinksView({ workspaceSlug }: Props) {
                                   title: link.title,
                                   note: link.note,
                                   group: link.group,
+                                  mentions: [],
                                 })
                               }
                               className="inline-flex size-9 items-center justify-center rounded-md text-secondary hover:bg-layer-1"

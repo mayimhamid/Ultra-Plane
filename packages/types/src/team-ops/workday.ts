@@ -273,6 +273,8 @@ export type THubDocPayload = {
   tags: string[];
   project: string | null;
   parent?: string | null;
+  /** Colleagues to tell about the document. */
+  mentions?: string[];
 };
 
 export type TLibraryFile = TFileInfo & { uploaded_by: THubPerson; created_at: string; source: string };
@@ -450,4 +452,11 @@ export type THubLink = {
   created_at: string;
 };
 
-export type THubLinkPayload = { url: string; title?: string; note?: string; group?: string };
+export type THubLinkPayload = {
+  url: string;
+  title?: string;
+  note?: string;
+  group?: string;
+  /** Colleagues to tell about the link. */
+  mentions?: string[];
+};

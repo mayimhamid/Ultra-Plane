@@ -19,7 +19,7 @@ from plane.app.permissions import allow_permission
 from plane.app.views.base import BaseAPIView
 from plane.db.models import Project, ProjectMember, User, Workspace
 from plane.team_ops.models import Flow, HubAttachment, HubDoc, HubLink, HubSecretAccess
-from plane.team_ops.services import doc_pages, flows, hub, hub_files
+from plane.team_ops.services import doc_pages, flows, hub, hub_files, mentions
 from plane.team_ops.services import secrets as secret_service
 from plane.team_ops.services.access import CALENDAR_ROLES, CalendarAccess, calendar_user_ids
 from plane.team_ops.services.time_entry import parse_uuid
@@ -202,6 +202,16 @@ class HubDocListEndpoint(BaseAPIView):
             parent=_parent_of(workspace, request.user, is_admin, data.get("parent")),
         )
         doc_pages.link_page(doc)
+        mentions.notify_mentions(
+            workspace,
+            request.user,
+            chosen=_ids(request, "mentions"),
+            text=f"{doc.title}\n{doc.body}",
+            what="a document",
+            title=doc.title,
+            link="team-ops/hub?section=docs",
+            project=doc.project,
+        )
         return Response(_doc_payload(doc, full=True, files=[]), status=status.HTTP_201_CREATED)
 
 
@@ -230,6 +240,7 @@ class HubDocDetailEndpoint(BaseAPIView):
         if doc.author_id != request.user.id and not is_admin:
             raise ParseError(detail="You can only change your own documents.")
         data = request.data
+        before = f"{doc.title}\n{doc.body}"
         if "title" in data:
             title = str(data["title"]).strip()
             if not title or len(title) > 200:
@@ -248,6 +259,17 @@ class HubDocDetailEndpoint(BaseAPIView):
         doc.save()
         doc_pages.rename_page(doc)
         doc_pages.link_page(doc)
+        mentions.notify_mentions(
+            workspace,
+            request.user,
+            chosen=_ids(request, "mentions") if "mentions" in data else (),
+            text=f"{doc.title}\n{doc.body}",
+            before=before,
+            what="a document",
+            title=doc.title,
+            link="team-ops/hub?section=docs",
+            project=doc.project,
+        )
         return Response(_doc_payload(doc, full=True, files=_files_of([doc]).get(doc.id)))
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
@@ -648,6 +670,15 @@ class HubLinkListEndpoint(BaseAPIView):
         if workspace is None:
             return _forbidden()
         link = HubLink.objects.create(workspace=workspace, author=request.user, **_link_fields(request.data))
+        mentions.notify_mentions(
+            workspace,
+            request.user,
+            chosen=_ids(request, "mentions"),
+            text=f"{link.title}\n{link.note}",
+            what="a link",
+            title=link.title,
+            link="team-ops/hub?section=links",
+        )
         return Response(_link_payload(link), status=status.HTTP_201_CREATED)
 
 
@@ -669,9 +700,20 @@ class HubLinkDetailEndpoint(BaseAPIView):
         link, denied = self._link(request, slug, pk)
         if denied:
             return denied
+        before = f"{link.title}\n{link.note}"
         for key, value in _link_fields(request.data, partial=True).items():
             setattr(link, key, value)
         link.save()
+        mentions.notify_mentions(
+            link.workspace,
+            request.user,
+            chosen=_ids(request, "mentions") if "mentions" in request.data else (),
+            text=f"{link.title}\n{link.note}",
+            before=before,
+            what="a link",
+            title=link.title,
+            link="team-ops/hub?section=links",
+        )
         return Response(_link_payload(link))
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
