@@ -28,7 +28,9 @@ from plane.team_ops.services.day_reports import (
 from plane.team_ops.services.day_resolution import iter_days, resolve_days
 
 NOT_EXPECTED = ("OFF", "LEAVE")
-TOP_TASKS = 30
+# The project rows open to the tasks inside them, so every task of the period is sent (not only the top few).
+TOP_TASKS = 300
+MAX_TASK_ENTRIES = 40
 
 
 def summary(workspace, settings_row, user_ids, start, end, place=""):
@@ -73,7 +75,7 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
         for day in iter_days(start, end)
     }
     projects = defaultdict(lambda: {"minutes": 0})
-    tasks = defaultdict(lambda: {"minutes": 0, "people": set()})
+    tasks = defaultdict(lambda: {"minutes": 0, "people": set(), "entries": []})
 
     for user_id in user_ids:
         user = names.get(user_id)
@@ -157,6 +159,7 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
                     "key": f"{project.identifier}-{entry.issue.sequence_id}",
                     "name": entry.issue.name,
                     "project": project.name,
+                    "project_id": str(project.id),
                     "state": (
                         {
                             "name": entry.issue.state.name,
@@ -180,6 +183,7 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
                     "key": None,
                     "name": entry.micro_task.title,
                     "project": None,
+                    "project_id": None,
                     "state": {"name": "Done", "group": "completed", "color": "#16a34a"}
                     if entry.micro_task.done
                     else {"name": "Open", "group": "started", "color": "#f59e0b"},
@@ -190,6 +194,17 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
             continue
         tasks[task_key]["minutes"] += entry.minutes
         tasks[task_key]["people"].add(person["user"]["display_name"])
+        if len(tasks[task_key]["entries"]) < MAX_TASK_ENTRIES:
+            # When the time was spent: the day, from and to (when the row has them), who and how long.
+            tasks[task_key]["entries"].append(
+                {
+                    "date": key,
+                    "start": entry.start_time.strftime("%H:%M") if entry.start_time else None,
+                    "end": entry.end_time.strftime("%H:%M") if entry.end_time else None,
+                    "minutes": entry.minutes,
+                    "person": person["user"]["display_name"],
+                }
+            )
         person["tasks"].add(task_key)
 
     # How each person's tasks are going, from all the time reported on them.
@@ -270,7 +285,14 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
         ],
         "projects": sorted(projects.values(), key=lambda row: -row["minutes"]),
         "tasks": sorted(
-            ({**task, "people": sorted(task["people"])} for task in tasks.values()),
+            (
+                {
+                    **task,
+                    "people": sorted(task["people"]),
+                    "entries": sorted(task["entries"], key=lambda e: (e["date"], e["start"] or "")),
+                }
+                for task in tasks.values()
+            ),
             key=lambda row: -row["minutes"],
         )[:TOP_TASKS],
     }

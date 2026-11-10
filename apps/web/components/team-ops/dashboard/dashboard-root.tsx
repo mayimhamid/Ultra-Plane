@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { observer } from "mobx-react";
 import { useSearchParams } from "react-router";
 import { CALENDAR_KINDS, toDateKey } from "@plane/services";
@@ -42,6 +43,9 @@ const DashboardOverview = observer(function DashboardOverview({ workspaceSlug }:
   const periodState = usePeriod("week");
   const { period } = periodState;
   const [team, setTeam] = useState("");
+  // The project row that is open (its tasks), and the task inside it whose times are shown.
+  const [openProject, setOpenProject] = useState<string | null>(null);
+  const [openTask, setOpenTask] = useState<string | null>(null);
   const { permissions } = useCalendarSettings(workspaceSlug);
   const { getUserDetails } = useMember();
   const canView = permissions?.can_view_team ?? false;
@@ -149,27 +153,103 @@ const DashboardOverview = observer(function DashboardOverview({ workspaceSlug }:
         <div className="grid gap-4 lg:grid-cols-2">
           <section aria-label="Projects" className="rounded-lg border border-subtle bg-surface-1 p-4">
             <h2 className="mb-3 text-body-sm-medium text-primary">Time per project</h2>
+            <p className="-mt-2 mb-3 text-caption-sm-regular text-tertiary">
+              Tap a project to see its tasks, and a task to see when the time was spent.
+            </p>
             {data.projects.length === 0 ? (
               <p className="text-body-sm-regular text-tertiary">Nothing reported in this period.</p>
             ) : (
               <ul className="flex flex-col gap-2">
-                {data.projects.map((project) => (
-                  <li key={project.id ?? "micro"} className="flex flex-col gap-1">
-                    <span className="flex items-center justify-between gap-2 text-body-sm-regular">
-                      <span className="truncate text-primary">
-                        {project.identifier ? <span className="text-tertiary">{project.identifier} </span> : null}
-                        {project.name}
-                      </span>
-                      <span className="shrink-0 text-primary tabular-nums">{hours(project.minutes)}</span>
-                    </span>
-                    <span className="h-1.5 overflow-hidden rounded-full bg-layer-1">
-                      <span
-                        className="block h-full rounded-full bg-accent-primary"
-                        style={{ width: `${(project.minutes / maxProject) * 100}%` }}
-                      />
-                    </span>
-                  </li>
-                ))}
+                {data.projects.map((project) => {
+                  const rowKey = project.id ?? "micro";
+                  const isOpen = openProject === rowKey;
+                  const inside = data.tasks.filter((task) => task.project_id === project.id);
+                  return (
+                    <li key={rowKey} className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        aria-expanded={isOpen}
+                        onClick={() => setOpenProject(isOpen ? null : rowKey)}
+                        className="flex flex-col gap-1 rounded-md py-1 text-left hover:bg-layer-1"
+                      >
+                        <span className="flex items-center justify-between gap-2 text-body-sm-regular">
+                          <span className="flex min-w-0 items-center gap-1">
+                            <ChevronRight
+                              className={cn(
+                                "size-4 shrink-0 text-tertiary transition-transform",
+                                isOpen && "rotate-90"
+                              )}
+                              aria-hidden
+                            />
+                            <span className="truncate text-primary">
+                              {project.identifier ? <span className="text-tertiary">{project.identifier} </span> : null}
+                              {project.name}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-primary tabular-nums">{hours(project.minutes)}</span>
+                        </span>
+                        <span className="h-1.5 overflow-hidden rounded-full bg-layer-1">
+                          <span
+                            className="block h-full rounded-full bg-accent-primary"
+                            style={{ width: `${(project.minutes / maxProject) * 100}%` }}
+                          />
+                        </span>
+                      </button>
+                      {isOpen ? (
+                        <ul className="mb-1 ml-5 flex flex-col divide-y divide-subtle rounded-md border border-subtle">
+                          {inside.length === 0 ? (
+                            <li className="px-3 py-2 text-caption-sm-regular text-tertiary">No tasks to show.</li>
+                          ) : null}
+                          {inside.map((task) => {
+                            const taskKey = `${task.kind}-${task.id}`;
+                            const isTaskOpen = openTask === taskKey;
+                            return (
+                              <li key={taskKey}>
+                                <button
+                                  type="button"
+                                  aria-expanded={isTaskOpen}
+                                  onClick={() => setOpenTask(isTaskOpen ? null : taskKey)}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-layer-1"
+                                >
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-body-sm-regular text-primary">
+                                      {task.key ? <span className="text-tertiary">{task.key} </span> : null}
+                                      {task.name}
+                                    </span>
+                                    <span className="block truncate text-caption-sm-regular text-tertiary">
+                                      {task.people.join(", ")}
+                                    </span>
+                                  </span>
+                                  <span className="shrink-0 text-body-sm-medium text-primary tabular-nums">
+                                    {hours(task.minutes)}
+                                  </span>
+                                </button>
+                                {isTaskOpen ? (
+                                  <ul className="flex flex-col gap-0.5 bg-layer-1 px-3 py-2">
+                                    {task.entries.map((entry, entryIndex) => (
+                                      <li
+                                        // eslint-disable-next-line react/no-array-index-key -- rows have no id; the list never reorders
+                                        key={`${entry.date}-${entry.start}-${entry.person}-${entryIndex}`}
+                                        className="flex items-center justify-between gap-2 text-caption-sm-regular text-secondary"
+                                      >
+                                        <span className="min-w-0 truncate">
+                                          {entry.date.slice(5)} ·{" "}
+                                          {entry.start && entry.end ? `${entry.start}–${entry.end}` : "during the day"}{" "}
+                                          · {entry.person}
+                                        </span>
+                                        <span className="shrink-0 tabular-nums">{hours(entry.minutes)}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
