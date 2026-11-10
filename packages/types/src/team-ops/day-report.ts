@@ -232,9 +232,13 @@ export type TReportSummary = {
     key: string | null;
     name: string;
     project: string | null;
+    /** The project's id (micro tasks have none), to group the tasks under a project. */
+    project_id: string | null;
     /** The work item's state in its project (micro tasks: Open or Done). */
     state: { name: string; group: string; color: string } | null;
     minutes: number;
     people: string[];
+    /** When the time was spent: the day, from and to (when the row has them), who and how long. */
+    entries: { date: string; start: string | null; end: string | null; minutes: number; person: string }[];
   })[];
 };
