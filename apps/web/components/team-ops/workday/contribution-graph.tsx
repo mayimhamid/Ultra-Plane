@@ -5,6 +5,7 @@
  */
 
 import { useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import useSWR from "swr";
 import { WorkdayService, buildHeatGrid, formatHm, toDateKey } from "@plane/services";
@@ -36,6 +37,8 @@ const ROW_LABELS = [
 ];
 const SATURDAY = 6;
 const LABEL_COLUMN = "1.75rem";
+// The same gap between squares, across and down.
+const GAP = "4px";
 const monthShort = new Intl.DateTimeFormat("en-US", { month: "short" });
 const monthLong = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
 const full = new Intl.DateTimeFormat("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -117,7 +120,10 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
       cells: week.map((cell, row) => ({ key: cell?.date ?? `${anchor}-pad-${row}`, cell })),
     };
   });
-  const columns = `${LABEL_COLUMN} repeat(${weeks.length}, minmax(0, 1fr))`;
+  // Squares are exactly as wide as they are tall: their size comes from the width of the box (container units),
+  // so the gap is the same between columns and between rows, whatever the width.
+  const cellSize = `calc((100cqw - ${LABEL_COLUMN} - ${weeks.length} * ${GAP}) / ${weeks.length})`;
+  const columns = `${LABEL_COLUMN} repeat(${weeks.length}, var(--cell))`;
 
   return (
     <section
@@ -155,8 +161,11 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
       </header>
 
       {/* Wide screens: the whole year, squares that grow with the width. */}
-      <div className="hidden md:block">
-        <div className="grid gap-[3px]" style={{ gridTemplateColumns: columns }}>
+      <div
+        className="hidden md:block"
+        style={{ containerType: "inline-size", "--cell": cellSize, "--gap": GAP } as CSSProperties}
+      >
+        <div className="grid gap-x-[var(--gap)]" style={{ gridTemplateColumns: columns }}>
           <span />
           {weeks.map(({ key, label }) => (
             <span key={key} className="h-[15px] overflow-visible text-[10px] whitespace-nowrap text-tertiary">
@@ -165,8 +174,8 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
           ))}
         </div>
         <div
-          className="mt-[3px] grid grid-flow-col gap-[3px]"
-          style={{ gridTemplateColumns: columns, gridTemplateRows: "repeat(7, auto)" }}
+          className="mt-[var(--gap)] grid grid-flow-col gap-[var(--gap)]"
+          style={{ gridTemplateColumns: columns, gridTemplateRows: "repeat(7, var(--cell))" }}
         >
           {ROW_LABELS.map((row) => (
             <span key={row.key} className="flex items-center text-[10px] text-tertiary">
@@ -178,12 +187,12 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
               cell ? (
                 <div
                   key={key}
-                  className={cn("aspect-square rounded-[2px]", cell.date > today && "opacity-40")}
+                  className={cn("rounded-[3px]", cell.date > today && "opacity-40")}
                   style={{ backgroundColor: LEVEL_COLOR[cell.level] }}
                   title={describe(cell)}
                 />
               ) : (
-                <div key={key} className="aspect-square" />
+                <div key={key} />
               )
             )
           )}
@@ -261,7 +270,7 @@ export function ContributionGraph({ workspaceSlug, userId }: Props) {
       <footer className="flex items-center justify-end gap-1 text-caption-sm-regular text-tertiary">
         Less
         {LEVEL_COLOR.map((color) => (
-          <span key={color} className="size-[11px] rounded-[2px]" style={{ backgroundColor: color }} />
+          <span key={color} className="size-[11px] rounded-[3px]" style={{ backgroundColor: color }} />
         ))}
         More
       </footer>
