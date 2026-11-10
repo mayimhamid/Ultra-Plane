@@ -99,3 +99,20 @@ class HubSecretLog(BaseModel):
     class Meta:
         db_table = "tops_hub_secret_log"
         ordering = ("-created_at",)
+
+
+class HubLink(BaseModel):
+    """A link the team keeps in the Hub (a dashboard, a repository, a tool), with a short note."""
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_ops_hub_links")
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_ops_hub_links")
+    title = models.CharField(max_length=200)
+    url = models.CharField(max_length=2000)
+    note = models.TextField(blank=True, default="")
+    group = models.CharField(max_length=60, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Hub Link"
+        verbose_name_plural = "Hub Links"
+        db_table = "tops_hub_link"
+        ordering = ("group", "title")

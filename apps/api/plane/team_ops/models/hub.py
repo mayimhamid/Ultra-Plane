@@ -132,6 +132,11 @@ class HubMessage(BaseModel):
     )
     edited_at = models.DateTimeField(null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
+    # Pinned to the top of the chat; the pins of a channel are numbered by when they were pinned.
+    pinned_at = models.DateTimeField(null=True, blank=True)
+    pinned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
 
     class Meta:
         verbose_name = "Hub Message"

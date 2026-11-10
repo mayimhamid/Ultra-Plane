@@ -78,6 +78,8 @@ export type THubMessage = {
   session: string | null;
   created_at: string;
   edited_at: string | null;
+  /** When it was pinned to the top of the chat; `null` when it is not pinned. */
+  pinned_at: string | null;
   is_deleted: boolean;
   mentions: THubPerson[];
   mentions_me: boolean;
@@ -437,3 +439,15 @@ export type TModuleRelationItem = {
 };
 export type TModuleRelation = { id: string; from: string; to: string; type: TModuleRelationKind };
 export type TModuleRelations = { issues: TModuleRelationItem[]; relations: TModuleRelation[] };
+
+export type THubLink = {
+  id: string;
+  title: string;
+  url: string;
+  note: string;
+  group: string;
+  author: THubPerson;
+  created_at: string;
+};
+
+export type THubLinkPayload = { url: string; title?: string; note?: string; group?: string };

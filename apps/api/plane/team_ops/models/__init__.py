@@ -14,7 +14,7 @@ from .calendar_entry import WORKING_MODES, CalendarEntry, CalendarTemplate, Leav
 from .team import OpsTeam, OpsTeamMember
 from .hub import HubAttachment, HubChannel, HubMention, HubMessage, HubReaction, HubReadState, WorkSession
 from .flow import Flow, FlowStage, FlowStageModule
-from .hub_content import HubDoc, HubSecret, HubSecretAccess, HubSecretLog
+from .hub_content import HubDoc, HubLink, HubSecret, HubSecretAccess, HubSecretLog
 from .leave_request import LeaveRequest
 from .push import PushSubscription
 from .workday import FreezeCredit, OpsNotification, WeekPlanConfirmation, WorkApproval, WorkDay, WorkInterruption
@@ -39,6 +39,7 @@ __all__ = [
     "ISO_WEEKDAYS",
     "WorkSession",
     "HubReadState",
+    "HubLink",
     "HubMessage",
     "HubReaction",
     "HubMention",

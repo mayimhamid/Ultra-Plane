@@ -8,7 +8,7 @@ from django.utils.dateparse import parse_datetime
 
 # Third party imports
 from rest_framework import status
-from rest_framework.exceptions import NotFound, ParseError
+from rest_framework.exceptions import NotFound, ParseError, PermissionDenied
 from rest_framework.response import Response
 
 # Module imports
@@ -64,6 +64,7 @@ def _message_payload(message, viewer):
         "session": message.session_id,
         "created_at": message.created_at,
         "edited_at": message.edited_at,
+        "pinned_at": message.pinned_at,
         "is_deleted": deleted,
         "mentions": [] if deleted else [person(mention.user) for mention in message.mentions.all()],
         "mentions_me": (not deleted) and any(mention.user_id == viewer.id for mention in message.mentions.all()),
@@ -263,6 +264,53 @@ class HubMessageReactionEndpoint(BaseAPIView):
             .get(pk=message.pk)
         )
         return Response(_message_payload(message, request.user))
+
+
+class HubMessagePinEndpoint(BaseAPIView):
+    def _message(self, request, slug, pk):
+        workspace = Workspace.objects.get(slug=slug)
+        message = HubMessage.objects.filter(pk=pk, channel__workspace=workspace).select_related("channel").first()
+        if message is None:
+            raise NotFound("Message not found.")
+        channel = hub.get_channel(workspace, message.channel_id, request.user)
+        if not hub.can_post(channel, request.user, CalendarAccess(request.user, workspace).is_admin):
+            raise PermissionDenied("Only people who can write here can pin.")
+        return message
+
+    def _answer(self, message, request):
+        message = (
+            HubMessage.objects.select_related("author")
+            .prefetch_related("mentions__user", "attachments", "reactions__user")
+            .get(pk=message.pk)
+        )
+        return Response(_message_payload(message, request.user))
+
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug, pk):
+        message = self._message(request, slug, pk)
+        hub.set_pin(message, request.user, True)
+        return self._answer(message, request)
+
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def delete(self, request, slug, pk):
+        message = self._message(request, slug, pk)
+        hub.set_pin(message, request.user, False)
+        return self._answer(message, request)
+
+
+class HubChannelPinsEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug, pk):
+        """The pinned messages of a channel, the first pinned first (so #1 is the oldest pin)."""
+        workspace = Workspace.objects.get(slug=slug)
+        channel = hub.get_channel(workspace, pk, request.user)
+        pins = (
+            HubMessage.objects.filter(channel=channel, pinned_at__isnull=False, is_deleted=False)
+            .select_related("author")
+            .prefetch_related("mentions__user", "attachments", "reactions__user")
+            .order_by("pinned_at")
+        )
+        return Response({"results": [_message_payload(m, request.user) for m in pins]})
 
 
 class HubAttachmentDownloadEndpoint(BaseAPIView):

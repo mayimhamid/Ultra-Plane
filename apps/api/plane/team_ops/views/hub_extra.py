@@ -4,6 +4,8 @@
 
 """Hub sections beyond chat: people and private messages, the Doc Hub, the Files library, Secrets and Flows."""
 
+import re
+
 # Django imports
 from django.db.models import Q
 
@@ -16,7 +18,7 @@ from rest_framework.response import Response
 from plane.app.permissions import allow_permission
 from plane.app.views.base import BaseAPIView
 from plane.db.models import Project, ProjectMember, User, Workspace
-from plane.team_ops.models import Flow, HubAttachment, HubDoc, HubSecretAccess
+from plane.team_ops.models import Flow, HubAttachment, HubDoc, HubLink, HubSecretAccess
 from plane.team_ops.services import doc_pages, flows, hub, hub_files
 from plane.team_ops.services import secrets as secret_service
 from plane.team_ops.services.access import CALENDAR_ROLES, CalendarAccess, calendar_user_ids
@@ -579,3 +581,103 @@ class FlowProjectModulesEndpoint(BaseAPIView):
         if not flows.can_edit(request.user, project, is_admin):
             return _forbidden()
         return Response({"results": flows.modules_of_project(project)})
+
+
+def _link_payload(link):
+    return {
+        "id": link.id,
+        "title": link.title,
+        "url": link.url,
+        "note": link.note,
+        "group": link.group,
+        "author": person(link.author),
+        "created_at": link.created_at,
+    }
+
+
+def _clean_url(value):
+    url = str(value or "").strip()
+    if not url or len(url) > 2000:
+        raise ParseError(detail="Give a link.")
+    # Only web addresses: no javascript:, data: and the like. "host:3000/x" has a port, not a scheme.
+    if re.match(r"^[a-z][a-z0-9+.-]*:(?!\d)", url, re.IGNORECASE) and not url.lower().startswith(
+        ("http://", "https://")
+    ):
+        raise ParseError(detail="A link starts with http:// or https://.")
+    if not url.lower().startswith(("http://", "https://")):
+        url = "https://" + url
+    return url
+
+
+def _link_fields(data, partial=False):
+    fields = {}
+    if not partial or "url" in data:
+        fields["url"] = _clean_url(data.get("url"))
+    if not partial or "title" in data:
+        title = str(data.get("title") or "").strip()
+        if not title:
+            title = fields.get("url", "")[:200]
+        if len(title) > 200:
+            raise ParseError(detail="The title is too long.")
+        fields["title"] = title
+    if not partial or "note" in data:
+        note = str(data.get("note") or "").strip()
+        if len(note) > 1000:
+            raise ParseError(detail="The note is too long.")
+        fields["note"] = note
+    if not partial or "group" in data:
+        group = str(data.get("group") or "").strip()
+        if len(group) > 60:
+            raise ParseError(detail="The group name is too long.")
+        fields["group"] = group
+    return fields
+
+
+class HubLinkListEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug):
+        workspace, _ = _member(request, slug)
+        if workspace is None:
+            return _forbidden()
+        links = HubLink.objects.filter(workspace=workspace).select_related("author")[:1000]
+        return Response({"results": [_link_payload(link) for link in links]})
+
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        workspace, _ = _member(request, slug)
+        if workspace is None:
+            return _forbidden()
+        link = HubLink.objects.create(workspace=workspace, author=request.user, **_link_fields(request.data))
+        return Response(_link_payload(link), status=status.HTTP_201_CREATED)
+
+
+class HubLinkDetailEndpoint(BaseAPIView):
+    def _link(self, request, slug, pk):
+        workspace, is_admin = _member(request, slug)
+        if workspace is None:
+            return None, _forbidden()
+        link = HubLink.objects.filter(pk=pk, workspace=workspace).select_related("author").first()
+        if link is None:
+            raise NotFound("Link not found.")
+        # The one who saved a link (or an admin) changes it; everyone else can only use it.
+        if link.author_id != request.user.id and not is_admin:
+            return None, _forbidden()
+        return link, None
+
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def patch(self, request, slug, pk):
+        link, denied = self._link(request, slug, pk)
+        if denied:
+            return denied
+        for key, value in _link_fields(request.data, partial=True).items():
+            setattr(link, key, value)
+        link.save()
+        return Response(_link_payload(link))
+
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def delete(self, request, slug, pk):
+        link, denied = self._link(request, slug, pk)
+        if denied:
+            return denied
+        link.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

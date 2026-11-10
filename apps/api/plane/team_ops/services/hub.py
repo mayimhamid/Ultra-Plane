@@ -292,12 +292,31 @@ def toggle_reaction(message, user, emoji):
     HubMessage.objects.filter(pk=message.pk).update(updated_at=timezone.now())
 
 
+MAX_PINS = 100
+
+
+def set_pin(message, user, pinned):
+    """Pin a message to the top of its channel, or take it off. Anyone who can write in the channel may."""
+    if message.is_deleted:
+        raise ParseError(detail="This message was deleted.")
+    if pinned and message.pinned_at is None:
+        if HubMessage.objects.filter(channel=message.channel, pinned_at__isnull=False).count() >= MAX_PINS:
+            raise ParseError(detail=f"A chat has at most {MAX_PINS} pinned messages.")
+        HubMessage.objects.filter(pk=message.pk).update(
+            pinned_at=timezone.now(), pinned_by=user, updated_at=timezone.now()
+        )
+    elif not pinned and message.pinned_at is not None:
+        HubMessage.objects.filter(pk=message.pk).update(pinned_at=None, pinned_by=None, updated_at=timezone.now())
+
+
 def delete_message(message, user, is_admin):
     """The author (or a workspace admin) removes a message. The row stays so threads keep their shape."""
     if message.author_id != user.id and not is_admin:
         raise ParseError(detail="You can only delete your own messages.")
     message.is_deleted = True
     message.body = ""
+    message.pinned_at = None
+    message.pinned_by = None
     message.save()
 
 

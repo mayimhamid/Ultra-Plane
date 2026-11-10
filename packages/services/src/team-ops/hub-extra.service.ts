@@ -13,6 +13,8 @@ import type {
   THubDoc,
   THubDocPayload,
   THubPerson,
+  THubLink,
+  THubLinkPayload,
   THubSecret,
   THubSecretLog,
   THubSecretPayload,
@@ -99,6 +101,30 @@ export class HubExtraService extends APIService {
 
   async deleteFile(workspaceSlug: string, id: string): Promise<void> {
     return this.delete(`${this.base(workspaceSlug)}/library/${id}/`)
+      .then(() => undefined)
+      .catch(fail);
+  }
+
+  async listLinks(workspaceSlug: string): Promise<THubLink[]> {
+    return this.get(`${this.base(workspaceSlug)}/links/`)
+      .then((response) => response?.data?.results)
+      .catch(fail);
+  }
+
+  async createLink(workspaceSlug: string, payload: THubLinkPayload): Promise<THubLink> {
+    return this.post(`${this.base(workspaceSlug)}/links/`, payload)
+      .then((response) => response?.data)
+      .catch(fail);
+  }
+
+  async updateLink(workspaceSlug: string, id: string, payload: Partial<THubLinkPayload>): Promise<THubLink> {
+    return this.patch(`${this.base(workspaceSlug)}/links/${id}/`, payload)
+      .then((response) => response?.data)
+      .catch(fail);
+  }
+
+  async deleteLink(workspaceSlug: string, id: string): Promise<void> {
+    return this.delete(`${this.base(workspaceSlug)}/links/${id}/`)
       .then(() => undefined)
       .catch(fail);
   }

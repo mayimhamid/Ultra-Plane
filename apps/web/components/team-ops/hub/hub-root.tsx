@@ -6,7 +6,7 @@
 
 import { observer } from "mobx-react";
 import { useSearchParams } from "react-router";
-import { AtSign, BookOpen, KeyRound, Megaphone, MessagesSquare } from "lucide-react";
+import { AtSign, BookOpen, KeyRound, Link2, Megaphone, MessagesSquare } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@makeplane/propel/components/badge";
 import { Button } from "@makeplane/propel/components/button";
@@ -20,6 +20,7 @@ import { hubExtraService, useHubChannels, useHubMentions, useHubPeople } from "@
 import { getErrorMessage } from "../calendar/error-message";
 import { ChannelView } from "./channel-view";
 import { DocHubView } from "./doc-hub-view";
+import { LinksView } from "./links-view";
 import { SecretsView } from "./secrets-view";
 
 type Props = { workspaceSlug: string };
@@ -31,12 +32,13 @@ const dateFormat = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-const SECTIONS = ["mentions", "docs", "files", "secrets"] as const; // "files" is kept for old links
+const SECTIONS = ["mentions", "docs", "files", "links", "secrets"] as const; // "files" is kept for old links
 type TSection = (typeof SECTIONS)[number];
 const SECTION_LABEL: Record<TSection, string> = {
   mentions: "Mentions",
   docs: "Doc Hub",
   files: "Doc Hub",
+  links: "Links",
   secrets: "Secrets",
 };
 
@@ -264,7 +266,7 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
           </div>
         </Group>
         <Group title="Library">
-          {(["docs", "secrets"] as const).map((item) => (
+          {(["docs", "links", "secrets"] as const).map((item) => (
             <SideButton
               key={item}
               active={section === item || (item === "docs" && section === "files")}
@@ -272,6 +274,8 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
               lead={
                 item === "docs" ? (
                   <IconTile icon={BookOpen} color="#0d9488" />
+                ) : item === "links" ? (
+                  <IconTile icon={Link2} color="#2563eb" />
                 ) : (
                   <IconTile icon={KeyRound} color="#475569" />
                 )
@@ -299,6 +303,7 @@ export const HubRoot = observer(function HubRoot({ workspaceSlug }: Props) {
         <div className="min-h-0 flex-1">
           {section === "mentions" ? <MentionsView workspaceSlug={workspaceSlug} onOpenChannel={openChannel} /> : null}
           {section === "docs" || section === "files" ? <DocHubView workspaceSlug={workspaceSlug} /> : null}
+          {section === "links" ? <LinksView workspaceSlug={workspaceSlug} /> : null}
           {section === "secrets" ? <SecretsView workspaceSlug={workspaceSlug} /> : null}
           {!section && active ? (
             // On a phone an open chat covers the whole screen, with no frame or page bar; its back button

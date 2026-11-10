@@ -142,6 +142,26 @@ export const useHubChannel = (workspaceSlug: string, channelId: string | null, o
     [workspaceSlug]
   );
 
+  // The pinned messages, first pinned first. They are asked for apart from the messages, so a pin that is older
+  // than the loaded page is still there; a pin or an unpin by anyone shows up within a few seconds.
+  const { data: pins, mutate: refreshPins } = useSWR(
+    channelId && `TEAM_OPS_HUB_PINS_${channelId}`,
+    () => hubService.listPins(workspaceSlug, channelId!),
+    { refreshInterval: MESSAGE_POLL_MS * 2 }
+  );
+
+  const pin = useCallback(
+    async (messageId: string, pinned: boolean) => {
+      const message = await hubService.pinMessage(workspaceSlug, messageId, pinned);
+      setMessages((list) => merge(list ?? [], [message]));
+      await refreshPins();
+    },
+    [workspaceSlug, refreshPins]
+  );
+
+  /** Puts messages that are older than the loaded page in the list, so they can be scrolled to. */
+  const addMessages = useCallback((extra: THubMessage[]) => setMessages((list) => merge(list ?? [], extra)), []);
+
   const remove = useCallback(
     async (messageId: string) => {
       await hubService.deleteMessage(workspaceSlug, messageId);
@@ -166,6 +186,9 @@ export const useHubChannel = (workspaceSlug: string, channelId: string | null, o
     isLoadingOlder,
     loadOlder,
     react,
+    pins: pins ?? [],
+    pin,
+    addMessages,
     error,
     isLoading: messages === undefined && !error,
     send,
@@ -211,6 +234,13 @@ export const useHubFiles = (workspaceSlug: string) => {
     hubExtraService.listFiles(workspaceSlug)
   );
   return { files: data, refresh: mutate };
+};
+
+export const useHubLinks = (workspaceSlug: string) => {
+  const { data, mutate } = useSWR(`TEAM_OPS_HUB_LINKS_${workspaceSlug}`, () =>
+    hubExtraService.listLinks(workspaceSlug)
+  );
+  return { links: data, refresh: mutate };
 };
 
 export const useHubSecrets = (workspaceSlug: string) => {

@@ -20,6 +20,8 @@ import {
   MessagesSquare,
   Paperclip,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
   Trash2,
   Users,
@@ -481,10 +483,17 @@ function Message(props: MessageProps) {
             </ul>
           ) : null}
 
-          {isAttention || message.edited_at ? (
+          {isAttention || message.edited_at || message.pinned_at ? (
             <span className="mt-0.5 px-2 text-[11px] text-tertiary">
               {isAttention ? <span className="text-warning-primary">Needs attention</span> : null}
-              {isAttention && message.edited_at ? " · " : null}
+              {isAttention && (message.edited_at || message.pinned_at) ? " · " : null}
+              {message.pinned_at ? (
+                <span className="inline-flex items-center gap-0.5">
+                  <Pin className="size-3" aria-hidden />
+                  Pinned
+                </span>
+              ) : null}
+              {message.pinned_at && message.edited_at ? " · " : null}
               {message.edited_at ? "Edited" : null}
             </span>
           ) : null}
@@ -513,6 +522,8 @@ type ActionMenuProps = {
   onClose: () => void;
   onReply: () => void;
   onReact: (emoji: string) => void;
+  canPin: boolean;
+  onPin: () => void;
   onThread: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -531,6 +542,8 @@ function ActionMenu({
   onClose,
   onReply,
   onReact,
+  canPin,
+  onPin,
   onThread,
   onEdit,
   onDelete,
@@ -627,6 +640,16 @@ function ActionMenu({
         <button type="button" role="menuitem" className={menuItemClass} onClick={pick(onReply)}>
           Reply <CornerUpLeft className="size-4 text-secondary" aria-hidden />
         </button>
+        {canPin ? (
+          <button type="button" role="menuitem" className={menuItemClass} onClick={pick(onPin)}>
+            {message.pinned_at ? "Unpin" : "Pin"}
+            {message.pinned_at ? (
+              <PinOff className="size-4 text-secondary" aria-hidden />
+            ) : (
+              <Pin className="size-4 text-secondary" aria-hidden />
+            )}
+          </button>
+        ) : null}
         {replyCount > 0 ? (
           <button type="button" role="menuitem" className={menuItemClass} onClick={pick(onThread)}>
             View {replyCount} {replyCount === 1 ? "reply" : "replies"}
@@ -722,6 +745,35 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
     () => (hub.messages ?? []).filter((message) => !thread || message.id === thread || message.parent === thread),
     [hub.messages, thread]
   );
+
+  // Pinned messages, like Telegram: the bar shows one pin with its number (#1 is the first pinned); tapping it
+  // jumps to that message and moves on to the previous pin, and after #1 it starts again from the newest.
+  const pins = hub.pins;
+  const [pinCursor, setPinCursor] = useState<number | null>(null);
+  const cursor = pins.length === 0 ? -1 : pinCursor !== null && pinCursor < pins.length ? pinCursor : pins.length - 1;
+  useEffect(() => setPinCursor(null), [channel.id]);
+
+  const jumpToPin = () => {
+    const target = pins[cursor];
+    if (!target) return;
+    const find = () => document.getElementById(`message-${target.id}`);
+    const go = (attempt: number) => {
+      const element = find();
+      if (!element) {
+        if (attempt < 5) requestAnimationFrame(() => go(attempt + 1));
+        return;
+      }
+      element.scrollIntoView({ block: "center", behavior: "smooth" });
+      element.animate?.([{ backgroundColor: "rgba(10, 132, 255, 0.22)" }, { backgroundColor: "transparent" }], {
+        duration: 1600,
+        easing: "ease-out",
+      });
+    };
+    // A pin older than the loaded page is added to the list first.
+    if (!find()) hub.addMessages([target]);
+    go(0);
+    setPinCursor(cursor > 0 ? cursor - 1 : pins.length - 1);
+  };
 
   // Scrolling: the newest message stays in view while reading the end; reading older ones is not disturbed.
   const scroller = useRef<HTMLDivElement>(null);
@@ -979,6 +1031,40 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
         <h2 className="min-w-0 flex-1 truncate text-body-md-semibold text-primary">{channel.name}</h2>
       </header>
 
+      {!thread && cursor >= 0 ? (
+        <button
+          type="button"
+          onClick={jumpToPin}
+          aria-label={`Go to pinned message ${pins.length > 1 ? `#${cursor + 1}` : ""}`}
+          className="flex min-h-11 w-full items-center gap-2.5 border-b border-subtle bg-surface-1 px-3 py-1 text-left active:bg-layer-1 md:hover:bg-layer-1"
+        >
+          {/* One segment for each pin, the one that will be opened lit up, as in Telegram. */}
+          <span aria-hidden className="flex h-8 w-0.5 shrink-0 flex-col gap-px">
+            {pins.slice(-4).map((pin, index, shownPins) => {
+              const position = pins.length - shownPins.length + index;
+              return (
+                <span
+                  key={pin.id}
+                  className={cn("w-full flex-1 rounded-full", position === cursor ? "bg-[#0a84ff]" : "bg-[#0a84ff]/30")}
+                />
+              );
+            })}
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="text-caption-sm-medium text-[#0a84ff]">
+              Pinned message{pins.length > 1 ? ` #${cursor + 1}` : ""}
+            </span>
+            <span
+              className="truncate text-body-xs-regular text-secondary"
+              dir={RTL.test(pins[cursor].body) ? "rtl" : undefined}
+            >
+              {pins[cursor].body || (pins[cursor].attachments.length > 0 ? "A file" : "")}
+            </span>
+          </span>
+          <Pin className="size-4 shrink-0 text-tertiary" aria-hidden />
+        </button>
+      ) : null}
+
       {thread ? (
         <div className="flex items-center justify-between gap-2 border-b border-subtle bg-layer-1 px-3 py-1.5">
           <span className="truncate text-caption-sm-medium text-secondary">
@@ -1039,7 +1125,7 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
                 {separator ? (
                   <p className="py-2 text-center text-[11px] font-medium text-tertiary">{stamp(message.created_at)}</p>
                 ) : null}
-                <div className="message-in">
+                <div id={`message-${message.id}`} className="message-in">
                   <Message
                     message={message}
                     isOwn={isOwn}
@@ -1070,6 +1156,8 @@ export const ChannelView = observer(function ChannelView({ workspaceSlug, channe
           onClose={closeActionMenu}
           onReply={() => shared.onReply(actionMenu.message)}
           onReact={(emoji) => shared.onReact(actionMenu.message, emoji)}
+          canPin={channel.can_post}
+          onPin={() => void guard(() => hub.pin(actionMenu.message.id, !actionMenu.message.pinned_at))}
           onThread={() => setThread(actionMenu.message.id)}
           onEdit={() => setEditingId(actionMenu.message.id)}
           onDelete={() => void guard(() => hub.remove(actionMenu.message.id))}

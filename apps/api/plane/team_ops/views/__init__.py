@@ -25,6 +25,8 @@ from .hub import (
     HubMentionEndpoint,
     HubMessageDetailEndpoint,
     HubMessageReactionEndpoint,
+    HubMessagePinEndpoint,
+    HubChannelPinsEndpoint,
     HubMessageListEndpoint,
 )
 from .hub_extra import (
@@ -36,6 +38,8 @@ from .hub_extra import (
     HubDocDetailEndpoint,
     HubDocListEndpoint,
     HubFileLibraryDetailEndpoint,
+    HubLinkDetailEndpoint,
+    HubLinkListEndpoint,
     HubFileLibraryEndpoint,
     HubPeopleEndpoint,
     HubSecretAccessEndpoint,
@@ -116,6 +120,10 @@ __all__ = [
     "HubMentionEndpoint",
     "HubMessageDetailEndpoint",
     "HubMessageReactionEndpoint",
+    "HubMessagePinEndpoint",
+    "HubChannelPinsEndpoint",
+    "HubLinkListEndpoint",
+    "HubLinkDetailEndpoint",
     "HubMessageListEndpoint",
     "NotificationEndpoint",
     "WorkdayBreakEndpoint",

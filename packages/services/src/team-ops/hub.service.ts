@@ -96,6 +96,25 @@ export class HubService extends APIService {
       });
   }
 
+  /** Pins a message to the top of its chat (or takes the pin off). */
+  async pinMessage(workspaceSlug: string, messageId: string, pinned: boolean): Promise<THubMessage> {
+    const url = `${this.base(workspaceSlug)}/messages/${messageId}/pin/`;
+    return (pinned ? this.post(url, {}) : this.delete(url))
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /** The pinned messages of a chat, the first pinned first. */
+  async listPins(workspaceSlug: string, channelId: string): Promise<THubMessage[]> {
+    return this.get(`${this.base(workspaceSlug)}/channels/${channelId}/pins/`)
+      .then((response) => response?.data?.results)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
   async deleteMessage(workspaceSlug: string, messageId: string): Promise<void> {
     return this.delete(`${this.base(workspaceSlug)}/messages/${messageId}/`)
       .then(() => undefined)
