@@ -8,6 +8,7 @@ export * from "./time-tracking";
 export * from "./work-calendar";
 export * from "./work-reports";
 export * from "./dashboard";
+export * from "./insights";
 export * from "./leave-requests";
 export * from "./workday";
 export * from "./control";

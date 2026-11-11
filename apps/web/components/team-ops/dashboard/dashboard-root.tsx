@@ -16,6 +16,7 @@ import { ButtonAvatars } from "@/components/dropdowns/member/avatar";
 import { DAY_KIND_META, DayKindDot } from "@/components/team-ops/calendar/work-mode";
 import { ControlRoot } from "@/components/team-ops/control";
 import { DashboardTabs } from "./dashboard-tabs";
+import { InsightsPanel } from "./insights-panel";
 import {
   DayBars,
   ReportFilters,
@@ -148,6 +149,8 @@ const DashboardOverview = observer(function DashboardOverview({ workspaceSlug }:
           <DayBars days={data.days} onSelect={() => setSearchParams({ view: "control" })} />
         </section>
       ) : null}
+
+      <InsightsPanel workspaceSlug={workspaceSlug} from={period.from} to={period.to} team={team} />
 
       {data ? (
         <div className="grid gap-4 lg:grid-cols-2">

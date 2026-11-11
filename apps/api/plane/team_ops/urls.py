@@ -23,6 +23,7 @@ from plane.team_ops.views import (
     TimeEntryEndpoint,
     TimeEntrySummaryEndpoint,
     DashboardEndpoint,
+    InsightsEndpoint,
     HubAttachmentDownloadEndpoint,
     HubChannelDetailEndpoint,
     HubChannelListEndpoint,
@@ -198,6 +199,7 @@ urlpatterns = [
         name="team-ops-work-report-detail",
     ),
     path("workspaces/<str:slug>/team-ops/dashboard/", DashboardEndpoint.as_view(), name="team-ops-dashboard"),
+    path("workspaces/<str:slug>/team-ops/insights/", InsightsEndpoint.as_view(), name="team-ops-insights"),
     path(
         "workspaces/<str:slug>/team-ops/leave-requests/", LeaveRequestEndpoint.as_view(), name="team-ops-leave-requests"
     ),

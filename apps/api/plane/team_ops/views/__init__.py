@@ -17,7 +17,7 @@ from .calendar_policy import (
     CalendarSettingsEndpoint,
 )
 from .work_reports import WorkReportBoardEndpoint, WorkReportDetailEndpoint, WorkReportListEndpoint
-from .dashboard import DashboardEndpoint
+from .dashboard import DashboardEndpoint, InsightsEndpoint
 from .hub import (
     HubAttachmentDownloadEndpoint,
     HubChannelDetailEndpoint,
@@ -114,6 +114,7 @@ __all__ = [
     "TimeEntryEndpoint",
     "TimeEntrySummaryEndpoint",
     "DashboardEndpoint",
+    "InsightsEndpoint",
     "HubAttachmentDownloadEndpoint",
     "HubChannelDetailEndpoint",
     "HubChannelListEndpoint",

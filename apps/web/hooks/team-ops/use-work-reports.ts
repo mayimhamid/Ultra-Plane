@@ -8,7 +8,13 @@ import { useCallback } from "react";
 import useSWR from "swr";
 // plane imports
 import { TeamDashboardService, WorkReportService } from "@plane/services";
-import type { TDashboardParams, TReportBoardParams, TReportKindName, TWorkReportPayload } from "@plane/types";
+import type {
+  TDashboardParams,
+  TInsightsParams,
+  TReportBoardParams,
+  TReportKindName,
+  TWorkReportPayload,
+} from "@plane/types";
 
 const workReportService = new WorkReportService();
 
@@ -44,4 +50,11 @@ export const useDashboard = (workspaceSlug: string, enabled: boolean, params: TD
   const key = enabled ? `TEAM_OPS_DASHBOARD_${workspaceSlug}_${JSON.stringify(params)}` : null;
   const { data, error, isLoading } = useSWR(key, () => dashboardService.getDashboard(workspaceSlug, params));
   return { dashboard: data, error, isLoading };
+};
+
+/** Task risk and workload; only fetched for people who may see the team. */
+export const useInsights = (workspaceSlug: string, enabled: boolean, params: TInsightsParams) => {
+  const key = enabled ? `TEAM_OPS_INSIGHTS_${workspaceSlug}_${JSON.stringify(params)}` : null;
+  const { data, error, isLoading } = useSWR(key, () => dashboardService.getInsights(workspaceSlug, params));
+  return { insights: data, error, isLoading };
 };
