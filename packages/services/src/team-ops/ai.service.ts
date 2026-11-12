@@ -24,6 +24,7 @@ import type {
   TAISummaryRequest,
   TAITaskProposals,
   TWorkEvidence,
+  TWorkQuality,
   TWorkEvidenceParams,
 } from "@plane/types";
 // services
@@ -197,6 +198,13 @@ export class TeamAIService extends APIService {
   /** Admins: send the workspace's work items and documents to Plane AI for search. */
   async index(workspaceSlug: string): Promise<{ documents: number; chunks: number }> {
     return this.post(this.path(workspaceSlug, "index/"))
+      .then((response) => response?.data)
+      .catch(this.rethrow);
+  }
+
+  /** Managers: quality of work per person with the trend (no AI needed). */
+  async getQuality(workspaceSlug: string, params: TWorkEvidenceParams): Promise<TWorkQuality> {
+    return this.get(this.path(workspaceSlug, "quality/"), { params })
       .then((response) => response?.data)
       .catch(this.rethrow);
   }

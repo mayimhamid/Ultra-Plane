@@ -9,6 +9,7 @@ from plane.team_ops.views import (
     AIDailyReviewEndpoint,
     AIJobEndpoint,
     AIJobFeedbackEndpoint,
+    AIQualityEndpoint,
     AITrainingExportEndpoint,
     AIChatEndpoint,
     AIConversationEndpoint,
@@ -523,6 +524,7 @@ urlpatterns += [
     ),
     path("workspaces/<str:slug>/team-ops/ai/daily/", AIDailyReviewEndpoint.as_view(), name="team-ops-ai-daily"),
     path("workspaces/<str:slug>/team-ops/ai/ask/", AIAskEndpoint.as_view(), name="team-ops-ai-ask"),
+    path("workspaces/<str:slug>/team-ops/ai/quality/", AIQualityEndpoint.as_view(), name="team-ops-ai-quality"),
     path(
         "workspaces/<str:slug>/team-ops/ai/training/",
         AITrainingExportEndpoint.as_view(),

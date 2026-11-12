@@ -9,5 +9,6 @@ export * from "./ai-assistant";
 export * from "./ai-daily-review";
 export * from "./ai-issue-summary";
 export * from "./ai-managers-tab";
+export * from "./ai-quality";
 export * from "./ai-settings-card";
 export * from "./ai-team-tab";

@@ -255,3 +255,41 @@ export type TAskResult = {
 };
 
 export type TAskPayload = { question: string; from: string; to: string; team?: string };
+
+/** Quality of one person's work in a period, with the period before as the trend. */
+export type TQualityPerson = {
+  user: { id: string; display_name: string; avatar_url: string | null };
+  reported_hours: number;
+  days_reported: number;
+  finished: number;
+  finished_on_time: number;
+  finished_late: number;
+  finished_without_due_date: number;
+  /** Percent of finished tasks with a due date that met it; `null` without due dates. */
+  on_time_rate: number | null;
+  reopened: number;
+  estimated_finished: number;
+  over_estimate: number;
+  /** Median reported / planned time on finished tasks with a plan. */
+  estimate_ratio: number | null;
+  meeting_share: number | null;
+  tasks_a_day: number;
+  documents: number;
+  work_sessions: number;
+  comments: number;
+  reports_sent: number;
+  reports_late: number;
+  reports_changed: number;
+  projects: { name: string; hours: number }[];
+  previous: { reported_hours: number; finished: number; on_time_rate: number | null; reopened: number };
+  notes: string[];
+};
+
+export type TWorkQuality = {
+  from: string;
+  to: string;
+  previous_from: string;
+  previous_to: string;
+  people: TQualityPerson[];
+  notice: string;
+};

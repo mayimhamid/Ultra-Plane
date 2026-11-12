@@ -188,6 +188,7 @@ from .ai import (
     AIDailyReviewEndpoint,
     AIJobEndpoint,
     AIJobFeedbackEndpoint,
+    AIQualityEndpoint,
     AITrainingExportEndpoint,
     AIChatEndpoint,
     AIConversationEndpoint,

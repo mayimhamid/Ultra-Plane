@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { CircleCheck, CircleHelp, Send, ThumbsDown, ThumbsUp } from "lucide-react";
 import { observer } from "mobx-react";
+import { useSearchParams } from "react-router";
 import useSWR from "swr";
 import { setToast } from "@plane/blocks/toast";
 import type { TAIJob, TAskResult } from "@plane/types";
@@ -18,12 +19,45 @@ import { teamAIService, useAIStatus } from "@/hooks/team-ops/use-ai";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
 
-const EXAMPLES = [
-  "Who reported the most hours, and who the fewest?",
-  "Which reports this week have hours without any trace in Plane?",
-  "Who spent long hours on research or config changes, and what did they write?",
-  "Which tasks are overdue, and who has them?",
-  "Who is overloaded and who has room for more work?",
+/** What a manager asks about their team, grouped by what they want to find out. */
+const EXAMPLES: { group: string; questions: string[] }[] = [
+  {
+    group: "Who did what",
+    questions: [
+      "Who reported the most hours and who the fewest, and what did each of them finish?",
+      "این هفته هر کس روی چه پروژه‌هایی وقت گذاشته؟",
+    ],
+  },
+  {
+    group: "Quality",
+    questions: [
+      "Whose finished work came back (reopened), and on which tasks?",
+      "چه کسی بیشتر تسک‌هایش را دیر تحویل داده و چقدر دیر؟",
+      "Who keeps going over their planned time, and by how much?",
+    ],
+  },
+  {
+    group: "Real work or not",
+    questions: [
+      "Which reports have hours with no trace in Plane (no activity, document or note)?",
+      "چه کسی ساعت‌های زیادی برای تحقیق یا تغییر کانفیگ نوشته و توضیحش چه بوده؟",
+      "Who marked tasks done that are still open?",
+    ],
+  },
+  {
+    group: "Focus and load",
+    questions: [
+      "Who spends the most time in meetings, and who jumps between too many tasks a day?",
+      "Who is overloaded, and who has room for more work?",
+    ],
+  },
+  {
+    group: "Trend and next steps",
+    questions: [
+      "Who got better or worse compared with the period before?",
+      "Which tasks are overdue or blocked, and who should I talk to first?",
+    ],
+  },
 ];
 
 const SECTION_LABEL: Record<string, string> = {
@@ -100,7 +134,9 @@ export const AIAsk = observer(function AIAsk({ workspaceSlug }: Props) {
   const periodState = usePeriod("week");
   const { period } = periodState;
   const [team, setTeam] = useState("");
-  const [question, setQuestion] = useState("");
+  const [searchParams] = useSearchParams();
+  // A question sent from another tab (e.g. "Ask the AI about <person>" in Quality) is ready to send.
+  const [question, setQuestion] = useState(() => searchParams.get("q") ?? "");
   const [running, setRunning] = useState<TAIJob<TAskResult> | null>(null);
   const { usable } = useAIStatus(workspaceSlug);
   const { data: history, mutate } = useSWR(usable ? `TEAM_OPS_AI_ASK_${workspaceSlug}` : null, () =>
@@ -169,16 +205,21 @@ export const AIAsk = observer(function AIAsk({ workspaceSlug }: Props) {
           <Send className="size-4" aria-hidden />
         </button>
       </form>
-      <div className="flex flex-wrap gap-2">
-        {EXAMPLES.map((example) => (
-          <button
-            key={example}
-            type="button"
-            onClick={() => setQuestion(example)}
-            className="rounded-full border border-subtle px-3 py-1 text-body-xs-regular text-secondary hover:bg-layer-1"
-          >
-            {example}
-          </button>
+      <div className="flex flex-col gap-2">
+        {EXAMPLES.map((section) => (
+          <div key={section.group} className="flex flex-wrap items-center gap-2">
+            <span className="w-36 shrink-0 text-caption-sm-medium text-tertiary">{section.group}</span>
+            {section.questions.map((example) => (
+              <button
+                key={example}
+                type="button"
+                onClick={() => setQuestion(example)}
+                className="rounded-full border border-subtle px-3 py-1 text-body-xs-regular text-secondary hover:bg-layer-1"
+              >
+                {example}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
       {running ? (

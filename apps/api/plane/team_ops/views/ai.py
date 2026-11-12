@@ -32,6 +32,7 @@ from plane.team_ops.services.team_view import visible_people
 from plane.team_ops.services.time_entry import parse_uuid
 from plane.team_ops.services.weekly_plan import today_in_timezone
 from plane.team_ops.services.work_evidence import MAX_EVIDENCE_DAYS, ai_payload, build_evidence
+from plane.team_ops.services.work_quality import build_quality
 
 logger = logging.getLogger("plane.team_ops.ai")
 
@@ -453,7 +454,9 @@ class AIAskEndpoint(BaseAPIView):
         start, end = parse_day_range(request.data, require=True, max_days=MAX_EVIDENCE_DAYS)
         narrowed = access.visible_user_ids() is not None or bool(request.data.get("team") or request.data.get("user"))
         today = today_in_timezone(request.user.user_timezone)
-        sections = ai_review.ask_sections(workspace, access, request.user, people, narrowed, start, end, today)
+        sections = ai_review.ask_sections(
+            workspace, access, request.user, people, narrowed, start, end, today, question
+        )
         data = {
             "question": question[:2000],
             "period": f"{start} to {end}",
@@ -490,3 +493,16 @@ class AITrainingExportEndpoint(BaseAPIView):
         response = StreamingHttpResponse(relay(), content_type="application/x-ndjson")
         response["Content-Disposition"] = f'attachment; filename="plane-ai-training-{workspace.slug}.jsonl"'
         return response
+
+
+class AIQualityEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug):
+        """Managers: quality of work per person for `from`-`to` (`team`, `user` narrow it), with the period before
+        as the trend: delivery on time, reopened work, estimates, focus, documents. No AI needed."""
+        workspace, access, people = _manager_people(request, slug, request.query_params)
+        if people is None:
+            return _forbidden()
+        start, end = parse_day_range(request.query_params, require=True, max_days=MAX_EVIDENCE_DAYS)
+        projects = visible_projects(workspace, request.user, access.is_admin)
+        return Response({"from": start, "to": end, **build_quality(workspace, projects, people, start, end)})

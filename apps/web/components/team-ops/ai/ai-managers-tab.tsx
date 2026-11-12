@@ -12,10 +12,12 @@ import { useCalendarSettings } from "@/hooks/team-ops/use-work-calendar";
 // local imports
 import { AIAsk } from "./ai-ask";
 import { AIDailyReview } from "./ai-daily-review";
+import { AIQuality } from "./ai-quality";
 import { AISettingsCard } from "./ai-settings-card";
 import { AITeamTab } from "./ai-team-tab";
 
 const SECTIONS = [
+  { key: "quality", label: "Quality" },
   { key: "evidence", label: "Evidence" },
   { key: "daily", label: "Daily review" },
   { key: "ask", label: "Ask" },
@@ -24,12 +26,12 @@ const SECTIONS = [
 type TSection = (typeof SECTIONS)[number]["key"];
 type Props = { workspaceSlug: string };
 
-/** Dashboard › AI for managers: Evidence (no AI needed), Daily review and Ask, with the AI settings on top. */
+/** Dashboard › AI for managers: Quality and Evidence (no AI needed), Daily review and Ask, with the AI settings on top. */
 export const AIManagersTab = observer(function AIManagersTab({ workspaceSlug }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { permissions } = useCalendarSettings(workspaceSlug);
   const requested = searchParams.get("ai");
-  const section: TSection = SECTIONS.find((item) => item.key === requested)?.key ?? "evidence";
+  const section: TSection = SECTIONS.find((item) => item.key === requested)?.key ?? "quality";
 
   if (!permissions) return null;
   if (!permissions.can_view_team) {
@@ -62,6 +64,7 @@ export const AIManagersTab = observer(function AIManagersTab({ workspaceSlug }: 
           </button>
         ))}
       </div>
+      {section === "quality" ? <AIQuality workspaceSlug={workspaceSlug} /> : null}
       {section === "evidence" ? <AITeamTab workspaceSlug={workspaceSlug} /> : null}
       {section === "daily" ? <AIDailyReview workspaceSlug={workspaceSlug} /> : null}
       {section === "ask" ? <AIAsk workspaceSlug={workspaceSlug} /> : null}

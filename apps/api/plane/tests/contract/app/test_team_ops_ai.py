@@ -13,7 +13,7 @@ import requests
 from django.test import override_settings
 
 from plane.db.models import Issue, IssueActivity, IssueAssignee, State
-from plane.team_ops.models import DayReport, DayReportEntry
+from plane.team_ops.models import DayReport, DayReportEntry, TaskPlan
 from plane.team_ops.services import ai_client
 from plane.team_ops.services.work_evidence import entry_support, level, score_person
 from plane.tests.contract.app.team_ops_support import (
@@ -273,7 +273,7 @@ class TestManagersAI:
         sent = call.call_args.kwargs["json"]
         assert sent["kind"] == "ask" and sent["audience"] == "user"
         sections = sent["input"]["sections"]
-        assert set(sections) == {"people", "daily_notes", "evidence", "risks", "workload"}
+        assert set(sections) == {"people", "daily_notes", "evidence", "risks", "workload", "quality", "projects"}
         assert "member: 8.0 h reported" in sections["people"]["text"]
         assert "Implemented the export endpoint" in sections["daily_notes"]["text"]
         assert str(reported["project"].id) in sent["input"]["project_ids"]
@@ -312,3 +312,56 @@ class TestManagersAI:
             body = b"".join(resp.streaming_content)
         assert body == b'{"messages": []}\n' and "attachment" in resp["Content-Disposition"]
         upstream.close.assert_called_once()
+
+    @pytest.mark.django_db
+    @override_settings(**AI)
+    def test_a_question_naming_someone_carries_their_whole_record(self, admin_client, workspace, reported):
+        body = {"question": "How did member work this week?", "from": str(DAY), "to": str(DAY)}
+        with mock.patch.object(ai_client, "call", return_value={"id": "a2", "status": "queued"}) as call:
+            admin_client.post(url(workspace, "ai/ask/"), body, format="json")
+        person = call.call_args.kwargs["json"]["input"]["sections"]["person"]["text"]
+        assert person.startswith("# member")
+        assert "Implemented the export endpoint" in person and "recorded: activity" in person
+        assert "Quality notes:" in person
+
+
+@pytest.mark.contract
+class TestWorkQuality:
+    @pytest.mark.django_db
+    def test_delivery_rework_estimates_and_trend(self, admin_client, member_client, workspace, member, reported):
+        from datetime import datetime, timezone as dt_timezone
+
+        project = reported["project"]
+        done = State.objects.create(project=project, name="Done", group="completed")
+        doing = reported["worked"].state
+        noon = datetime.combine(DAY, datetime.min.time(), tzinfo=dt_timezone.utc).replace(hour=12)
+        late = Issue.objects.create(project=project, name="Late one", state=done, target_date=DAY - timedelta(days=2))
+        on_time = Issue.objects.create(project=project, name="On time", state=done, target_date=DAY + timedelta(days=1))
+        Issue.objects.filter(pk__in=[late.pk, on_time.pk]).update(completed_at=noon)
+        for issue in (late, on_time):
+            IssueAssignee.objects.create(issue=issue, assignee=member, project=project)
+        TaskPlan.objects.create(workspace=workspace, issue=on_time, planned_minutes=60)
+        report = DayReport.objects.get(workspace=workspace, user=member, date=DAY)
+        DayReportEntry.objects.create(report=report, issue=on_time, minutes=120, note="Wrote the CSV export")
+        # A finished task set back to an open state: the work came back.
+        IssueActivity.objects.create(
+            issue=reported["worked"],
+            project=project,
+            workspace=workspace,
+            actor=member,
+            verb="updated",
+            field="state",
+            old_identifier=done.id,
+            new_identifier=doing.id,
+        )
+
+        query = f"ai/quality/?from={DAY}&to={DAY}"
+        assert member_client.get(url(workspace, query)).status_code == 403
+        data = admin_client.get(url(workspace, query)).data
+        mine = next(p for p in data["people"] if p["user"]["id"] == member.id)
+        assert mine["finished"] == 2 and mine["finished_late"] == 1 and mine["on_time_rate"] == 50
+        assert mine["reopened"] == 1
+        assert mine["estimated_finished"] == 1 and mine["over_estimate"] == 1 and mine["estimate_ratio"] == 2.0
+        assert mine["reported_hours"] == 10.0 and mine["projects"][0]["name"] == "EVD"
+        assert mine["previous"]["finished"] == 0
+        assert any("late" in note for note in mine["notes"]) and any("reopened" in note for note in mine["notes"])
