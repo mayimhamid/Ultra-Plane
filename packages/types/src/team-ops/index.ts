@@ -14,3 +14,4 @@ export * from "./workday";
 export * from "./control";
 export * from "./push";
 export * from "./day-report";
+export * from "./ai";

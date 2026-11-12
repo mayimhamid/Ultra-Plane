@@ -5,6 +5,15 @@
 from django.urls import path
 
 from plane.team_ops.views import (
+    AIChatEndpoint,
+    AIConversationEndpoint,
+    AIIndexEndpoint,
+    AISearchEndpoint,
+    AISettingsEndpoint,
+    AIStatusEndpoint,
+    AISummarizeEndpoint,
+    AITaskProposalEndpoint,
+    AITeamAnalysisEndpoint,
     CalendarAuditEndpoint,
     CalendarEntryBulkEndpoint,
     CalendarEntryDetailEndpoint,
@@ -488,4 +497,17 @@ urlpatterns += [
         name="team-ops-micro-task",
     ),
     path("workspaces/<str:slug>/team-ops/import/tasks/", TaskImportEndpoint.as_view(), name="team-ops-task-import"),
+    path("workspaces/<str:slug>/team-ops/ai/", AIStatusEndpoint.as_view(), name="team-ops-ai-status"),
+    path("workspaces/<str:slug>/team-ops/ai/settings/", AISettingsEndpoint.as_view(), name="team-ops-ai-settings"),
+    path("workspaces/<str:slug>/team-ops/ai/summarize/", AISummarizeEndpoint.as_view(), name="team-ops-ai-summarize"),
+    path("workspaces/<str:slug>/team-ops/ai/tasks/", AITaskProposalEndpoint.as_view(), name="team-ops-ai-tasks"),
+    path("workspaces/<str:slug>/team-ops/ai/chat/", AIChatEndpoint.as_view(), name="team-ops-ai-chat"),
+    path(
+        "workspaces/<str:slug>/team-ops/ai/chat/<uuid:pk>/",
+        AIConversationEndpoint.as_view(),
+        name="team-ops-ai-conversation",
+    ),
+    path("workspaces/<str:slug>/team-ops/ai/search/", AISearchEndpoint.as_view(), name="team-ops-ai-search"),
+    path("workspaces/<str:slug>/team-ops/ai/index/", AIIndexEndpoint.as_view(), name="team-ops-ai-index"),
+    path("workspaces/<str:slug>/team-ops/ai/team/", AITeamAnalysisEndpoint.as_view(), name="team-ops-ai-team"),
 ]

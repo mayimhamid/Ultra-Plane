@@ -470,6 +470,11 @@ LIVE_URL = urljoin(LIVE_BASE_URL, LIVE_BASE_PATH) if LIVE_BASE_URL else None
 # WEB URL
 WEB_URL = os.environ.get("WEB_URL")
 
+# Plane AI (optional): the local AI service. Empty URL = every AI feature is off and hidden.
+PLANE_AI_URL = os.environ.get("PLANE_AI_URL", "").rstrip("/")
+PLANE_AI_TOKEN = os.environ.get("PLANE_AI_TOKEN", "")
+PLANE_AI_TIMEOUT = float(os.environ.get("PLANE_AI_TIMEOUT", "180"))
+
 HARD_DELETE_AFTER_DAYS = int(os.environ.get("HARD_DELETE_AFTER_DAYS", 60))
 
 

@@ -13,6 +13,7 @@ import type { TCalendarKind } from "@plane/types";
 import { cn } from "@plane/utils";
 // components
 import { ButtonAvatars } from "@/components/dropdowns/member/avatar";
+import { AIAssistant, AITeamTab } from "@/components/team-ops/ai";
 import { DAY_KIND_META, DayKindDot } from "@/components/team-ops/calendar/work-mode";
 import { ControlRoot } from "@/components/team-ops/control";
 import { DashboardTabs } from "./dashboard-tabs";
@@ -345,25 +346,32 @@ const DashboardOverview = observer(function DashboardOverview({ workspaceSlug }:
   );
 });
 
-/** The Dashboard: the overview, Tasks, Control for managers; its tabs also lead to Views, Analytics and Archives. */
+/** The Dashboard: the overview, Tasks, Control and AI for managers, the Assistant for everyone when the workspace has
+ * AI; its tabs also lead to Views, Analytics and Archives. */
 export const DashboardRoot = observer(function DashboardRoot({ workspaceSlug }: Props) {
   const [searchParams] = useSearchParams();
   const { permissions } = useCalendarSettings(workspaceSlug);
   const showControl = (permissions?.can_view_team ?? false) || (permissions?.can_manage ?? false);
   const requested = searchParams.get("view");
-  // People who may not see the team open on their tasks.
+  // People who may not see the team open on their tasks; the Assistant is open to everyone.
   const view = !permissions
     ? "overview"
-    : !showControl || requested === "tasks"
-      ? "tasks"
-      : requested === "control"
-        ? "control"
-        : "overview";
+    : requested === "assistant"
+      ? "assistant"
+      : !showControl || requested === "tasks"
+        ? "tasks"
+        : requested === "control"
+          ? "control"
+          : requested === "ai"
+            ? "ai"
+            : "overview";
 
   return (
     <div className="flex w-full flex-col">
       <DashboardTabs workspaceSlug={workspaceSlug} active={view} />
       {view === "control" ? <ControlRoot workspaceSlug={workspaceSlug} embedded /> : null}
+      {view === "ai" ? <AITeamTab workspaceSlug={workspaceSlug} /> : null}
+      {view === "assistant" ? <AIAssistant workspaceSlug={workspaceSlug} /> : null}
       {view === "tasks" ? <TasksView workspaceSlug={workspaceSlug} /> : null}
       {view === "overview" ? <DashboardOverview workspaceSlug={workspaceSlug} /> : null}
     </div>

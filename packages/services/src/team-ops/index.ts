@@ -24,3 +24,4 @@ export * from "./push.service";
 export * from "./day-report.service";
 export * from "./task-import";
 export * from "./password-generator";
+export * from "./ai.service";

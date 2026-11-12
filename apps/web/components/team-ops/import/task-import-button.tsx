@@ -5,7 +5,7 @@
  */
 
 import { Fragment, useRef, useState } from "react";
-import { Brain, CircleHelp, Copy, FileUp, Minus, Pencil, X } from "lucide-react";
+import { Brain, CircleHelp, Copy, FileUp, Minus, Pencil, Sparkles, X } from "lucide-react";
 import useSWR from "swr";
 import { Button } from "@makeplane/propel/components/button";
 import { setToast } from "@plane/blocks/toast";
@@ -13,6 +13,7 @@ import { buildImportPrompt, parseImportText, toDateKey } from "@plane/services";
 import type { TImportItem, TImportRow } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
+import { teamAIService, useAIStatus } from "@/hooks/team-ops/use-ai";
 import { dayReportService, refreshTeamOps } from "@/hooks/team-ops/use-day-report";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
@@ -67,6 +68,7 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
   const [description, setDescription] = useState("");
   const [editing, setEditing] = useState<number | null>(null);
   const file = useRef<HTMLInputElement>(null);
+  const { usable: aiUsable } = useAIStatus(workspaceSlug);
 
   const { data: context } = useSWR(
     open === "prompt" || open === "import" ? `TEAM_OPS_IMPORT_CONTEXT_${workspaceSlug}_${projectId ?? "micro"}` : null,
@@ -139,6 +141,28 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
     try {
       const preview = await request(list, true);
       setItems(list);
+      setRows(preview.rows);
+      setOk(preview.ok);
+    } catch (problem) {
+      setError(getErrorMessage(problem));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** The workspace's own AI answers the same prompt; its tasks go to the usual preview, nothing is added yet. */
+  const generate = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const { tasks } = await teamAIService.proposeTasks(workspaceSlug, prompt);
+      if (tasks.length === 0) {
+        setError("The AI found no tasks in the description. Add more detail and try again.");
+        return;
+      }
+      setOpen("import");
+      const preview = await request(tasks, true);
+      setItems(tasks);
       setRows(preview.rows);
       setOk(preview.ok);
     } catch (problem) {
@@ -328,7 +352,24 @@ export function TaskImportButtons({ workspaceSlug, target, projectId, userId, pe
                 label="Import the answer"
                 onClick={() => setOpen("import")}
               />
+              {aiUsable ? (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  stretch="auto"
+                  label={busy ? "The AI is writing the tasks..." : "Make the tasks with Plane AI"}
+                  icon={<Sparkles className="size-4" />}
+                  loading={busy}
+                  disabled={!context || !description.trim()}
+                  onClick={() => void generate()}
+                />
+              ) : null}
             </div>
+            {error && open === "prompt" ? (
+              <p role="alert" className="text-body-sm-regular text-danger-primary">
+                {error}
+              </p>
+            ) : null}
           </div>
         </Panel>
       ) : null}
