@@ -56,6 +56,7 @@ export const parseSSE = (buffer: string): { events: TAIChatEvent[]; rest: string
 const JOB_ERRORS: Record<string, string> = {
   llm_unavailable: "The AI model is not answering right now. Try again in a few minutes.",
   internal_error: "The AI could not finish this. Try again; if it keeps failing, tell an admin.",
+  ai_disabled: "AI was turned off for this workspace, so this was stopped.",
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

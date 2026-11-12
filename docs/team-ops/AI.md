@@ -84,4 +84,9 @@ model itself, so it rarely matters.
 ## Turning it off
 
 Set Effort to Off in Dashboard › AI (per workspace), or remove `PLANE_AI_URL` from `plane.env` and recreate `api`
-(every AI button disappears). Plane AI can be stopped at any time; Plane only shows that AI is not answering.
+(every AI button disappears). Off also stops the workspace's queued and running AI work at once (the page says it
+was stopped). Plane AI can be stopped at any time; Plane only shows that AI is not answering.
+
+The model frees its memory and CPU by itself: after `PLANE_AI_LLM_IDLE_SECONDS` (default 300) without requests
+the runtime unloads it, so with AI Off (or simply unused) the server gets those gigabytes back within five
+minutes. The next question loads it again, which adds a few seconds.
