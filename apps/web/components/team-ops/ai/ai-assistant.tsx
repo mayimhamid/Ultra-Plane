@@ -16,6 +16,7 @@ import { cn } from "@plane/utils";
 import { teamAIService, useAIConversations, useAIStatus } from "@/hooks/team-ops/use-ai";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
+import { AIMarkdown } from "./ai-markdown";
 
 type Props = { workspaceSlug: string };
 type TMode = "chat" | "summary" | "search";
@@ -166,14 +167,21 @@ function ChatPanel({ workspaceSlug }: Props) {
             <div
               // eslint-disable-next-line react/no-array-index-key -- messages only grow at the end
               key={index}
+              dir="auto"
               className={cn(
-                "max-w-[85%] rounded-lg px-3 py-2 text-body-sm-regular whitespace-pre-wrap",
+                "max-w-[85%] px-4 py-2 text-body-sm-regular",
                 message.role === "user"
-                  ? "self-end bg-accent-primary text-on-color"
-                  : "self-start bg-layer-1 text-primary"
+                  ? "self-end rounded-2xl rounded-ee-sm bg-accent-primary whitespace-pre-wrap text-on-color"
+                  : "self-start rounded-2xl rounded-ss-sm border border-subtle bg-layer-1 text-primary"
               )}
             >
-              {message.content || (busy && index === messages.length - 1 ? "…" : "")}
+              {message.role === "user" ? (
+                message.content
+              ) : message.content ? (
+                <AIMarkdown source={message.content} />
+              ) : busy && index === messages.length - 1 ? (
+                "…"
+              ) : null}
             </div>
           ))}
           {sources.length ? (
@@ -302,7 +310,7 @@ function SummaryPanel({ workspaceSlug }: Props) {
       <section aria-label="Summary" aria-live="polite" className="rounded-lg border border-subtle bg-surface-1 p-4">
         <h2 className="mb-2 text-body-sm-medium text-primary">Summary</h2>
         {busy ? <p className="text-body-sm-regular text-tertiary">Reading...</p> : null}
-        {result ? <p className="text-body-sm-regular whitespace-pre-wrap text-primary">{result}</p> : null}
+        {result ? <AIMarkdown source={result} /> : null}
         {!busy && !result ? (
           <p className="text-body-sm-regular text-tertiary">
             The summary appears here. A work item has its own Summarize button.

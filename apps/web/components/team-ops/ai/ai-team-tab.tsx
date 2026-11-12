@@ -17,6 +17,7 @@ import { teamAIService, useAIStatus, useWorkEvidence } from "@/hooks/team-ops/us
 import { useCalendarSettings } from "@/hooks/team-ops/use-work-calendar";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
+import { AIMarkdown } from "./ai-markdown";
 
 const LEVEL: Record<TEvidenceLevel, { label: string; style: string }> = {
   STRONG: { label: "Well supported", style: "bg-success-subtle text-success-primary" },
@@ -100,7 +101,7 @@ function PersonRow({ person, review }: { person: TEvidencePerson; review?: TAIMe
                 <Sparkles className="size-3.5" aria-hidden />
                 {review.source === "ai" ? "AI review" : "Review from the numbers (clear case, no AI needed)"}
               </span>
-              <p className="text-body-sm-regular whitespace-pre-wrap text-primary">{review.explanation}</p>
+              <AIMarkdown source={review.explanation} />
               {review.questions.length ? (
                 <ul className="list-disc pl-5 text-body-xs-regular text-secondary">
                   {review.questions.map((question) => (

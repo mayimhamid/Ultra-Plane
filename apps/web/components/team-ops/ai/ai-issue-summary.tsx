@@ -11,6 +11,7 @@ import { observer } from "mobx-react";
 import { teamAIService, useAIStatus } from "@/hooks/team-ops/use-ai";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
+import { AIMarkdown } from "./ai-markdown";
 
 type Props = { workspaceSlug: string; issueId: string };
 
@@ -50,7 +51,7 @@ export const AIIssueSummary = observer(function AIIssueSummary({ workspaceSlug, 
         {busy ? "Reading the work item..." : current ? "Summarize again" : "Summarize with AI"}
       </button>
       {problem ? <p className="text-caption-sm-regular text-danger-primary">{problem}</p> : null}
-      {current ? <p className="text-body-xs-regular whitespace-pre-wrap text-secondary">{current}</p> : null}
+      {current ? <AIMarkdown source={current} className="text-body-xs-regular text-secondary" /> : null}
     </section>
   );
 });
