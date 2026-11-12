@@ -7,6 +7,14 @@
 import { API_BASE_URL } from "@plane/constants";
 import type {
   TAIChatEvent,
+  TAIFeedbackPayload,
+  TAIJob,
+  TAITeamReview,
+  TAskPayload,
+  TAskResult,
+  TDailyReview,
+  TDailyReviewParams,
+  TDailyReviewResult,
   TAIConversation,
   TAIConversationDetail,
   TAISearchResult,
@@ -43,6 +51,14 @@ export const parseSSE = (buffer: string): { events: TAIChatEvent[]; rest: string
   return { events, rest };
 };
 
+/** What a failed job says to the person. */
+const JOB_ERRORS: Record<string, string> = {
+  llm_unavailable: "The AI model is not answering right now. Try again in a few minutes.",
+  internal_error: "The AI could not finish this. Try again; if it keeps failing, tell an admin.",
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** The AI of Team Ops. Every call goes through Plane's API, which checks access and talks to Plane AI. */
 export class TeamAIService extends APIService {
   constructor(BASE_URL?: string) {
@@ -70,17 +86,88 @@ export class TeamAIService extends APIService {
       .catch(this.rethrow);
   }
 
-  async summarize(workspaceSlug: string, payload: TAISummaryRequest): Promise<TAISummary> {
-    return this.post(this.path(workspaceSlug, "summarize/"), payload)
+  /** A job's current state. */
+  async getJob<T>(workspaceSlug: string, id: string): Promise<TAIJob<T>> {
+    return this.get(this.path(workspaceSlug, `jobs/${id}/`))
       .then((response) => response?.data)
       .catch(this.rethrow);
   }
 
-  /** Task proposals for the import preview; nothing is created. */
-  async proposeTasks(workspaceSlug: string, prompt: string): Promise<TAITaskProposals> {
-    return this.post(this.path(workspaceSlug, "tasks/"), { prompt })
+  /**
+   * Polls a job until it is done and returns its result. Slow work on a small CPU can take minutes, so this
+   * waits up to `timeoutMs` (15 minutes) and reports progress. Rejects with `{ error }` when the job failed.
+   */
+  async waitForJob<T>(
+    workspaceSlug: string,
+    job: TAIJob<T>,
+    onProgress?: (job: TAIJob<T>) => void,
+    { intervalMs = 1500, timeoutMs = 15 * 60 * 1000 }: { intervalMs?: number; timeoutMs?: number } = {}
+  ): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    let current = job;
+    for (;;) {
+      onProgress?.(current);
+      if (current.status === "done" && current.result) return current.result;
+      if (current.status === "failed") throw { error: JOB_ERRORS[current.error] ?? JOB_ERRORS.internal_error };
+      if (Date.now() > deadline) throw { error: "The AI is taking too long. Look again later." };
+      // eslint-disable-next-line no-await-in-loop -- polling one job: each check waits for the previous one
+      await sleep(intervalMs);
+      // eslint-disable-next-line no-await-in-loop -- see above
+      current = await this.getJob<T>(workspaceSlug, current.id);
+    }
+  }
+
+  private startJob<T>(workspaceSlug: string, rest: string, payload: object): Promise<TAIJob<T>> {
+    return this.post(this.path(workspaceSlug, rest), payload)
       .then((response) => response?.data)
       .catch(this.rethrow);
+  }
+
+  async summarize(workspaceSlug: string, payload: TAISummaryRequest): Promise<TAISummary> {
+    const job = await this.startJob<TAISummary>(workspaceSlug, "summarize/", payload);
+    return this.waitForJob(workspaceSlug, job);
+  }
+
+  /** Task proposals for the import preview; nothing is created. */
+  async proposeTasks(workspaceSlug: string, prompt: string): Promise<TAITaskProposals> {
+    const job = await this.startJob<TAITaskProposals>(workspaceSlug, "tasks/", { prompt });
+    return this.waitForJob(workspaceSlug, job);
+  }
+
+  /** Rate an answer (1 right, -1 wrong, with the right answer): it becomes training data. */
+  async sendFeedback(workspaceSlug: string, jobId: string, payload: TAIFeedbackPayload): Promise<void> {
+    return this.post(this.path(workspaceSlug, `jobs/${jobId}/feedback/`), payload)
+      .then(() => undefined)
+      .catch(this.rethrow);
+  }
+
+  /** Managers: the rows of one day's reports and the latest AI review of them. */
+  async getDailyReview(workspaceSlug: string, params: TDailyReviewParams): Promise<TDailyReview> {
+    return this.get(this.path(workspaceSlug, "daily/"), { params })
+      .then((response) => response?.data)
+      .catch(this.rethrow);
+  }
+
+  /** Managers: start the Daily review; returns the job (poll it with `waitForJob`). */
+  async startDailyReview(workspaceSlug: string, params: TDailyReviewParams): Promise<TAIJob<TDailyReviewResult>> {
+    return this.startJob(workspaceSlug, "daily/", params);
+  }
+
+  /** Managers: the caller's recent questions. */
+  async listQuestions(workspaceSlug: string): Promise<TAIJob<TAskResult>[]> {
+    return this.get(this.path(workspaceSlug, "ask/"))
+      .then((response) => response?.data)
+      .catch(this.rethrow);
+  }
+
+  /** Managers: ask a question about the team; returns the job. */
+  async ask(workspaceSlug: string, payload: TAskPayload): Promise<TAIJob<TAskResult>> {
+    return this.startJob(workspaceSlug, "ask/", payload);
+  }
+
+  /** Admins: where the training data (JSONL) is downloaded from. */
+  trainingExportUrl(workspaceSlug: string): string {
+    return `${this.baseURL}${this.path(workspaceSlug, "training/")}`;
   }
 
   async listConversations(workspaceSlug: string): Promise<TAIConversation[]> {
@@ -121,11 +208,9 @@ export class TeamAIService extends APIService {
       .catch(this.rethrow);
   }
 
-  /** Managers: the same evidence explained by Plane AI. */
-  async reviewTeam(workspaceSlug: string, params: TWorkEvidenceParams): Promise<TWorkEvidence> {
-    return this.post(this.path(workspaceSlug, "team/"), params)
-      .then((response) => response?.data)
-      .catch(this.rethrow);
+  /** Managers: start Plane AI's explanation of the evidence; returns the job. */
+  async reviewTeam(workspaceSlug: string, params: TWorkEvidenceParams): Promise<TAIJob<TAITeamReview>> {
+    return this.startJob(workspaceSlug, "team/", params);
   }
 
   /**

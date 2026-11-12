@@ -173,7 +173,7 @@ def _gather(workspace, user_ids, start, end):
     issues = {
         i["id"]: i
         for i in Issue.all_objects.filter(pk__in=issue_ids).values(
-            "id", "name", "sequence_id", "project__identifier", "state__group"
+            "id", "name", "sequence_id", "project__identifier", "project__name", "state__group", "description_stripped"
         )
     }
     # Activity per (person, work item, day), from one day before the period to one day after (time zones).
@@ -209,6 +209,9 @@ def _gather(workspace, user_ids, start, end):
             per_person[uid].append(
                 {
                     "kind": "issue",
+                    "issue_id": row["issue_id"],
+                    "project": issue.get("project__name", ""),
+                    "description": (issue.get("description_stripped") or "")[:600],
                     "date": day,
                     "key": f"{issue.get('project__identifier', '')}-{issue.get('sequence_id', '')}" if issue else "",
                     "name": issue.get("name", "Deleted work item"),
@@ -226,6 +229,9 @@ def _gather(workspace, user_ids, start, end):
             per_person[uid].append(
                 {
                     "kind": "micro",
+                    "issue_id": None,
+                    "project": "",
+                    "description": "",
                     "date": day,
                     "key": "",
                     "name": row["micro_task__title"] or "Micro task",

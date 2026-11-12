@@ -17,7 +17,6 @@ import { teamAIService, useAIStatus, useWorkEvidence } from "@/hooks/team-ops/us
 import { useCalendarSettings } from "@/hooks/team-ops/use-work-calendar";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
-import { AISettingsCard } from "./ai-settings-card";
 
 const LEVEL: Record<TEvidenceLevel, { label: string; style: string }> = {
   STRONG: { label: "Well supported", style: "bg-success-subtle text-success-primary" },
@@ -203,6 +202,7 @@ export const AITeamTab = observer(function AITeamTab({ workspaceSlug }: Props) {
   const [team, setTeam] = useState("");
   const [review, setReview] = useState<{ key: string; data: TAITeamReview } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState("");
   const [problem, setProblem] = useState("");
   const { permissions } = useCalendarSettings(workspaceSlug);
   const { usable } = useAIStatus(workspaceSlug);
@@ -228,8 +228,9 @@ export const AITeamTab = observer(function AITeamTab({ workspaceSlug }: Props) {
     setBusy(true);
     setProblem("");
     try {
-      const data = await teamAIService.reviewTeam(workspaceSlug, params);
-      if (data.review) setReview({ key, data: data.review });
+      const job = await teamAIService.reviewTeam(workspaceSlug, params);
+      const data = await teamAIService.waitForJob(workspaceSlug, job, (state) => setProgress(state.progress));
+      setReview({ key, data });
     } catch (failure) {
       setProblem(getErrorMessage(failure));
     } finally {
@@ -238,8 +239,7 @@ export const AITeamTab = observer(function AITeamTab({ workspaceSlug }: Props) {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 sm:p-6">
-      <AISettingsCard workspaceSlug={workspaceSlug} />
+    <div className="flex w-full flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <ReportFilters workspaceSlug={workspaceSlug} periodState={periodState} team={team} setTeam={setTeam} />
         <button
@@ -250,7 +250,11 @@ export const AITeamTab = observer(function AITeamTab({ workspaceSlug }: Props) {
           className="inline-flex min-h-9 items-center gap-2 rounded-md bg-accent-primary px-3 text-body-xs-medium text-on-color disabled:opacity-50"
         >
           <Sparkles className="size-4" aria-hidden />
-          {busy ? "Reading the reports..." : current ? "Explain again" : "Explain with AI"}
+          {busy
+            ? `Reading the reports${progress ? ` (${progress})` : "..."}`
+            : current
+              ? "Explain again"
+              : "Explain with AI"}
         </button>
       </div>
 

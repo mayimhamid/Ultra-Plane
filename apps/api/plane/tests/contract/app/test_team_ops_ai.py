@@ -133,16 +133,17 @@ class TestWorkEvidenceEndpoint:
 
     @pytest.mark.django_db
     @override_settings(**AI)
-    def test_ai_review_sends_only_numbers_and_flags(self, admin_client, workspace, reported):
-        review = {"members": [], "summary": ["ok"], "summary_source": "ai", "effort": "low", "cached": False}
-        with mock.patch.object(ai_client, "call", return_value=review) as call:
-            data = admin_client.post(url(workspace, "ai/team/"), {"from": str(DAY), "to": str(DAY)}, format="json").data
-        assert data["review"]["summary"] == ["ok"]
+    def test_ai_review_is_a_managers_job_with_only_numbers_and_flags(self, admin_client, workspace, reported):
+        job = {"id": "j1", "status": "queued"}
+        with mock.patch.object(ai_client, "call", return_value=job) as call:
+            resp = admin_client.post(url(workspace, "ai/team/"), {"from": str(DAY), "to": str(DAY)}, format="json")
+        assert resp.status_code == 202 and resp.data["id"] == "j1"
         method, path = call.call_args.args
-        payload = call.call_args.kwargs["json"]
-        assert (method, path) == ("POST", "/v1/analyze/team")
-        assert payload["workspace_id"] == str(workspace.id)
-        assert set(payload["members"][0]) == {"user_id", "name", "score", "facts", "flags"}
+        body = call.call_args.kwargs["json"]
+        assert (method, path) == ("POST", "/v1/jobs")
+        assert body["kind"] == "team_review" and body["audience"] == "managers"
+        assert body["workspace_id"] == str(workspace.id)
+        assert set(body["input"]["members"][0]) == {"user_id", "name", "score", "facts", "flags"}
 
 
 @pytest.mark.contract
@@ -188,7 +189,7 @@ class TestAIProxy:
 
         hidden_project = mk(workspace, admin, "HID")
         hidden = Issue.objects.create(project=hidden_project, name="Secret plan")
-        with mock.patch.object(ai_client, "call", return_value={"summary": "- s"}) as call:
+        with mock.patch.object(ai_client, "call", return_value={"id": "j", "status": "queued"}) as call:
             denied = member_client.post(
                 url(workspace, "ai/summarize/"), {"kind": "issue", "issue": str(hidden.id)}, format="json"
             )
@@ -196,8 +197,8 @@ class TestAIProxy:
                 url(workspace, "ai/summarize/"), {"kind": "issue", "issue": str(reported["worked"].id)}, format="json"
             )
         assert denied.status_code == 403
-        assert allowed.status_code == 200 and allowed.data["summary"] == "- s"
-        sent = call.call_args.kwargs["json"]["text"]
+        assert allowed.status_code == 202 and allowed.data["id"] == "j"
+        sent = call.call_args.kwargs["json"]["input"]["text"]
         assert "Worked" in sent and "Secret plan" not in sent
 
     @pytest.mark.django_db
@@ -231,3 +232,83 @@ class TestAIProxy:
         assert data["documents"] >= 2
         docs = call.call_args.kwargs["json"]["documents"]
         assert {d["source_type"] for d in docs} == {"issue"}
+
+
+@pytest.mark.contract
+class TestManagersAI:
+    @pytest.mark.django_db
+    @override_settings(**AI)
+    def test_daily_review_rows_and_job(self, admin_client, member_client, workspace, member, reported):
+        assert member_client.get(url(workspace, f"ai/daily/?date={DAY}")).status_code == 403
+        with mock.patch.object(ai_client, "call", return_value=[]):
+            data = admin_client.get(url(workspace, f"ai/daily/?date={DAY}")).data
+        mine = next(p for p in data["people"] if p["user_id"] == str(member.id))
+        rows = {r["task"]: r for r in mine["rows"]}
+        assert rows["Worked"]["evidence"]["activity"] is True and rows["Worked"]["minutes"] == 180
+        assert rows["Claimed"]["done_but_open"] is True and rows["Claimed"]["evidence"]["activity"] is False
+        assert data["review"] is None
+
+        with mock.patch.object(ai_client, "call", return_value={"id": "d1", "status": "queued"}) as call:
+            resp = admin_client.post(url(workspace, "ai/daily/"), {"date": str(DAY)}, format="json")
+        assert resp.status_code == 202
+        body = call.call_args.kwargs["json"]
+        assert body["kind"] == "daily_review" and body["audience"] == "managers"
+        assert body["key"].startswith(f"daily:{DAY}:")
+        assert [p["name"] for p in body["input"]["people"]] == ["member"]  # only people who reported
+
+    @pytest.mark.django_db
+    @override_settings(**AI)
+    def test_daily_review_needs_reports(self, admin_client, workspace):
+        resp = admin_client.post(url(workspace, "ai/daily/"), {"date": str(DAY)}, format="json")
+        assert resp.status_code == 400
+
+    @pytest.mark.django_db
+    @override_settings(**AI)
+    def test_ask_sends_sections_built_from_plane_data(self, admin_client, member_client, workspace, reported):
+        body = {"question": "Who worked the most?", "from": str(DAY), "to": str(DAY)}
+        assert member_client.post(url(workspace, "ai/ask/"), body, format="json").status_code == 403
+        with mock.patch.object(ai_client, "call", return_value={"id": "a1", "status": "queued"}) as call:
+            resp = admin_client.post(url(workspace, "ai/ask/"), body, format="json")
+        assert resp.status_code == 202
+        sent = call.call_args.kwargs["json"]
+        assert sent["kind"] == "ask" and sent["audience"] == "user"
+        sections = sent["input"]["sections"]
+        assert set(sections) == {"people", "daily_notes", "evidence", "risks", "workload"}
+        assert "member: 8.0 h reported" in sections["people"]["text"]
+        assert "Implemented the export endpoint" in sections["daily_notes"]["text"]
+        assert str(reported["project"].id) in sent["input"]["project_ids"]
+
+    @pytest.mark.django_db
+    @override_settings(**AI)
+    def test_job_polling_passes_the_manager_flag(self, admin_client, member_client, workspace):
+        with mock.patch.object(ai_client, "call", return_value={"id": "x", "status": "done"}) as call:
+            admin_client.get(url(workspace, "ai/jobs/00000000-0000-0000-0000-000000000001/"))
+            assert call.call_args.kwargs["params"]["manager"] == "true"
+            member_client.get(url(workspace, "ai/jobs/00000000-0000-0000-0000-000000000001/"))
+            assert call.call_args.kwargs["params"]["manager"] in ("true", "false")
+
+    @pytest.mark.django_db
+    @override_settings(**AI)
+    def test_feedback_and_training_export(self, admin_client, member_client, workspace):
+        job = "00000000-0000-0000-0000-000000000002"
+        assert (
+            admin_client.post(url(workspace, f"ai/jobs/{job}/feedback/"), {"rating": 5}, format="json").status_code
+            == 400
+        )
+        with mock.patch.object(ai_client, "call", return_value={"ok": True}) as call:
+            resp = admin_client.post(
+                url(workspace, f"ai/jobs/{job}/feedback/"),
+                {"rating": -1, "item": "p1", "correction": "x"},
+                format="json",
+            )
+        assert resp.status_code == 201
+        assert call.call_args.kwargs["json"]["rating"] == -1
+
+        assert member_client.get(url(workspace, "ai/training/")).status_code == 403
+        upstream = mock.Mock()
+        upstream.iter_content.return_value = [b'{"messages": []}\n']
+        with mock.patch.object(ai_client, "export_training", return_value=upstream):
+            resp = admin_client.get(url(workspace, "ai/training/"))
+            body = b"".join(resp.streaming_content)
+        assert body == b'{"messages": []}\n' and "attachment" in resp["Content-Disposition"]
+        upstream.close.assert_called_once()

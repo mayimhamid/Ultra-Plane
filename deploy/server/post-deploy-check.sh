@@ -71,3 +71,20 @@ EOF
 fi
 
 echo "post-deploy-check: OK (api, worker and beat-worker use the settings of plane.env; WEB_URL=$expected_web)"
+
+# Plane AI is optional: these lines only warn and never fail a deployment (Plane works without it).
+expected_ai="$(env_value PLANE_AI_URL)"
+if [ -n "$expected_ai" ]; then
+  api="$(docker compose -f docker-compose.yaml --env-file plane.env ps -q api 2>/dev/null | head -1)"
+  ai="$(docker exec "$api" printenv PLANE_AI_URL 2>/dev/null || true)"
+  if [ "$ai" != "$expected_ai" ]; then
+    echo "  WARN  api: PLANE_AI_URL is '${ai:-<empty>}', plane.env says '$expected_ai'. Add PLANE_AI_URL and" \
+      "PLANE_AI_TOKEN under x-app-env (or the api environment) in docker-compose.yaml, then recreate api." >&2
+  elif docker exec "$api" python -c "import sys, urllib.request; urllib.request.urlopen(sys.argv[1] + '/health', timeout=5)" \
+    "$expected_ai" > /dev/null 2>&1; then
+    echo "post-deploy-check: Plane AI answers at $expected_ai"
+  else
+    echo "  WARN  api cannot reach Plane AI at $expected_ai. Is plane-ai running with docker-compose.plane.yml," \
+      "and is api on the plane-ai-link network? AI features stay hidden until it answers." >&2
+  fi
+fi

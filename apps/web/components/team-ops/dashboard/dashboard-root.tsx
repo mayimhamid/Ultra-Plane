@@ -13,7 +13,7 @@ import type { TCalendarKind } from "@plane/types";
 import { cn } from "@plane/utils";
 // components
 import { ButtonAvatars } from "@/components/dropdowns/member/avatar";
-import { AIAssistant, AITeamTab } from "@/components/team-ops/ai";
+import { AIAssistant, AIManagersTab } from "@/components/team-ops/ai";
 import { DAY_KIND_META, DayKindDot } from "@/components/team-ops/calendar/work-mode";
 import { ControlRoot } from "@/components/team-ops/control";
 import { DashboardTabs } from "./dashboard-tabs";
@@ -370,7 +370,7 @@ export const DashboardRoot = observer(function DashboardRoot({ workspaceSlug }: 
     <div className="flex w-full flex-col">
       <DashboardTabs workspaceSlug={workspaceSlug} active={view} />
       {view === "control" ? <ControlRoot workspaceSlug={workspaceSlug} embedded /> : null}
-      {view === "ai" ? <AITeamTab workspaceSlug={workspaceSlug} /> : null}
+      {view === "ai" ? <AIManagersTab workspaceSlug={workspaceSlug} /> : null}
       {view === "assistant" ? <AIAssistant workspaceSlug={workspaceSlug} /> : null}
       {view === "tasks" ? <TasksView workspaceSlug={workspaceSlug} /> : null}
       {view === "overview" ? <DashboardOverview workspaceSlug={workspaceSlug} /> : null}

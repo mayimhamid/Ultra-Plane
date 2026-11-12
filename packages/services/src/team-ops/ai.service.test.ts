@@ -31,13 +31,15 @@ describe("TeamAIService", () => {
     const service = new TeamAIService("http://api.test");
     const get = vi.spyOn(service, "get").mockResolvedValue({ data: { configured: true } } as never);
     const patch = vi.spyOn(service, "patch").mockResolvedValue({ data: { effort: "low" } } as never);
-    const post = vi.spyOn(service, "post").mockResolvedValue({ data: { tasks: [] } } as never);
+    const post = vi
+      .spyOn(service, "post")
+      .mockResolvedValue({ data: { id: "j1", status: "done", result: { tasks: [] } } } as never);
 
     await expect(service.getStatus("acme")).resolves.toEqual({ configured: true });
     expect(get).toHaveBeenCalledWith("/api/workspaces/acme/team-ops/ai/");
     await service.saveSettings("acme", { enabled: true, effort: "low" });
     expect(patch).toHaveBeenCalledWith("/api/workspaces/acme/team-ops/ai/settings/", { enabled: true, effort: "low" });
-    await service.proposeTasks("acme", "build a fence");
+    await expect(service.proposeTasks("acme", "build a fence")).resolves.toEqual({ tasks: [] });
     expect(post).toHaveBeenCalledWith("/api/workspaces/acme/team-ops/ai/tasks/", { prompt: "build a fence" });
     const params = { from: "2027-01-04", to: "2027-01-10" };
     await service.getEvidence("acme", params);
@@ -47,6 +49,27 @@ describe("TeamAIService", () => {
     await expect(service.summarize("acme", { kind: "text", text: "x" })).rejects.toEqual({
       error: "off",
       code: "disabled",
+    });
+  });
+
+  it("polls a job until it is done, and turns a failure into a message", async () => {
+    const service = new TeamAIService("http://api.test");
+    const get = vi
+      .spyOn(service, "get")
+      .mockResolvedValueOnce({ data: { id: "j1", status: "running", progress: "1 / 2 people", result: null } } as never)
+      .mockResolvedValueOnce({ data: { id: "j1", status: "done", progress: "", result: { day: "d" } } } as never);
+    const seen: string[] = [];
+    const start = { id: "j1", status: "queued", result: null } as never;
+
+    await expect(service.waitForJob("acme", start, (job) => seen.push(job.status), { intervalMs: 1 })).resolves.toEqual(
+      { day: "d" }
+    );
+    expect(seen).toEqual(["queued", "running", "done"]);
+    expect(get).toHaveBeenCalledWith("/api/workspaces/acme/team-ops/ai/jobs/j1/");
+
+    const failed = { id: "j2", status: "failed", error: "llm_unavailable", result: null } as never;
+    await expect(service.waitForJob("acme", failed)).rejects.toEqual({
+      error: "The AI model is not answering right now. Try again in a few minutes.",
     });
   });
 

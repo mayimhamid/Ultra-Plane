@@ -161,3 +161,97 @@ export type TWorkEvidence = {
 };
 
 export type TWorkEvidenceParams = { from: string; to: string; team?: string; user?: string };
+
+/** Slow AI work runs as a job in Plane AI; the page polls it until it is `done` or `failed`. */
+export type TAIJob<T = unknown> = {
+  id: string;
+  kind: string;
+  key: string;
+  status: "queued" | "running" | "done" | "failed";
+  /** For example "3 / 10 people" while a review runs. */
+  progress: string;
+  result: T | null;
+  /** `llm_unavailable` or `internal_error` when failed. */
+  error: string;
+  effort: string;
+  created_at: string | null;
+  finished_at: string | null;
+};
+
+export type TAIFeedbackPayload = { rating: 1 | -1; item?: string; correction?: string };
+
+export type TDailyRowVerdict = "plausible" | "inflated" | "vague" | "unrelated" | "unchecked";
+
+/** One row of a Day Report as the Daily review reads it. */
+export type TDailyRow = {
+  id: string;
+  key: string;
+  task: string;
+  description: string;
+  project: string;
+  minutes: number;
+  note: string;
+  finished: boolean;
+  kind: "issue" | "micro";
+  is_meeting: boolean;
+  evidence: { activity: boolean; document: boolean; note: boolean };
+  done_but_open: boolean;
+};
+
+export type TDailyPerson = { user_id: string; name: string; rows: TDailyRow[] };
+
+export type TDailyReviewRow = {
+  id: string;
+  key: string;
+  task: string;
+  minutes: number;
+  note: string;
+  verdict: TDailyRowVerdict;
+  /** What an experienced person would normally need, when the model judged the row. */
+  expected_minutes: number | null;
+  reason: string;
+  question: string;
+  source: "ai" | "rules";
+};
+
+export type TDailyReviewPerson = {
+  user_id: string;
+  name: string;
+  total_minutes: number;
+  questioned_minutes: number;
+  verdict: "ok" | "check" | "concern";
+  summary: string;
+  summary_source: "ai" | "rules";
+  rows: TDailyReviewRow[];
+};
+
+export type TDailyReviewResult = {
+  day: string;
+  people: TDailyReviewPerson[];
+  team: {
+    people_reviewed: number;
+    concern: number;
+    check: number;
+    reported_minutes: number;
+    questioned_minutes: number;
+  };
+  effort: string;
+};
+
+export type TDailyReview = { date: string; people: TDailyPerson[]; review: TAIJob<TDailyReviewResult> | null };
+
+export type TDailyReviewParams = { date: string; team?: string };
+
+export type TAskResult = {
+  question: string;
+  answer: string;
+  /** The data sections the router chose (people, daily_notes, evidence, risks, workload, docs). */
+  sections: string[];
+  router: string;
+  /** Every number in the answer was found in the data. */
+  verified: boolean;
+  unverified_numbers: string[];
+  effort: string;
+};
+
+export type TAskPayload = { question: string; from: string; to: string; team?: string };

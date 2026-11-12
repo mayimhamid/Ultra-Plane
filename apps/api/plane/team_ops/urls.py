@@ -5,6 +5,11 @@
 from django.urls import path
 
 from plane.team_ops.views import (
+    AIAskEndpoint,
+    AIDailyReviewEndpoint,
+    AIJobEndpoint,
+    AIJobFeedbackEndpoint,
+    AITrainingExportEndpoint,
     AIChatEndpoint,
     AIConversationEndpoint,
     AIIndexEndpoint,
@@ -510,4 +515,17 @@ urlpatterns += [
     path("workspaces/<str:slug>/team-ops/ai/search/", AISearchEndpoint.as_view(), name="team-ops-ai-search"),
     path("workspaces/<str:slug>/team-ops/ai/index/", AIIndexEndpoint.as_view(), name="team-ops-ai-index"),
     path("workspaces/<str:slug>/team-ops/ai/team/", AITeamAnalysisEndpoint.as_view(), name="team-ops-ai-team"),
+    path("workspaces/<str:slug>/team-ops/ai/jobs/<uuid:pk>/", AIJobEndpoint.as_view(), name="team-ops-ai-job"),
+    path(
+        "workspaces/<str:slug>/team-ops/ai/jobs/<uuid:pk>/feedback/",
+        AIJobFeedbackEndpoint.as_view(),
+        name="team-ops-ai-job-feedback",
+    ),
+    path("workspaces/<str:slug>/team-ops/ai/daily/", AIDailyReviewEndpoint.as_view(), name="team-ops-ai-daily"),
+    path("workspaces/<str:slug>/team-ops/ai/ask/", AIAskEndpoint.as_view(), name="team-ops-ai-ask"),
+    path(
+        "workspaces/<str:slug>/team-ops/ai/training/",
+        AITrainingExportEndpoint.as_view(),
+        name="team-ops-ai-training",
+    ),
 ]

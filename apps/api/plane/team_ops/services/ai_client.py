@@ -125,3 +125,102 @@ def status(workspace_id):
         "model": info["model"],
         "profiles": info["profiles"],
     }
+
+
+# --- background jobs ------------------------------------------------------------------------------------------
+# Slow work (summaries, task proposals, reviews, answers) runs as a job in Plane AI: the request returns at once
+# and the page polls, so a busy CPU never runs into a proxy or worker timeout.
+
+
+def start_job(kind, workspace, user, data, *, audience="user", key=""):
+    return call(
+        "POST",
+        "/v1/jobs",
+        json={
+            "workspace_id": str(workspace.id),
+            "user_id": str(user.id),
+            "kind": kind,
+            "audience": audience,
+            "key": key,
+            "input": data,
+        },
+        timeout=15,
+    )
+
+
+def get_job(workspace, user, job_id, manager):
+    return call(
+        "GET",
+        f"/v1/jobs/{job_id}",
+        params={"workspace_id": str(workspace.id), "user_id": str(user.id), "manager": str(bool(manager)).lower()},
+        timeout=10,
+    )
+
+
+def latest_job(workspace, user, kind, key, manager):
+    jobs = call(
+        "GET",
+        "/v1/jobs",
+        params={
+            "workspace_id": str(workspace.id),
+            "user_id": str(user.id),
+            "kind": kind,
+            "key": key,
+            "manager": str(bool(manager)).lower(),
+            "limit": 1,
+        },
+        timeout=10,
+    )
+    return jobs[0] if jobs else None
+
+
+def list_jobs(workspace, user, kind, manager, limit=20):
+    return call(
+        "GET",
+        "/v1/jobs",
+        params={
+            "workspace_id": str(workspace.id),
+            "user_id": str(user.id),
+            "kind": kind,
+            "manager": str(bool(manager)).lower(),
+            "limit": limit,
+        },
+        timeout=10,
+    )
+
+
+def send_feedback(workspace, user, job_id, manager, *, item, rating, correction):
+    return call(
+        "POST",
+        f"/v1/jobs/{job_id}/feedback",
+        json={
+            "workspace_id": str(workspace.id),
+            "user_id": str(user.id),
+            "manager": bool(manager),
+            "item": item,
+            "rating": rating,
+            "correction": correction,
+        },
+        timeout=10,
+    )
+
+
+def export_training(workspace):
+    """The open streaming response of the JSONL training export."""
+    if not is_configured():
+        raise AIError("not_configured", MESSAGES["not_configured"], 503)
+    try:
+        response = requests.get(
+            _url("/v1/training/export"),
+            params={"workspace_id": str(workspace.id)},
+            headers=_headers(),
+            stream=True,
+            timeout=(5, 120),
+        )
+    except requests.RequestException as error:
+        raise AIError("unavailable", MESSAGES["unavailable"], 503) from error
+    if response.status_code >= 400:
+        error = _error_from(response)
+        response.close()
+        raise error
+    return response

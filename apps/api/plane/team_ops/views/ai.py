@@ -24,7 +24,7 @@ from rest_framework.response import Response
 from plane.app.permissions import allow_permission
 from plane.app.views.base import BaseAPIView
 from plane.db.models import Issue, Workspace
-from plane.team_ops.services import ai_client, ai_content
+from plane.team_ops.services import ai_client, ai_content, ai_review
 from plane.team_ops.services.access import CALENDAR_ROLES, CalendarAccess
 from plane.team_ops.services.date_params import parse_day, parse_day_range
 from plane.team_ops.services.tasks import visible_projects
@@ -127,14 +127,12 @@ class AISummarizeEndpoint(BaseAPIView):
         else:
             raise ParseError(detail="kind must be issue, day_report or text.")
         try:
-            data = ai_client.call(
-                "POST",
-                "/v1/summarize",
-                json={"workspace_id": str(workspace.id), "kind": kind, "title": title, "text": text[:200000]},
+            job = ai_client.start_job(
+                "summarize", workspace, request.user, {"kind": kind, "title": title, "text": text[:200000]}
             )
         except ai_client.AIError as error:
             return _ai_error(error)
-        return Response(data)
+        return Response(job, status=status.HTTP_202_ACCEPTED)
 
 
 class AITaskProposalEndpoint(BaseAPIView):
@@ -149,12 +147,10 @@ class AITaskProposalEndpoint(BaseAPIView):
         if not prompt:
             raise ParseError(detail="Describe the work first.")
         try:
-            data = ai_client.call(
-                "POST", "/v1/tasks/propose", json={"workspace_id": str(workspace.id), "prompt": prompt[:100000]}
-            )
+            job = ai_client.start_job("tasks", workspace, request.user, {"prompt": prompt[:100000]})
         except ai_client.AIError as error:
             return _ai_error(error)
-        return Response({"tasks": data["tasks"]})
+        return Response(job, status=status.HTTP_202_ACCEPTED)
 
 
 class AIChatEndpoint(BaseAPIView):
@@ -320,12 +316,177 @@ class AITeamAnalysisEndpoint(BaseAPIView):
 
     @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
     def post(self, request, slug):
-        """Managers: the same evidence, explained by Plane AI (a review per person and a team summary)."""
+        """Managers: start Plane AI's explanation of the same evidence (a review per person and a team summary).
+        Returns the job; its result is polled at `ai/jobs/<id>/`."""
         workspace, evidence, start, end = self._evidence(request, slug, request.data)
         if evidence is None:
             return _forbidden()
+        payload = ai_payload(workspace, evidence, start, end)
+        payload.pop("workspace_id")
         try:
-            review = ai_client.call("POST", "/v1/analyze/team", json=ai_payload(workspace, evidence, start, end))
+            job = ai_client.start_job("team_review", workspace, request.user, payload, audience="managers")
         except ai_client.AIError as error:
             return _ai_error(error)
-        return Response({"from": start, "to": end, **evidence, "review": review})
+        return Response(job, status=status.HTTP_202_ACCEPTED)
+
+
+def _manager_people(request, slug, params):
+    """The workspace, access and the people a manager may see (narrowed by `team`/`user`); people is `None`
+    when the caller may not see the team."""
+    workspace, access = _context(request, slug)
+    if not access.can_view_team:
+        return workspace, access, None
+    return workspace, access, visible_people(access, workspace, params)
+
+
+class AIJobEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug, pk):
+        """A job the caller started, or a managers' job when the caller may see the team."""
+        workspace, access = _context(request, slug)
+        if not access.is_calendar_user:
+            return _forbidden()
+        try:
+            job = ai_client.get_job(workspace, request.user, pk, access.can_view_team)
+        except ai_client.AIError as error:
+            return _ai_error(error)
+        return Response(job)
+
+
+class AIJobFeedbackEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug, pk):
+        """Rate an answer: `rating` 1 (right) or -1 (wrong), `correction` the right answer, `item` the part
+        (a person in a daily review). Rated answers become training data for a better local model."""
+        workspace, access = _context(request, slug)
+        if not access.is_calendar_user:
+            return _forbidden()
+        rating = request.data.get("rating")
+        if rating not in (1, -1):
+            raise ParseError(detail="rating must be 1 or -1.")
+        try:
+            ai_client.send_feedback(
+                workspace,
+                request.user,
+                pk,
+                access.can_view_team,
+                item=str(request.data.get("item") or "")[:100],
+                rating=rating,
+                correction=str(request.data.get("correction") or "")[:10000],
+            )
+        except ai_client.AIError as error:
+            return _ai_error(error)
+        return Response({"ok": True}, status=status.HTTP_201_CREATED)
+
+
+def _day(request, source):
+    return parse_day(source.get("date") or str(today_in_timezone(request.user.user_timezone)), "date")
+
+
+class AIDailyReviewEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug):
+        """Managers: the rows of one day's reports (`date`, `team`, `user`) and the latest AI review of exactly
+        those people, if there is one."""
+        workspace, access, people = _manager_people(request, slug, request.query_params)
+        if people is None:
+            return _forbidden()
+        day = _day(request, request.query_params)
+        rows = ai_review.daily_rows(workspace, people, day)
+        review = None
+        if ai_client.is_configured():
+            try:
+                review = ai_client.latest_job(
+                    workspace, request.user, "daily_review", f"daily:{day}:{ai_review.people_key(people)}", True
+                )
+            except ai_client.AIError:
+                review = None
+        return Response({"date": day, "people": rows, "review": review})
+
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        """Managers: ask Plane AI whether the time on every row fits the work described. Returns the job."""
+        workspace, access, people = _manager_people(request, slug, request.data)
+        if people is None:
+            return _forbidden()
+        day = _day(request, request.data)
+        rows = [person for person in ai_review.daily_rows(workspace, people, day) if person["rows"]]
+        if not rows:
+            raise ParseError(detail="Nobody sent a Day Report for that day.")
+        try:
+            job = ai_client.start_job(
+                "daily_review",
+                workspace,
+                request.user,
+                {"day": str(day), "people": rows},
+                audience="managers",
+                key=f"daily:{day}:{ai_review.people_key(people)}",
+            )
+        except ai_client.AIError as error:
+            return _ai_error(error)
+        return Response(job, status=status.HTTP_202_ACCEPTED)
+
+
+class AIAskEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug):
+        """Managers: the caller's recent questions and answers."""
+        workspace, access = _context(request, slug)
+        if not access.can_view_team:
+            return _forbidden()
+        try:
+            jobs = ai_client.list_jobs(workspace, request.user, "ask", False)
+        except ai_client.AIError as error:
+            return _ai_error(error)
+        return Response(jobs)
+
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def post(self, request, slug):
+        """Managers: ask a question about the team for `from`-`to` (`team` narrows it). Plane builds the data the
+        caller may see; Plane AI answers only from it. Returns the job."""
+        workspace, access, people = _manager_people(request, slug, request.data)
+        if people is None:
+            return _forbidden()
+        question = (request.data.get("question") or "").strip()
+        if not question:
+            raise ParseError(detail="Write a question.")
+        start, end = parse_day_range(request.data, require=True, max_days=MAX_EVIDENCE_DAYS)
+        narrowed = access.visible_user_ids() is not None or bool(request.data.get("team") or request.data.get("user"))
+        today = today_in_timezone(request.user.user_timezone)
+        sections = ai_review.ask_sections(workspace, access, request.user, people, narrowed, start, end, today)
+        data = {
+            "question": question[:2000],
+            "period": f"{start} to {end}",
+            "sections": sections,
+            "project_ids": _project_ids(workspace, access),
+        }
+        try:
+            job = ai_client.start_job("ask", workspace, request.user, data)
+        except ai_client.AIError as error:
+            return _ai_error(error)
+        return Response(job, status=status.HTTP_202_ACCEPTED)
+
+
+class AITrainingExportEndpoint(BaseAPIView):
+    @allow_permission(CALENDAR_ROLES, level="WORKSPACE")
+    def get(self, request, slug):
+        """Admins: download the rated answers as JSONL (chat format) to fine-tune the local model."""
+        workspace, access = _context(request, slug)
+        if not access.is_admin:
+            return _forbidden()
+        try:
+            upstream = ai_client.export_training(workspace)
+        except ai_client.AIError as error:
+            return _ai_error(error)
+
+        def relay():
+            try:
+                for piece in upstream.iter_content(chunk_size=65536):
+                    if piece:
+                        yield piece
+            finally:
+                upstream.close()
+
+        response = StreamingHttpResponse(relay(), content_type="application/x-ndjson")
+        response["Content-Disposition"] = f'attachment; filename="plane-ai-training-{workspace.slug}.jsonl"'
+        return response

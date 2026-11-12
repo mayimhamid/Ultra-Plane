@@ -184,6 +184,11 @@ __all__ = [
     "WorkReportListEndpoint",
 ]
 from .ai import (
+    AIAskEndpoint,
+    AIDailyReviewEndpoint,
+    AIJobEndpoint,
+    AIJobFeedbackEndpoint,
+    AITrainingExportEndpoint,
     AIChatEndpoint,
     AIConversationEndpoint,
     AIIndexEndpoint,

@@ -123,9 +123,17 @@ export const AISettingsCard = observer(function AISettingsCard({ workspaceSlug }
         >
           {indexing ? "Indexing..." : "Update AI search"}
         </button>
+        <a
+          href={teamAIService.trainingExportUrl(workspaceSlug)}
+          download
+          className="inline-flex min-h-9 items-center rounded-md border border-subtle px-3 text-body-xs-medium text-secondary hover:bg-layer-1"
+        >
+          Download training data
+        </a>
         <span className="text-caption-sm-regular text-tertiary">
           Sends work items and Hub documents to Plane AI so the assistant can find and cite them. People only ever get
-          content from projects they can open.
+          content from projects they can open. Training data: every AI answer an admin rated (with the corrections), as
+          JSONL to fine-tune the local model (LoRA).
         </span>
       </div>
     </section>
