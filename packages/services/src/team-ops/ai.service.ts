@@ -96,13 +96,13 @@ export class TeamAIService extends APIService {
 
   /**
    * Polls a job until it is done and returns its result. Slow work on a small CPU can take minutes, so this
-   * waits up to `timeoutMs` (15 minutes) and reports progress. Rejects with `{ error }` when the job failed.
+   * waits up to `timeoutMs` (60 minutes: a large model on a CPU can take that long for a whole team) and reports progress. Rejects with `{ error }` when the job failed.
    */
   async waitForJob<T>(
     workspaceSlug: string,
     job: TAIJob<T>,
     onProgress?: (job: TAIJob<T>) => void,
-    { intervalMs = 1500, timeoutMs = 15 * 60 * 1000 }: { intervalMs?: number; timeoutMs?: number } = {}
+    { intervalMs = 1500, timeoutMs = 60 * 60 * 1000 }: { intervalMs?: number; timeoutMs?: number } = {}
   ): Promise<T> {
     const deadline = Date.now() + timeoutMs;
     let current = job;

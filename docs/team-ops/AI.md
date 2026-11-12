@@ -78,7 +78,7 @@ Plane AI lives next to Plane, e.g. `/opt/smartfactoryteam/plane-ai`. They talk o
 
 4. In Plane: Dashboard › AI, choose the effort (Low is the gentlest on a shared server) and press "Update AI search".
 
-`PLANE_AI_TIMEOUT` (seconds, default 180) bounds one call from Plane to Plane AI. With jobs, no call waits for the
+`PLANE_AI_TIMEOUT` (seconds, default 900) bounds one call from Plane to Plane AI. With jobs, no call waits for the
 model itself, so it rarely matters.
 
 ## Turning it off
