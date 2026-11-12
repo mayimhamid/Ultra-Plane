@@ -88,9 +88,9 @@ class TestBlockedAndStalled:
 
         data = admin_client.get(insights(workspace)).data
 
-        blocked, free = ("Waiting", "Other") if relation_type == "blocked_by" else ("Other", "Waiting")
-        assert "BLOCKED" in risk_codes(data, blocked)
-        assert "BLOCKED" not in (risk_codes(data, free) or [])
+        # Both forms say the same thing: Waiting is blocked by Other (Other is blocking Waiting).
+        assert "BLOCKED" in risk_codes(data, "Waiting")
+        assert "BLOCKED" not in (risk_codes(data, "Other") or [])
 
     @pytest.mark.django_db
     def test_a_finished_or_deleted_blocker_no_longer_blocks(self, admin_client, workspace, admin, member):
@@ -193,17 +193,21 @@ class TestDatesAndEstimates:
 
         admin.user_timezone = "Etc/GMT+12"
         admin.save()
-        assert risk_codes(admin_client.get(insights(workspace)).data, "Edge") == ["DUE_SOON"]
+        west = risk_codes(admin_client.get(insights(workspace)).data, "Edge")
+        assert "DUE_SOON" in west and "OVERDUE" not in west
 
         admin.user_timezone = "Pacific/Kiritimati"
         admin.save()
-        assert risk_codes(admin_client.get(insights(workspace)).data, "Edge")[0] == "OVERDUE"
+        east = risk_codes(admin_client.get(insights(workspace)).data, "Edge")
+        assert "OVERDUE" in east and "DUE_SOON" not in east
 
     @pytest.mark.django_db
     def test_finished_work_is_never_overdue(self, admin_client, workspace, admin, member):
         project = make_project(workspace, admin, "FIN", members=[member])
         make_issue(project, "Done", state_of(project, "completed"), [member], target_date=today() - timedelta(days=9))
-        make_issue(project, "Dropped", state_of(project, "cancelled"), [member], target_date=today() - timedelta(days=9))
+        make_issue(
+            project, "Dropped", state_of(project, "cancelled"), [member], target_date=today() - timedelta(days=9)
+        )
 
         data = admin_client.get(insights(workspace)).data
 

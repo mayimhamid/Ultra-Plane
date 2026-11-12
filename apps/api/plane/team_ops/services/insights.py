@@ -134,8 +134,10 @@ def _task_facts(workspace, issues, visible_ids=None):
     planned = dict(
         TaskPlan.objects.filter(workspace=workspace, issue_id__in=ids).values_list("issue_id", "planned_minutes")
     )
-    time_rows = TimeEntry.objects.filter(workspace=workspace, issue_id__in=ids).values("issue_id").annotate(
-        seconds=Sum("duration_seconds"), last=Max("ended_at")
+    time_rows = (
+        TimeEntry.objects.filter(workspace=workspace, issue_id__in=ids)
+        .values("issue_id")
+        .annotate(seconds=Sum("duration_seconds"), last=Max("ended_at"))
     )
     logged = {row["issue_id"]: row for row in time_rows}
     # Recorded events only. `Issue.updated_at` is not used: it moves on any save, including ones nobody made.
@@ -147,8 +149,10 @@ def _task_facts(workspace, issues, visible_ids=None):
 
     for row in IssueActivity.objects.filter(issue_id__in=ids).values("issue_id").annotate(last=Max("created_at")):
         remember(row["issue_id"], row["last"])
-    for row in WorkSession.objects.filter(workspace=workspace, issue_id__in=ids).values("issue_id").annotate(
-        last=Max("finished_at")
+    for row in (
+        WorkSession.objects.filter(workspace=workspace, issue_id__in=ids)
+        .values("issue_id")
+        .annotate(last=Max("finished_at"))
     ):
         remember(row["issue_id"], row["last"])
     for issue_id, row in logged.items():
@@ -231,7 +235,10 @@ def workload(workspace, settings_row, user, is_admin, people, narrowed, start, e
     in `[start, end]`. `load` is `None` when the calendar has no planned hours to compare with."""
     issues = _issue_rows(scoped_open_issues(workspace, user, is_admin, people, narrowed, project_id))
     facts = _task_facts(workspace, issues)
-    capacity = {row["user"]: row["planned_seconds"] for row in plan_summary(workspace, settings_row, people, start, end)["people"]}
+    capacity = {
+        row["user"]: row["planned_seconds"]
+        for row in plan_summary(workspace, settings_row, people, start, end)["people"]
+    }
 
     rows = []
     for user_id, _ in people:
@@ -281,4 +288,3 @@ def build_insights(workspace, settings_row, user, is_admin, people, narrowed, st
         "notice": "Scores are computed from due dates, assignments, planned and logged time and activity. "
         "They flag where to look; they are not a judgement of a person.",
     }
-
