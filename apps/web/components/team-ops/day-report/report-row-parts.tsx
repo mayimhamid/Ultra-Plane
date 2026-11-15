@@ -531,7 +531,7 @@ export function ReportRowDialog({
               onClick={onRemove}
               className="inline-flex min-h-11 items-center rounded-md px-3 text-body-sm-medium text-danger-primary hover:bg-danger-subtle"
             >
-              Remove task
+              Remove from report
             </button>
           )}
         </div>

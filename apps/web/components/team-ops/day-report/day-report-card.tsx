@@ -111,6 +111,8 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
   // The task whose details are open in the small box.
   const [openKey, setOpenKey] = useState<string | null>(null);
   const loadedFor = useRef<string | null>(null);
+  const loadedReport = useRef<TDayReport | null>(null);
+  const removedKeys = useRef(new Set<string>());
   const history = useDayReportHistory(workspaceSlug, day, user, showHistory && canSeeHistory);
   const localKey = storageKey(workspaceSlug, day);
 
@@ -124,8 +126,25 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
   useEffect(() => {
     if (!report) return;
     const id = `${day}:${user ?? "me"}`;
-    if (loadedFor.current === id) return;
+    // Another screen can add a row to this day (for example the Done dialog).
+    // Keep edits in progress, but show server changes as soon as the report refreshes.
+    if (loadedFor.current === id) {
+      if (loadedReport.current === report) return;
+      if (isSaving) return;
+      loadedReport.current = report;
+      const loaded = fromReport(report);
+      if (dirty) {
+        setRows((current) => {
+          const existing = new Set(current.map((row) => row.key));
+          const added = loaded.filter((row) => !existing.has(row.key) && !removedKeys.current.has(row.key));
+          return added.length ? [...current, ...added] : current;
+        });
+      } else setRows(loaded.length > 0 || !report.can_edit ? loaded : [emptyRow(defaultPlace)]);
+      return;
+    }
     loadedFor.current = id;
+    loadedReport.current = report;
+    removedKeys.current.clear();
     const local = report.can_edit ? readLocal(localKey) : null;
     const loaded = fromReport(report);
     if (local && local.some(isFilled)) {
@@ -139,7 +158,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
     }
     setReason("");
     setAutoSavedAt(null);
-  }, [report, day, user, localKey, defaultPlace]);
+  }, [report, day, user, localKey, defaultPlace, dirty, isSaving]);
 
   // Every change is kept in this browser right away.
   useEffect(() => {
@@ -178,6 +197,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
   const openRow = rows.find((row) => row.key === openKey);
 
   const removeRow = (key: string) => {
+    removedKeys.current.add(key);
     setDirty(true);
     setOpenKey(null);
     setRows((current) => (current.length > 1 ? current.filter((item) => item.key !== key) : [emptyRow(defaultPlace)]));
@@ -223,7 +243,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
       return;
     }
     const entries = entriesOf(rows);
-    if (submit && entries.length === 0) {
+    if (submit && entries.length === 0 && !report?.exists) {
       setToast({ type: "error", title: "Nothing to send", message: "Add at least one task with its time." });
       return;
     }
@@ -231,6 +251,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
     try {
       const next = await save({ entries, submit, reason });
       writeLocal(localKey, null);
+      removedKeys.current.clear();
       setDirty(false);
       setRestored(false);
       applyProgress(next);
@@ -247,7 +268,8 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
   };
 
   // Today's unsent draft saves itself on the server a few seconds after the last change (on any device).
-  const canAutosave = !readOnly && !recorded && dirty && problems.length === 0 && rows.some(isFilled);
+  const canAutosave =
+    !readOnly && !recorded && dirty && problems.length === 0 && (rows.some(isFilled) || report?.exists);
   useEffect(() => {
     if (!canAutosave || isSaving) return;
     const autosave = async () => {
@@ -255,6 +277,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
       try {
         const next = await save({ entries: entriesOf(rows), submit: false });
         writeLocal(localKey, null);
+        removedKeys.current.clear();
         setDirty(false);
         setAutoSavedAt(Date.now());
         applyProgress(next);
@@ -339,6 +362,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
             className="min-h-8 text-body-xs-medium text-accent-primary hover:underline"
             onClick={() => {
               writeLocal(localKey, null);
+              removedKeys.current.clear();
               const loaded = fromReport(report);
               setRows(loaded.length > 0 ? loaded : [emptyRow(defaultPlace)]);
               setRestored(false);

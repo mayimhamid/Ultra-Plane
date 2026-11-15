@@ -16,9 +16,7 @@ export const refreshTeamOps = () => globalMutate((key) => typeof key === "string
 /** One day's report: the caller's, or `user`'s for managers. */
 export const useDayReport = (workspaceSlug: string, day: string, user?: string) => {
   const key = `TEAM_OPS_DAY_REPORT_${workspaceSlug}_${day}_${user ?? "me"}`;
-  const { data, error, isLoading, mutate } = useSWR(key, () => dayReportService.getReport(workspaceSlug, day, user), {
-    revalidateOnFocus: false,
-  });
+  const { data, error, isLoading, mutate } = useSWR(key, () => dayReportService.getReport(workspaceSlug, day, user));
   return {
     report: data,
     error,

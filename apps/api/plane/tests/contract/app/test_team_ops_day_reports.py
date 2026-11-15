@@ -113,6 +113,19 @@ class TestDayReport:
         assert DayReportRevision.objects.get().kind == "LATE"
         assert response.data["edit_count"] == 1
 
+    @pytest.mark.parametrize("days_ago", [0, 3])
+    def test_the_last_task_can_be_removed_from_a_sent_report(self, member_client, workspace, issue, days_ago):
+        day = today() - timedelta(days=days_ago)
+        created = put(member_client, workspace, day, [{"issue": str(issue.id), "minutes": 60}], submit=True)
+        assert created.status_code == 200 and len(created.data["entries"]) == 1
+
+        cleared = put(member_client, workspace, day, [], submit=True, reason="Removed task")
+        assert cleared.status_code == 200
+        assert cleared.data["status"] == "SUBMITTED"
+        assert cleared.data["entries"] == [] and cleared.data["total_minutes"] == 0
+        assert member_client.get(report_url(workspace, day)).data["entries"] == []
+        assert DayReportRevision.objects.filter(report__date=day, kind="CHANGE").exists()
+
     def test_the_future_and_bad_rows_are_refused(self, member_client, workspace, issue):
         tomorrow = today() + timedelta(days=1)
         assert put(member_client, workspace, tomorrow, [{"issue": str(issue.id), "minutes": 10}]).status_code == 400
