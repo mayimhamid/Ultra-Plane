@@ -6,16 +6,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
+import { Clock3 } from "lucide-react";
 import { Button } from "@makeplane/propel/components/button";
 import { setToast } from "@plane/blocks/toast";
 import { durationText, formatMinutes } from "@plane/services";
 import type { TDayReport, TDayReportRowInput, TReportPlace } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
-import { useDayReport, useDayReportHistory, useMicroTasks } from "@/hooks/team-ops/use-day-report";
+import { useDayReport, useMicroTasks } from "@/hooks/team-ops/use-day-report";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
-import { ReportHistory } from "./report-history";
 import { ReportRowDialog, ReportRowLine } from "./report-row-parts";
 import { PLACE_LABEL, dayMinutes, isFilled, minutesOf, needsDocument } from "./report-rows";
 import type { TRow } from "./report-rows";
@@ -98,13 +98,11 @@ type Props = { workspaceSlug: string; day: string; user?: string; canSeeHistory:
  * spread over the day) and where it was done. Today's draft saves itself; it is sent at the end of the day. A
  * sent report, or a past day's, can still be changed, but the change is recorded and the managers are told.
  */
-export const DayReportCard = observer(function DayReportCard({ workspaceSlug, day, user, canSeeHistory }: Props) {
+export const DayReportCard = observer(function DayReportCard({ workspaceSlug, day, user }: Props) {
   const { report, isLoading, save } = useDayReport(workspaceSlug, day, user);
   const { tasks: microTasks } = useMicroTasks(workspaceSlug);
   const [rows, setRows] = useState<TRow[]>([]);
-  const [reason, setReason] = useState("");
   const [isSaving, setIsSaving] = useState<"draft" | "send" | "auto" | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
   const [restored, setRestored] = useState(false);
   const [autoSavedAt, setAutoSavedAt] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -113,7 +111,6 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
   const loadedFor = useRef<string | null>(null);
   const loadedReport = useRef<TDayReport | null>(null);
   const removedKeys = useRef(new Set<string>());
-  const history = useDayReportHistory(workspaceSlug, day, user, showHistory && canSeeHistory);
   const localKey = storageKey(workspaceSlug, day);
 
   const readOnly = !report?.can_edit;
@@ -156,7 +153,6 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
       setRestored(false);
       setDirty(false);
     }
-    setReason("");
     setAutoSavedAt(null);
   }, [report, day, user, localKey, defaultPlace, dirty, isSaving]);
 
@@ -249,7 +245,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
     }
     setIsSaving(submit ? "send" : "draft");
     try {
-      const next = await save({ entries, submit, reason });
+      const next = await save({ entries, submit });
       writeLocal(localKey, null);
       removedKeys.current.clear();
       setDirty(false);
@@ -258,7 +254,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
       setToast({
         type: "success",
         title: next.status === "SUBMITTED" ? (recorded ? "Change saved" : "Day report sent") : "Draft saved",
-        message: recorded ? "Your manager can see what changed." : `${formatMinutes(next.total_minutes)} reported.`,
+        message: `${formatMinutes(next.total_minutes)} reported.`,
       });
     } catch (error) {
       setToast({ type: "error", title: "Could not save", message: getErrorMessage(error) });
@@ -269,7 +265,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
 
   // Today's unsent draft saves itself on the server a few seconds after the last change (on any device).
   const canAutosave =
-    !readOnly && !recorded && dirty && problems.length === 0 && (rows.some(isFilled) || report?.exists);
+    !readOnly && (!recorded || isPast) && dirty && problems.length === 0 && (rows.some(isFilled) || report?.exists);
   useEffect(() => {
     if (!canAutosave || isSaving) return;
     const autosave = async () => {
@@ -298,7 +294,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
 
   const status =
     report.status === "SUBMITTED"
-      ? `Sent ${report.submitted_at ? at(report.submitted_at) : ""}${report.is_late ? " (late)" : ""}`
+      ? `Sent ${report.submitted_at ? at(report.submitted_at) : ""}`
       : report.exists
         ? "Draft, not sent yet"
         : "Not started";
@@ -313,6 +309,9 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
           <h2 className="text-h5-medium text-primary">Day Report · {dayTitle.format(parse(report.date))}</h2>
           <p className="flex flex-wrap items-center gap-2 text-body-sm-regular text-secondary">
             {status}
+            {report.is_late ? (
+              <Clock3 className="size-4 text-warning-primary" aria-label="Submitted late" role="img" />
+            ) : null}
             {dayPlace ? (
               <span
                 className={cn(
@@ -335,25 +334,6 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
         </div>
       </header>
 
-      {report.edit_count > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning-strong bg-warning-subtle px-3 py-2">
-          <span className="text-body-xs-medium text-primary">
-            Changed {report.edit_count} time{report.edit_count === 1 ? "" : "s"} after it was due
-            {report.last_edited_at ? `, last on ${at(report.last_edited_at)}` : ""}.
-          </span>
-          {canSeeHistory ? (
-            <button
-              type="button"
-              className="min-h-8 text-body-xs-medium text-accent-primary hover:underline"
-              onClick={() => setShowHistory((open) => !open)}
-            >
-              {showHistory ? "Hide changes" : "See the changes"}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {showHistory && canSeeHistory ? <ReportHistory revisions={history.data ?? []} /> : null}
-
       {restored && !readOnly ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-strong bg-accent-subtle px-3 py-2 text-body-xs-regular text-primary">
           <span>Your unsaved changes were kept and are back.</span>
@@ -372,14 +352,6 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
             Discard them
           </button>
         </div>
-      ) : null}
-
-      {!readOnly && recorded ? (
-        <p className="rounded-md border border-accent-strong bg-accent-subtle px-3 py-2 text-body-xs-regular text-primary">
-          {report.status === "SUBMITTED"
-            ? "This report was sent. You can still change it: the change is recorded and your manager is told."
-            : "This day is over (forgot the report?). Sending it now is recorded as late and your manager is told."}
-        </p>
       ) : null}
 
       <ul className="flex flex-col gap-2">
@@ -420,23 +392,6 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
             + Add a task
           </button>
 
-          {recorded ? (
-            <label className="flex flex-col gap-1">
-              <span className="text-body-xs-medium text-secondary">
-                {isPast && report.status !== "SUBMITTED" ? "Why is it late?" : "Why the change?"} (your manager sees
-                this)
-              </span>
-              <input
-                type="text"
-                value={reason}
-                maxLength={500}
-                onChange={(event) => setReason(event.target.value)}
-                placeholder="For example: forgot the afternoon meeting"
-                className="h-10 rounded-md border border-subtle bg-layer-1 px-3 text-body-sm-regular text-primary outline-none focus:border-accent-strong"
-              />
-            </label>
-          ) : null}
-
           {problems.length > 0 && rows.some(isFilled) ? (
             <p role="alert" className="text-body-xs-regular text-danger-primary">
               {problems[0]}
@@ -444,7 +399,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
           ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
-            {recorded ? (
+            {recorded && !isPast ? (
               <Button
                 variant="primary"
                 size="lg"
