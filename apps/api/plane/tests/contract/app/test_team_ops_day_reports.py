@@ -175,6 +175,24 @@ class TestPlannedTime:
 
 @pytest.mark.contract
 class TestMicroTasks:
+    def test_new_micro_task_can_be_reported_for_a_past_day(self, member_client, workspace, member):
+        task = member_client.post(url(workspace, "micro-tasks/"), {"title": "Forgotten work"}, format="json")
+        assert task.status_code == 201
+        past = today() - timedelta(days=5)
+        response = put(
+            member_client,
+            workspace,
+            past,
+            [{"micro_task": task.data["id"], "start": "09:00", "end": "10:30", "location": "REMOTE"}],
+            submit=True,
+        )
+        assert response.status_code == 200
+        assert response.data["entries"][0]["task"]["id"] == task.data["id"]
+        assert response.data["total_minutes"] == 90
+        listed = member_client.get(url(workspace, "micro-tasks/")).data["results"]
+        saved = next(item for item in listed if item["id"] == task.data["id"])
+        assert saved["reported_minutes"] == 90
+
     def test_micro_tasks_and_meetings_in_the_report(self, member_client, workspace, member):
         created = member_client.post(
             url(workspace, "micro-tasks/"), {"title": "Call the supplier", "amount": 1, "unit": "HOURS"}, format="json"

@@ -7,14 +7,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import useSWR from "swr";
+import { setToast } from "@plane/blocks/toast";
 import type { TIssueSearchResponse, TMicroTask } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
 import { useProject } from "@/hooks/store/use-project";
 import { useDismiss } from "@/hooks/team-ops/use-dismiss";
+import { dayReportService, refreshTeamOps } from "@/hooks/team-ops/use-day-report";
 import useDebounce from "@/hooks/use-debounce";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
+import { getErrorMessage } from "../calendar/error-message";
 
 const workspaceService = new WorkspaceService();
 const ALL_PROJECTS = "__all__";
@@ -52,6 +55,7 @@ export const TaskCell = observer(function TaskCell({
   const [isOpen, setIsOpen] = useState(false);
   const [projectId, setProjectId] = useState(ALL_PROJECTS);
   const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const { joinedProjectIds, getPartialProjectById } = useProject();
@@ -83,6 +87,21 @@ export const TaskCell = observer(function TaskCell({
     onChange(next);
     setIsOpen(false);
     setQuery("");
+  };
+
+  const createMicroTask = async () => {
+    const title = query.trim();
+    if (!title || creating) return;
+    setCreating(true);
+    try {
+      const task = await dayReportService.createMicroTask(workspaceSlug, { title });
+      pick({ kind: "micro", id: task.id, key: null, name: task.title, project: null, isMeeting: task.is_meeting });
+      void refreshTeamOps().catch(() => {});
+    } catch (error) {
+      setToast({ type: "error", title: "Could not create micro task", message: getErrorMessage(error) });
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -172,15 +191,27 @@ export const TaskCell = observer(function TaskCell({
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={isMicro ? "Search your micro tasks" : "Search work items, including older ones"}
+              placeholder={
+                isMicro ? "Search or enter a new micro task name" : "Search work items, including older ones"
+              }
               aria-label="Search tasks"
               className="h-10 rounded-md border border-subtle bg-layer-1 px-3 text-body-sm-regular text-primary outline-none focus:border-accent-strong"
             />
+            {isMicro && query.trim() ? (
+              <button
+                type="button"
+                disabled={creating}
+                onClick={() => void createMicroTask()}
+                className="min-h-10 rounded-md border border-accent-strong px-3 text-left text-body-sm-medium text-accent-primary hover:bg-accent-subtle disabled:opacity-60"
+              >
+                {creating ? "Creating..." : `Create micro task: ${query.trim()}`}
+              </button>
+            ) : null}
             <ul role="listbox" aria-label="Tasks" className="max-h-64 overflow-y-auto">
               {isMicro ? (
                 micro.length === 0 ? (
                   <li className="px-3 py-2 text-body-xs-regular text-tertiary">
-                    No micro tasks found. Add them in Micro Tasks.
+                    No micro tasks found. Enter a name above to create one.
                   </li>
                 ) : (
                   micro.map((task) => (
