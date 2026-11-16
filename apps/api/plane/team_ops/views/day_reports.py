@@ -567,11 +567,14 @@ class DayReportSummaryEndpoint(BaseAPIView):
         if workspace is None:
             return _forbidden()
         access = CalendarAccess(request.user, workspace)
-        if not access.can_view_team:
-            return _forbidden()
         start, end = _day(request.query_params.get("from", "")), _day(request.query_params.get("to", ""))
         if end < start or (end - start).days > 366:
             raise ParseError(detail="Choose a period of at most a year.")
-        people = [user_id for user_id, _ in visible_people(access, workspace, request.query_params)]
+        if access.can_view_team:
+            people = [user_id for user_id, _ in visible_people(access, workspace, request.query_params)]
+        elif request.query_params.get("user") == str(request.user.id) and not request.query_params.get("team"):
+            people = [request.user.id]
+        else:
+            return _forbidden()
         place = (request.query_params.get("place") or "").upper()
         return Response(summary(workspace, access.settings, people, start, end, place))

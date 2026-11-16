@@ -353,6 +353,19 @@ class TestSummary:
         row = next(r for r in remote["people"] if r["user"]["id"] == str(member.id))
         assert row["total_minutes"] == 60
 
+    def test_personal_summary_counts_report_rows_and_overlaps(self, member_client, workspace, member, issue):
+        task = member_client.post(url(workspace, "micro-tasks/"), {"title": "Meeting"}, format="json").data
+        rows = [
+            {"issue": str(issue.id), "start": "09:00", "end": "10:00"},
+            {"micro_task": task["id"], "start": "09:30", "end": "10:30"},
+        ]
+        assert put(member_client, workspace, today(), rows, submit=True).status_code == 200
+        params = {"from": str(today() - timedelta(days=89)), "to": str(today()), "user": str(member.id)}
+        response = member_client.get(url(workspace, "day-reports/summary/"), params)
+        assert response.status_code == 200
+        person = response.data["people"][0]
+        assert (person["entry_count"], person["task_count"], person["total_minutes"]) == (2, 2, 90)
+
     def test_only_managers(self, member_client, workspace):
         params = {"from": str(today() - timedelta(days=6)), "to": str(today())}
         assert member_client.get(url(workspace, "day-reports/summary/"), params).status_code in (200, 403)

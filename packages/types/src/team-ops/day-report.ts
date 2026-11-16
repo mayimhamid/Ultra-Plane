@@ -184,6 +184,7 @@ export type TImportContext = {
 /** One person's reported work in a period (Control and the Dashboard). */
 export type TReportPersonSummary = {
   user: { id: string; display_name: string; avatar_url: string | null };
+  entry_count: number;
   total_minutes: number;
   remote_minutes: number;
   onsite_minutes: number;

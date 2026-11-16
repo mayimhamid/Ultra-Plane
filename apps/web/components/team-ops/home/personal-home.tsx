@@ -7,11 +7,13 @@
 import { useMemo, useState } from "react";
 import { orderBy } from "lodash-es";
 import { observer } from "mobx-react";
-import { addDays, formatHm, toDateKey } from "@plane/services";
+import useSWR from "swr";
+import { addDays, formatHm, formatMinutes, toDateKey } from "@plane/services";
 import type { TWorkSession } from "@plane/types";
 // hooks
 import { useUser } from "@/hooks/store/user";
 import { useWorkday } from "@/hooks/team-ops/use-workday";
+import { dayReportService } from "@/hooks/team-ops/use-day-report";
 // components
 import { ContributionGraph } from "../workday/contribution-graph";
 import { HomeMentions } from "./home-mentions";
@@ -90,16 +92,21 @@ function MonthBlock({ month }: { month: Month }) {
 export const PersonalHome = observer(function PersonalHome({ workspaceSlug }: Props) {
   const { data: currentUser } = useUser();
   const today = toDateKey(new Date());
-  const range = useMemo(() => ({ from: addDays(today, -90), to: today }), [today]);
-  const { sessions, tasks } = useWorkday(workspaceSlug, currentUser?.id, range.from, range.to);
+  const range = useMemo(() => ({ from: addDays(today, -89), to: today }), [today]);
+  const { sessions } = useWorkday(workspaceSlug, currentUser?.id, range.from, range.to);
+  const { data: summary } = useSWR(
+    currentUser?.id ? `TEAM_OPS_HOME_REPORT_${workspaceSlug}_${currentUser.id}_${range.from}_${range.to}` : null,
+    () => dayReportService.getSummary(workspaceSlug, { ...range, user: currentUser!.id })
+  );
+  const person = summary?.people.find((item) => item.user.id === currentUser?.id);
   const months = useMemo(() => groupByMonth(sessions ?? []), [sessions]);
   const attention = (sessions ?? []).filter((session) => session.needs_attention).length;
 
   const stats: [string, string][] = [
-    ["Pieces of work", String((sessions ?? []).length)],
-    ["Tasks worked on", String((tasks?.results ?? []).length)],
-    ["Hours", formatHm(tasks?.total_seconds ?? 0)],
-    ["Needed attention", String(attention)],
+    ["Pieces of work", person ? String(person.entry_count) : "—"],
+    ["Tasks worked on", person ? String(person.task_count) : "—"],
+    ["Hours", person ? formatMinutes(person.total_minutes) : "—"],
+    ["Needed attention", sessions ? String(attention) : "—"],
   ];
 
   // As on a GitHub profile: who you are on the left, your work in the middle, what needs you on the right.

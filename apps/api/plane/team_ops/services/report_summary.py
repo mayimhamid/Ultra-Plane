@@ -99,6 +99,7 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
         people[user_id] = {
             "user": {"id": str(user.id), "display_name": user.display_name, "avatar_url": user.avatar_url},
             "total_minutes": 0,
+            "entry_count": 0,
             "remote_minutes": 0,
             "onsite_minutes": 0,
             "days": {},
@@ -128,6 +129,7 @@ def summary(workspace, settings_row, user_ids, start, end, place=""):
         if user_id not in people:
             continue
         person = people[user_id]
+        person["entry_count"] += 1
         key = entry.report.date.isoformat()
         mins = counted[entry.id]
         person["total_minutes"] += mins
