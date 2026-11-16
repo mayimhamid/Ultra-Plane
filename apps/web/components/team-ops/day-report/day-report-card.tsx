@@ -373,6 +373,13 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
           microTasks={microTasks ?? []}
           readOnly={readOnly}
           onChange={(patch) => update(openRow.key, patch)}
+          onRename={(id, name) =>
+            setRows((current) =>
+              current.map((row) =>
+                row.task?.kind === "micro" && row.task.id === id ? { ...row, task: { ...row.task, name } } : row
+              )
+            )
+          }
           onRemove={() => removeRow(openRow.key)}
           onClose={closeRow}
         />

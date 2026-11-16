@@ -23,6 +23,7 @@ import { FinishTaskDialog } from "../day-report/finish-task-dialog";
 import type { TFinishedWork } from "../day-report/finish-task-dialog";
 import { ProgressLine } from "../day-report/verdict-badge";
 import { TaskImportButtons } from "../import/task-import-button";
+import { RenameMicroTask } from "./rename-micro-task";
 
 const GREEN = "#16a34a";
 const field =
@@ -33,7 +34,9 @@ function TaskRow({
   onToggle,
   onDelete,
   onReport,
+  workspaceSlug,
 }: {
+  workspaceSlug: string;
   task: TMicroTask;
   onToggle: () => Promise<void>;
   onDelete: () => Promise<void>;
@@ -72,6 +75,7 @@ function TaskRow({
           {task.due_date ? <span className="text-caption-sm-regular text-tertiary">Due {task.due_date}</span> : null}
         </div>
       </div>
+      <RenameMicroTask workspaceSlug={workspaceSlug} id={task.id} title={task.title} />
       {onReport ? (
         <button
           type="button"
@@ -331,6 +335,7 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
       <ul className="flex flex-col gap-2">
         {open.map((task) => (
           <TaskRow
+            workspaceSlug={workspaceSlug}
             key={task.id}
             task={task}
             onToggle={() => finish(task)}
@@ -395,6 +400,7 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
             <ul className="flex flex-col gap-2">
               {finished.map((task) => (
                 <TaskRow
+                  workspaceSlug={workspaceSlug}
                   key={task.id}
                   task={task}
                   onReport={!forSomeoneElse ? () => setReporting(task) : undefined}

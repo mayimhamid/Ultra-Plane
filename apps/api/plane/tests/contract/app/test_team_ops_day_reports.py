@@ -175,6 +175,16 @@ class TestPlannedTime:
 
 @pytest.mark.contract
 class TestMicroTasks:
+    def test_renaming_micro_task_updates_existing_day_reports(self, member_client, workspace):
+        task = member_client.post(url(workspace, "micro-tasks/"), {"title": "Before"}, format="json").data
+        past = today() - timedelta(days=5)
+        assert put(member_client, workspace, past, [{"micro_task": task["id"], "minutes": 60}]).status_code == 200
+        response = member_client.patch(url(workspace, f"micro-tasks/{task['id']}/"), {"title": "After"}, format="json")
+        assert response.status_code == 200 and response.data["title"] == "After"
+        assert member_client.get(report_url(workspace, past)).data["entries"][0]["task"]["name"] == "After"
+        listed = member_client.get(url(workspace, "micro-tasks/")).data["results"]
+        assert next(item for item in listed if item["id"] == task["id"])["reported_minutes"] == 60
+
     def test_new_micro_task_can_be_reported_for_a_past_day(self, member_client, workspace, member):
         task = member_client.post(url(workspace, "micro-tasks/"), {"title": "Forgotten work"}, format="json")
         assert task.status_code == 201

@@ -18,6 +18,7 @@ import { getErrorMessage } from "../calendar/error-message";
 import { PLACES, PLACE_COLOR, PLACE_LABEL, isIncomplete, minutesOf, needsDocument } from "./report-rows";
 import type { TRow } from "./report-rows";
 import { TaskCell } from "./task-cell";
+import { RenameMicroTask } from "../micro-tasks/rename-micro-task";
 import { ProgressLine, VerdictBadge } from "./verdict-badge";
 
 const FIELD =
@@ -311,6 +312,7 @@ type DialogProps = {
   onChange: (patch: Partial<TRow>) => void;
   onRemove: () => void;
   onClose: () => void;
+  onRename: (id: string, title: string) => void;
 };
 
 /** The details of one task of the report, in a small box in the middle of the page (a sheet on a phone). */
@@ -324,6 +326,7 @@ export function ReportRowDialog({
   onChange,
   onRemove,
   onClose,
+  onRename,
 }: DialogProps) {
   const minutes = minutesOf(row);
 
@@ -370,6 +373,14 @@ export function ReportRowDialog({
             disabled={readOnly}
             inline
           />
+          {!readOnly && row.task?.kind === "micro" ? (
+            <RenameMicroTask
+              workspaceSlug={workspaceSlug}
+              id={row.task.id}
+              title={row.task.name}
+              onRenamed={(title) => onRename(row.task!.id, title)}
+            />
+          ) : null}
           {row.saved ? (
             <div className="mt-1">
               <ProgressLine progress={row.saved} />
