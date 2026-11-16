@@ -32,10 +32,12 @@ function TaskRow({
   task,
   onToggle,
   onDelete,
+  onReport,
 }: {
   task: TMicroTask;
   onToggle: () => Promise<void>;
   onDelete: () => Promise<void>;
+  onReport?: () => void;
 }) {
   return (
     <li
@@ -70,6 +72,15 @@ function TaskRow({
           {task.due_date ? <span className="text-caption-sm-regular text-tertiary">Due {task.due_date}</span> : null}
         </div>
       </div>
+      {onReport ? (
+        <button
+          type="button"
+          onClick={onReport}
+          className="min-h-10 shrink-0 rounded-md border border-subtle px-3 text-body-xs-medium text-accent-primary hover:bg-layer-1"
+        >
+          Add to Day Report
+        </button>
+      ) : null}
       <button
         type="button"
         aria-label={`Delete ${task.title}`}
@@ -100,6 +111,7 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
   const [showDone, setShowDone] = useState(false);
   // The task whose "done" box is open: it asks how long the work took before the task is finished.
   const [finishing, setFinishing] = useState<TMicroTask | null>(null);
+  const [reporting, setReporting] = useState<TMicroTask | null>(null);
   const meetingInput = useRef<HTMLInputElement>(null);
   const isNamingMeeting = meeting !== null;
 
@@ -322,6 +334,7 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
             key={task.id}
             task={task}
             onToggle={() => finish(task)}
+            onReport={!forSomeoneElse ? () => setReporting(task) : undefined}
             onDelete={async () => void (await guard(() => remove(task.id)))}
           />
         ))}
@@ -334,6 +347,38 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
           name={finishing.title}
           onSubmit={(work) => reportFinished(finishing, work)}
           onClose={() => setFinishing(null)}
+        />
+      ) : null}
+
+      {reporting ? (
+        <FinishTaskDialog
+          key={reporting.id}
+          heading="Add to Day Report"
+          name={reporting.title}
+          reportingOnly
+          onSubmit={async ({ day, minutes, start, end, place, note }) => {
+            try {
+              await dayReportService.addRow(workspaceSlug, day, {
+                micro_task: reporting.id,
+                minutes,
+                ...(start && end ? { start, end } : {}),
+                location: place,
+                finished: false,
+                note,
+              });
+              await refreshTeamOps();
+              setToast({
+                type: "success",
+                title: "Added to the Day Report",
+                message: `${reporting.title} · ${formatMinutes(minutes)} on ${day}.`,
+              });
+              setReporting(null);
+            } catch (error) {
+              setToast({ type: "error", title: "Could not add it", message: getErrorMessage(error) });
+              throw error;
+            }
+          }}
+          onClose={() => setReporting(null)}
         />
       ) : null}
 
@@ -352,6 +397,7 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
                 <TaskRow
                   key={task.id}
                   task={task}
+                  onReport={!forSomeoneElse ? () => setReporting(task) : undefined}
                   onToggle={async () => void (await guard(() => update(task.id, { done: false })))}
                   onDelete={async () => void (await guard(() => remove(task.id)))}
                 />

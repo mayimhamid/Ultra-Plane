@@ -27,6 +27,7 @@ type Props = {
   /** The key of the work item, when it has one. */
   label?: string;
   name: string;
+  reportingOnly?: boolean;
   /** Adds the work to the Day Report; throws when it cannot. */
   onSubmit: (work: TFinishedWork) => Promise<void>;
   onClose: () => void;
@@ -49,7 +50,14 @@ const lastPlace = (): TReportPlace | "" => {
  * The box that asks how long a task took, like a Day Report row: the day, from and to (or only how long),
  * remote or onsite, and what was done. It is the same for a work item moved to Done and for a micro task.
  */
-export function FinishTaskDialog({ heading = "Finish task", label, name, onSubmit, onClose }: Props) {
+export function FinishTaskDialog({
+  heading = "Finish task",
+  label,
+  name,
+  reportingOnly = false,
+  onSubmit,
+  onClose,
+}: Props) {
   const [day, setDay] = useState(() => toDateKey(new Date()));
   const [spread, setSpread] = useState(false);
   const [start, setStart] = useState("");
@@ -82,7 +90,7 @@ export function FinishTaskDialog({ heading = "Finish task", label, name, onSubmi
       setToast({ type: "error", title: "Remote or onsite?", message: "Choose where the work was done." });
       return;
     }
-    if (!note.trim()) {
+    if (!reportingOnly && !note.trim()) {
       setToast({
         type: "error",
         title: "Describe the work",
@@ -133,7 +141,9 @@ export function FinishTaskDialog({ heading = "Finish task", label, name, onSubmi
         </header>
 
         <p className="text-body-xs-regular text-secondary">
-          How long did it take? Send the Day Report to mark the task done in its project.
+          {reportingOnly
+            ? "Choose the day, time and place for this work."
+            : "How long did it take? Send the Day Report to mark the task done."}
         </p>
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
           <label className="flex min-w-36 flex-1 flex-col gap-0.5">
@@ -211,7 +221,7 @@ export function FinishTaskDialog({ heading = "Finish task", label, name, onSubmi
           type="text"
           value={note}
           onChange={(event) => setNote(event.target.value)}
-          placeholder="What was done (required)"
+          placeholder={reportingOnly ? "What was done (optional)" : "What was done (required)"}
           className={field}
         />
 
