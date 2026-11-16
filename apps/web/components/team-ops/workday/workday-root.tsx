@@ -209,6 +209,7 @@ export const WorkdayRoot = observer(function WorkdayRoot({ workspaceSlug }: Prop
       </nav>
 
       <DayReportCard
+        key={`${date}:${othersReport ? viewedUser : "me"}`}
         workspaceSlug={workspaceSlug}
         day={date}
         user={othersReport ? viewedUser : undefined}

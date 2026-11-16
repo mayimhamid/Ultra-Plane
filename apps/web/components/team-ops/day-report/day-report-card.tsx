@@ -16,6 +16,7 @@ import { cn } from "@plane/utils";
 import { useDayReport, useMicroTasks } from "@/hooks/team-ops/use-day-report";
 // local imports
 import { getErrorMessage } from "../calendar/error-message";
+import { readDraft, writeDraft } from "./report-draft";
 import { ReportRowDialog, ReportRowLine } from "./report-row-parts";
 import { PLACE_LABEL, dayMinutes, isFilled, minutesOf, needsDocument } from "./report-rows";
 import type { TRow } from "./report-rows";
@@ -74,18 +75,9 @@ const clock = (stamp: number) => new Date(stamp).toLocaleTimeString("en-US", { h
 
 // What is typed is kept in this browser until it reaches the server, so closing the tab loses nothing.
 const storageKey = (workspaceSlug: string, day: string) => `ultra-plane-day-report:${workspaceSlug}:${day}`;
-const readLocal = (key: string): TRow[] | null => {
+const writeLocal = (key: string, day: string, rows: TRow[] | null) => {
   try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as { rows: TRow[] }).rows : null;
-  } catch {
-    return null;
-  }
-};
-const writeLocal = (key: string, rows: TRow[] | null) => {
-  try {
-    if (rows) window.localStorage.setItem(key, JSON.stringify({ rows, at: Date.now() }));
-    else window.localStorage.removeItem(key);
+    writeDraft(window.localStorage, key, day, rows);
   } catch {
     // storage is blocked: the server draft is the only copy
   }
@@ -102,6 +94,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
   const { report, isLoading, save } = useDayReport(workspaceSlug, day, user);
   const { tasks: microTasks } = useMicroTasks(workspaceSlug);
   const [rows, setRows] = useState<TRow[]>([]);
+  const [rowsOwner, setRowsOwner] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<"draft" | "send" | "auto" | null>(null);
   const [restored, setRestored] = useState(false);
   const [autoSavedAt, setAutoSavedAt] = useState<number | null>(null);
@@ -112,6 +105,9 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
   const loadedReport = useRef<TDayReport | null>(null);
   const removedKeys = useRef(new Set<string>());
   const localKey = storageKey(workspaceSlug, day);
+  const reportId = `${workspaceSlug}:${day}:${user ?? "me"}`;
+  const reportMatchesDay = report?.date === day;
+  const activeRows = rowsOwner === reportId && reportMatchesDay;
 
   const readOnly = !report?.can_edit;
   const recorded = report?.changes_are_recorded ?? false;
@@ -120,11 +116,10 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
 
   // Rows are loaded once per day shown: later saves keep what is on screen (and the cursor where it is).
   useEffect(() => {
-    if (!report) return;
-    const id = `${day}:${user ?? "me"}`;
+    if (!report || !reportMatchesDay) return;
     // Another screen can add a row to this day (for example the Done dialog).
     // Keep edits in progress, but show server changes as soon as the report refreshes.
-    if (loadedFor.current === id) {
+    if (loadedFor.current === reportId) {
       if (loadedReport.current === report) return;
       if (isSaving) return;
       loadedReport.current = report;
@@ -138,11 +133,19 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
       } else setRows(loaded.length > 0 || !report.can_edit ? loaded : [emptyRow(defaultPlace)]);
       return;
     }
-    loadedFor.current = id;
+    loadedFor.current = reportId;
     loadedReport.current = report;
     removedKeys.current.clear();
-    const local = report.can_edit ? readLocal(localKey) : null;
     const loaded = fromReport(report);
+    let local: TRow[] | null = null;
+    if (report.can_edit) {
+      try {
+        local = readDraft(window.localStorage, localKey, day, loaded);
+      } catch {
+        // Storage may be blocked. The report from the server is still available.
+      }
+    }
+    setRowsOwner(reportId);
     if (local && local.some(isFilled)) {
       setRows(local);
       setRestored(true);
@@ -153,12 +156,12 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
       setDirty(false);
     }
     setAutoSavedAt(null);
-  }, [report, day, user, localKey, defaultPlace, dirty, isSaving]);
+  }, [report, reportMatchesDay, reportId, day, localKey, defaultPlace, dirty, isSaving]);
 
   // Every change is kept in this browser right away.
   useEffect(() => {
-    if (!readOnly && dirty) writeLocal(localKey, rows);
-  }, [rows, dirty, readOnly, localKey]);
+    if (!readOnly && dirty && activeRows) writeLocal(localKey, day, rows);
+  }, [rows, dirty, readOnly, activeRows, localKey, day]);
 
   const total = dayMinutes(rows);
   const places = new Set(rows.filter((row) => isFilled(row) && row.place).map((row) => row.place));
@@ -245,7 +248,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
     setIsSaving(submit ? "send" : "draft");
     try {
       const next = await save({ entries, submit });
-      writeLocal(localKey, null);
+      writeLocal(localKey, day, null);
       removedKeys.current.clear();
       setDirty(false);
       setRestored(false);
@@ -264,14 +267,14 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
 
   // Today's unsent draft saves itself on the server a few seconds after the last change (on any device).
   const canAutosave =
-    !readOnly && !recorded && dirty && problems.length === 0 && (rows.some(isFilled) || report?.exists);
+    !readOnly && activeRows && !recorded && dirty && problems.length === 0 && (rows.some(isFilled) || report?.exists);
   useEffect(() => {
     if (!canAutosave || isSaving) return;
     const autosave = async () => {
       setIsSaving("auto");
       try {
         const next = await save({ entries: entriesOf(rows), submit: false });
-        writeLocal(localKey, null);
+        writeLocal(localKey, day, null);
         removedKeys.current.clear();
         setDirty(false);
         setAutoSavedAt(Date.now());
@@ -285,9 +288,9 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
     const timer = window.setTimeout(() => void autosave(), AUTOSAVE_MS);
     return () => window.clearTimeout(timer);
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, canAutosave]);
+  }, [rows, canAutosave, reportId]);
 
-  if (isLoading || !report) {
+  if (isLoading || !report || !activeRows) {
     return <p className="text-body-sm-regular text-tertiary">Loading the report...</p>;
   }
 
@@ -340,7 +343,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
             type="button"
             className="min-h-8 text-body-xs-medium text-accent-primary hover:underline"
             onClick={() => {
-              writeLocal(localKey, null);
+              writeLocal(localKey, day, null);
               removedKeys.current.clear();
               const loaded = fromReport(report);
               setRows(loaded.length > 0 ? loaded : [emptyRow(defaultPlace)]);
