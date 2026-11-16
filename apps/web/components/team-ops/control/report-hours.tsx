@@ -155,6 +155,12 @@ export const ReportHours = observer(function ReportHours({ workspaceSlug }: Prop
         </p>
       ) : null}
 
+      {isLoading ? (
+        <p role="status" className="text-body-sm-regular text-tertiary">
+          Loading hours for {period.label}...
+        </p>
+      ) : null}
+
       {totals ? (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <StatCard label="Hours reported" value={hours(totals.minutes)} hint={period.label} />
@@ -190,133 +196,135 @@ export const ReportHours = observer(function ReportHours({ workspaceSlug }: Prop
         </section>
       ) : null}
 
-      <section aria-label="Hours per person" className="overflow-hidden rounded-lg border border-subtle bg-surface-1">
-        <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-subtle px-4 py-3">
-          <h2 className="text-body-sm-medium text-primary">Hours per person</h2>
-          <span className="text-caption-sm-regular text-tertiary">
-            Tap a day to see the tasks and times of that day.
-          </span>
-        </header>
-        <div className="overflow-x-auto overscroll-x-contain">
-          <table className="w-full border-collapse text-left">
-            <thead className="text-caption-sm-medium text-tertiary">
-              <tr>
-                <th scope="col" className="sticky left-0 z-[1] min-w-40 bg-surface-1 px-3 py-2">
-                  Person
-                </th>
-                {period.days.map((day) => {
-                  const label = dayLabel(day);
-                  return (
-                    <th
-                      key={day}
-                      scope="col"
-                      className={cn("px-1 py-2 text-center", day === today && "text-accent-primary")}
-                    >
-                      <span className="font-normal block text-[10px]">{label.weekday}</span>
-                      {label.day}
-                    </th>
-                  );
-                })}
-                <th scope="col" className="px-3 py-2 text-right">
-                  Total
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-subtle">
-              {people.map((person) => (
-                <tr key={person.user.id}>
-                  <th scope="row" className="font-normal sticky left-0 z-[1] bg-surface-1 px-3 py-1.5">
-                    <span className="flex items-center gap-2">
-                      <PersonAvatar person={person.user} size="sm" />
-                      <span className="min-w-0">
-                        <span className="block truncate text-body-sm-medium text-primary">
-                          {person.user.display_name}
-                        </span>
-                        {person.reports_missing ? (
-                          <span className="text-caption-sm-regular text-warning-primary">
-                            {person.reports_missing} report{person.reports_missing === 1 ? "" : "s"} missing
-                          </span>
-                        ) : null}
-                      </span>
-                    </span>
+      {data ? (
+        <section aria-label="Hours per person" className="overflow-hidden rounded-lg border border-subtle bg-surface-1">
+          <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-subtle px-4 py-3">
+            <h2 className="text-body-sm-medium text-primary">Hours per person</h2>
+            <span className="text-caption-sm-regular text-tertiary">
+              Tap a day to see the tasks and times of that day.
+            </span>
+          </header>
+          <div className="overflow-x-auto overscroll-x-contain">
+            <table className="w-full border-collapse text-left">
+              <thead className="text-caption-sm-medium text-tertiary">
+                <tr>
+                  <th scope="col" className="sticky left-0 z-[1] min-w-40 bg-surface-1 px-3 py-2">
+                    Person
                   </th>
                   {period.days.map((day) => {
-                    const minutes = person.days[day] ?? 0;
-                    const where = person.places[day];
-                    const strength = Math.min(1, minutes / FULL_DAY);
+                    const label = dayLabel(day);
                     return (
-                      <td key={day} className="p-0.5 text-center">
-                        <button
-                          type="button"
-                          disabled={day > today}
-                          onClick={() => setOpen({ user: person.user.id, date: day })}
-                          title={`${person.user.display_name}, ${day}: ${hours(minutes)}${where ? ` (${where.toLowerCase()})` : ""}`}
-                          className={cn(
-                            "relative flex h-11 w-full min-w-11 flex-col items-center justify-center rounded-md text-caption-sm-medium tabular-nums",
-                            "hover:ring-2 hover:ring-accent-strong disabled:opacity-40",
-                            minutes ? "text-primary" : "text-tertiary"
-                          )}
-                          style={{
-                            backgroundColor: minutes
-                              ? `color-mix(in oklab, var(--background-color-accent-primary) ${Math.round(15 + strength * 55)}%, transparent)`
-                              : undefined,
-                          }}
-                        >
-                          {minutes ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}` : "·"}
-                          {where ? (
-                            <span
-                              aria-hidden
-                              className="absolute right-1 bottom-1 size-1.5 rounded-full"
-                              style={{ backgroundColor: PLACE_COLOR[where] }}
-                            />
-                          ) : null}
-                        </button>
-                      </td>
+                      <th
+                        key={day}
+                        scope="col"
+                        className={cn("px-1 py-2 text-center", day === today && "text-accent-primary")}
+                      >
+                        <span className="font-normal block text-[10px]">{label.weekday}</span>
+                        {label.day}
+                      </th>
                     );
                   })}
-                  <td className="px-3 py-1.5 text-right text-body-sm-semibold text-primary tabular-nums">
-                    {hours(person.total_minutes)}
-                  </td>
-                </tr>
-              ))}
-              {!isLoading && people.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={period.days.length + 2}
-                    className="px-4 py-6 text-center text-body-sm-regular text-tertiary"
-                  >
-                    Nobody here.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-            {people.length > 0 && data ? (
-              <tfoot className="border-t border-subtle text-caption-sm-medium text-secondary">
-                <tr>
-                  <th scope="row" className="sticky left-0 z-[1] bg-surface-1 px-3 py-2 text-left">
-                    Team
+                  <th scope="col" className="px-3 py-2 text-right">
+                    Total
                   </th>
-                  {data.days.map((day) => (
-                    <td key={day.date} className="px-1 py-2 text-center tabular-nums">
-                      {day.minutes ? Math.round(day.minutes / 6) / 10 : ""}
-                    </td>
-                  ))}
-                  <td className="px-3 py-2 text-right text-primary tabular-nums">{hours(data.totals.minutes)}</td>
                 </tr>
-              </tfoot>
-            ) : null}
-          </table>
-        </div>
-        <p className="flex flex-wrap gap-3 border-t border-subtle px-4 py-2 text-caption-sm-regular text-tertiary">
-          {Object.entries(PLACE_COLOR).map(([key, color]) => (
-            <span key={key} className="flex items-center gap-1">
-              <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
-              {key.charAt(0) + key.slice(1).toLowerCase()}
-            </span>
-          ))}
-          <span>Darker means more hours (8h is full).</span>
-        </p>
-      </section>
+              </thead>
+              <tbody className="divide-y divide-subtle">
+                {people.map((person) => (
+                  <tr key={person.user.id}>
+                    <th scope="row" className="font-normal sticky left-0 z-[1] bg-surface-1 px-3 py-1.5">
+                      <span className="flex items-center gap-2">
+                        <PersonAvatar person={person.user} size="sm" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-body-sm-medium text-primary">
+                            {person.user.display_name}
+                          </span>
+                          {person.reports_missing ? (
+                            <span className="text-caption-sm-regular text-warning-primary">
+                              {person.reports_missing} report{person.reports_missing === 1 ? "" : "s"} missing
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                    </th>
+                    {period.days.map((day) => {
+                      const minutes = person.days[day] ?? 0;
+                      const where = person.places[day];
+                      const strength = Math.min(1, minutes / FULL_DAY);
+                      return (
+                        <td key={day} className="p-0.5 text-center">
+                          <button
+                            type="button"
+                            disabled={day > today}
+                            onClick={() => setOpen({ user: person.user.id, date: day })}
+                            title={`${person.user.display_name}, ${day}: ${hours(minutes)}${where ? ` (${where.toLowerCase()})` : ""}`}
+                            className={cn(
+                              "relative flex h-11 w-full min-w-11 flex-col items-center justify-center rounded-md text-caption-sm-medium tabular-nums",
+                              "hover:ring-2 hover:ring-accent-strong disabled:opacity-40",
+                              minutes ? "text-primary" : "text-tertiary"
+                            )}
+                            style={{
+                              backgroundColor: minutes
+                                ? `color-mix(in oklab, var(--background-color-accent-primary) ${Math.round(15 + strength * 55)}%, transparent)`
+                                : undefined,
+                            }}
+                          >
+                            {minutes ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}` : "·"}
+                            {where ? (
+                              <span
+                                aria-hidden
+                                className="absolute right-1 bottom-1 size-1.5 rounded-full"
+                                style={{ backgroundColor: PLACE_COLOR[where] }}
+                              />
+                            ) : null}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-1.5 text-right text-body-sm-semibold text-primary tabular-nums">
+                      {hours(person.total_minutes)}
+                    </td>
+                  </tr>
+                ))}
+                {!isLoading && people.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={period.days.length + 2}
+                      className="px-4 py-6 text-center text-body-sm-regular text-tertiary"
+                    >
+                      Nobody here.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+              {people.length > 0 && data ? (
+                <tfoot className="border-t border-subtle text-caption-sm-medium text-secondary">
+                  <tr>
+                    <th scope="row" className="sticky left-0 z-[1] bg-surface-1 px-3 py-2 text-left">
+                      Team
+                    </th>
+                    {data.days.map((day) => (
+                      <td key={day.date} className="px-1 py-2 text-center tabular-nums">
+                        {day.minutes ? Math.round(day.minutes / 6) / 10 : ""}
+                      </td>
+                    ))}
+                    <td className="px-3 py-2 text-right text-primary tabular-nums">{hours(data.totals.minutes)}</td>
+                  </tr>
+                </tfoot>
+              ) : null}
+            </table>
+          </div>
+          <p className="flex flex-wrap gap-3 border-t border-subtle px-4 py-2 text-caption-sm-regular text-tertiary">
+            {Object.entries(PLACE_COLOR).map(([key, color]) => (
+              <span key={key} className="flex items-center gap-1">
+                <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
+                {key.charAt(0) + key.slice(1).toLowerCase()}
+              </span>
+            ))}
+            <span>Darker means more hours (8h is full).</span>
+          </p>
+        </section>
+      ) : null}
 
       {open && openPerson ? (
         <DayPanel

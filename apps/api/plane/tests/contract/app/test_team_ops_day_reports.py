@@ -371,6 +371,21 @@ class TestSummary:
         row = next(r for r in remote["people"] if r["user"]["id"] == str(member.id))
         assert row["total_minutes"] == 60
 
+    def test_summary_returns_only_selected_week(self, admin_client, member_client, workspace, member, issue):
+        previous = today() - timedelta(days=10)
+        current = today() - timedelta(days=2)
+        assert put(member_client, workspace, previous, [{"issue": str(issue.id), "minutes": 60}]).status_code == 200
+        assert put(member_client, workspace, current, [{"issue": str(issue.id), "minutes": 120}]).status_code == 200
+        response = admin_client.get(
+            url(workspace, "day-reports/summary/"),
+            {"from": str(previous), "to": str(previous + timedelta(days=6))},
+        )
+        assert response.status_code == 200
+        person = next(row for row in response.data["people"] if row["user"]["id"] == str(member.id))
+        assert person["total_minutes"] == 60
+        assert person["days"] == {str(previous): 60}
+        assert sum(day["minutes"] for day in response.data["days"]) == 60
+
     def test_personal_summary_counts_report_rows_and_overlaps(self, member_client, workspace, member, issue):
         task = member_client.post(url(workspace, "micro-tasks/"), {"title": "Meeting"}, format="json").data
         rows = [

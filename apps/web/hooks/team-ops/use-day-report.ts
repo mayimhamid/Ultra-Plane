@@ -11,7 +11,8 @@ import type { TDayReportRowInput, TMicroTaskInput } from "@plane/types";
 export const dayReportService = new DayReportService();
 
 /** Every Team Ops screen that shows time or tasks reads fresh data after a change. */
-export const refreshTeamOps = () => globalMutate((key) => typeof key === "string" && key.startsWith("TEAM_OPS_"));
+export const refreshTeamOps = (excludeKey?: string) =>
+  globalMutate((key) => typeof key === "string" && key.startsWith("TEAM_OPS_") && key !== excludeKey);
 
 /** One day's report: the caller's, or `user`'s for managers. */
 export const useDayReport = (workspaceSlug: string, day: string, user?: string) => {
@@ -24,7 +25,8 @@ export const useDayReport = (workspaceSlug: string, day: string, user?: string) 
     save: async (body: { entries: TDayReportRowInput[]; submit?: boolean; reason?: string }) => {
       const next = await dayReportService.saveReport(workspaceSlug, day, body);
       await mutate(next, { revalidate: false });
-      await refreshTeamOps();
+      // The report is already up to date. Refresh the other views without making saving wait for all of them.
+      void refreshTeamOps(key).catch(() => {});
       return next;
     },
   };

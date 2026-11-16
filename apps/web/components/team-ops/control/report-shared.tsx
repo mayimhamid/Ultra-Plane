@@ -172,16 +172,13 @@ export const useReportSummary = (
   params: { from: string; to: string; team?: string; place?: string },
   enabled = true
 ) =>
-  useSWR<TReportSummary>(
-    enabled ? `TEAM_OPS_REPORT_SUMMARY_${workspaceSlug}_${JSON.stringify(params)}` : null,
-    () =>
-      dayReportService.getSummary(workspaceSlug, {
-        from: params.from,
-        to: params.to,
-        ...(params.team ? { team: params.team } : {}),
-        ...(params.place ? { place: params.place } : {}),
-      }),
-    { keepPreviousData: true }
+  useSWR<TReportSummary>(enabled ? `TEAM_OPS_REPORT_SUMMARY_${workspaceSlug}_${JSON.stringify(params)}` : null, () =>
+    dayReportService.getSummary(workspaceSlug, {
+      from: params.from,
+      to: params.to,
+      ...(params.team ? { team: params.team } : {}),
+      ...(params.place ? { place: params.place } : {}),
+    })
   );
 
 /** Hours as "7h 30m"; an empty day is a dash. */
