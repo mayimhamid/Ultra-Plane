@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
+import Link from "next/link";
 import { Button } from "@makeplane/propel/components/button";
 import { Icon } from "@makeplane/propel/components/icon";
 import { IconButton } from "@makeplane/propel/components/icon-button";
@@ -18,6 +19,7 @@ import {
   summarizeAuditChange,
   toDayPayload,
   validatePlanTimes,
+  toDateKey,
 } from "@plane/services";
 import type { TPlanValues } from "@plane/services";
 import type { TCalendarAudit, TCalendarDay, TCalendarDayPayload } from "@plane/types";
@@ -122,6 +124,15 @@ export const DayPanel = observer(function DayPanel(props: Props) {
           onClick={onClose}
         />
       </header>
+
+      {day.date <= toDateKey(new Date()) ? (
+        <Link
+          href={`/${workspaceSlug}/team-ops/workday/?date=${day.date}`}
+          className="rounded-md bg-accent-primary px-3 py-2 text-center text-body-sm-medium text-on-color"
+        >
+          Add tasks and time to this day
+        </Link>
+      ) : null}
 
       {isLocked ? (
         <p className="rounded-sm bg-layer-1 p-2 text-caption-sm-regular text-secondary">{lockedReason}</p>

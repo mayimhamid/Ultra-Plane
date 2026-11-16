@@ -423,6 +423,24 @@ class TestStateSync:
         assert added.data["status"] == "SUBMITTED"
         assert member_client.get(report_url(workspace, past)).data["entries"][0]["task"]["id"] == str(issue.id)
 
+    def test_past_day_updates_personal_summary_and_heatmap(self, member_client, workspace, member, issue):
+        past = today() - timedelta(days=5)
+        micro = member_client.post(url(workspace, "micro-tasks/"), {"title": "Meeting"}, format="json").data
+        rows = [
+            {"issue": str(issue.id), "start": "09:00", "end": "10:00"},
+            {"micro_task": micro["id"], "start": "09:30", "end": "10:30"},
+        ]
+        response = put(member_client, workspace, past, rows, submit=True)
+        assert response.status_code == 200 and response.data["total_minutes"] == 90
+        params = {"from": str(past), "to": str(today()), "user": str(member.id)}
+        summary = member_client.get(url(workspace, "day-reports/summary/"), params)
+        assert summary.status_code == 200
+        person = summary.data["people"][0]
+        assert (person["entry_count"], person["task_count"], person["total_minutes"]) == (2, 2, 90)
+        heatmap = member_client.get(url(workspace, "work-sessions/heatmap/"))
+        day = next(item for item in heatmap.data["days"] if str(item["date"]) == str(past))
+        assert day["tasks"] == 2 and day["seconds"] == 90 * 60
+
     def test_row_endpoint_rejects_future_day(self, member_client, workspace, issue):
         future = today() + timedelta(days=1)
         response = member_client.post(

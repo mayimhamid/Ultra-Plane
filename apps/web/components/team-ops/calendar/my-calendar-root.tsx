@@ -46,8 +46,7 @@ const LEGEND: TDayKind[] = ["ONSITE", "REMOTE", "OFF", "LEAVE", "HOLIDAY", "UNPL
 const monthFormat = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
 const shortDateFormat = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short" });
 
-const LOCKED_PAST_DAY =
-  "This day is in the past and can no longer be changed. Ask a workspace admin if it needs correcting.";
+const LOCKED_PAST_DAY = "The work plan for this day is locked. You can still add tasks and time to its Day Report.";
 
 export const MyCalendarRoot = observer(function MyCalendarRoot({ workspaceSlug }: Props) {
   // states
