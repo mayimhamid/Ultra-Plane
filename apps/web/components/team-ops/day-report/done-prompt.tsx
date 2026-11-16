@@ -8,8 +8,10 @@ import { useEffect, useState } from "react";
 import { observer } from "mobx-react";
 import { setToast } from "@plane/blocks/toast";
 import { formatMinutes, toDateKey } from "@plane/services";
+import { EIssuesStoreType } from "@plane/types";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
+import { useIssues } from "@/hooks/store/use-issues";
 import { useProject } from "@/hooks/store/use-project";
 import { useProjectState } from "@/hooks/store/use-project-state";
 import { dayReportService, refreshTeamOps } from "@/hooks/team-ops/use-day-report";
@@ -18,12 +20,18 @@ import { getErrorMessage } from "../calendar/error-message";
 import { FinishTaskDialog } from "./finish-task-dialog";
 import type { TFinishedWork } from "./finish-task-dialog";
 
-type TDone = { workspaceSlug: string; projectId: string; issueId: string; stateId: string; previousStateId?: string };
+type TDone = {
+  workspaceSlug: string;
+  projectId: string;
+  issueId: string;
+  stateId: string;
+  previousStateId?: string;
+  deferred: boolean;
+};
 
 /**
  * When a work item is moved to a Done state in its project (list, board or its page), this asks how long it took,
- * like a Day Report row, and adds it to that day's report with "Task done". A task finished long ago can be
- * skipped with "Done earlier, do not add it", so nothing is reported for it.
+ * like a Day Report row. The task enters Done when the report is submitted.
  */
 export const DonePrompt = observer(function DonePrompt() {
   const [done, setDone] = useState<TDone | null>(null);
@@ -32,6 +40,7 @@ export const DonePrompt = observer(function DonePrompt() {
     issue: { getIssueById },
   } = useIssueDetail();
   const { getPartialProjectById } = useProject();
+  const { issues: projectIssues } = useIssues(EIssuesStoreType.PROJECT);
 
   useEffect(() => {
     const onChange = (event: Event) => {
@@ -40,10 +49,11 @@ export const DonePrompt = observer(function DonePrompt() {
       const before = detail.previousStateId ? getStateById(detail.previousStateId) : undefined;
       // Only a move into Done (not between two Done states, not out of Done).
       if (next?.group !== "completed" || before?.group === "completed") return;
+      detail.deferred = true;
       setDone(detail);
     };
-    window.addEventListener("team-ops:state-changed", onChange);
-    return () => window.removeEventListener("team-ops:state-changed", onChange);
+    window.addEventListener("team-ops:before-state-changed", onChange);
+    return () => window.removeEventListener("team-ops:before-state-changed", onChange);
   }, [getStateById]);
 
   if (!done) return null;
@@ -55,7 +65,7 @@ export const DonePrompt = observer(function DonePrompt() {
 
   const submit = async ({ day, minutes, start, end, place, note }: TFinishedWork) => {
     try {
-      await dayReportService.addRow(done.workspaceSlug, day, {
+      const report = await dayReportService.addRow(done.workspaceSlug, day, {
         issue: done.issueId,
         minutes,
         ...(start && end ? { start, end } : {}),
@@ -63,11 +73,20 @@ export const DonePrompt = observer(function DonePrompt() {
         finished: true,
         note,
       });
+      if (report.status === "SUBMITTED") {
+        await projectIssues.updateIssue(
+          done.workspaceSlug,
+          done.projectId,
+          done.issueId,
+          { state_id: done.stateId },
+          false
+        );
+      }
       await refreshTeamOps();
       setToast({
         type: "success",
         title: "Added to the Day Report",
-        message: `${key} · ${formatMinutes(minutes)}${day === toDateKey(new Date()) ? " today" : ` on ${day}`}.`,
+        message: `${key} · ${formatMinutes(minutes)}${day === toDateKey(new Date()) ? " today" : ` on ${day}`}.${report.status === "SUBMITTED" ? " Task finished." : " Send the report to finish the task."}`,
       });
       close();
     } catch (error) {
@@ -76,14 +95,5 @@ export const DonePrompt = observer(function DonePrompt() {
     }
   };
 
-  return (
-    <FinishTaskDialog
-      key={done.issueId}
-      label={key}
-      name={issue?.name ?? ""}
-      onSubmit={submit}
-      onSkip={close}
-      onClose={close}
-    />
-  );
+  return <FinishTaskDialog key={done.issueId} label={key} name={issue?.name ?? ""} onSubmit={submit} onClose={close} />;
 });

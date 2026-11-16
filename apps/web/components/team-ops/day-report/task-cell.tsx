@@ -17,6 +17,7 @@ import useDebounce from "@/hooks/use-debounce";
 import { WorkspaceService } from "@/services/workspace.service";
 
 const workspaceService = new WorkspaceService();
+const ALL_PROJECTS = "__all__";
 const NO_PROJECT = "__micro__";
 
 /** The task of a report row: a work item of a project, or a micro task (no project). */
@@ -49,20 +50,21 @@ export const TaskCell = observer(function TaskCell({
   inline = false,
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState(ALL_PROJECTS);
   const [query, setQuery] = useState("");
   const box = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const { joinedProjectIds, getPartialProjectById } = useProject();
   const debounced = useDebounce(query, 250);
   const isMicro = projectId === NO_PROJECT;
+  const isAll = projectId === ALL_PROJECTS;
 
   const { data, isLoading } = useSWR(
-    isOpen && projectId && !isMicro ? `TEAM_OPS_REPORT_TASKS_${projectId}_${debounced}` : null,
+    isOpen && !isMicro ? `TEAM_OPS_REPORT_TASKS_${workspaceSlug}_${projectId}_${debounced}` : null,
     () =>
       workspaceService.searchEntity(workspaceSlug, {
         count: 1000,
-        project_id: projectId!,
+        ...(isAll ? {} : { project_id: projectId }),
         query_type: ["issue"],
         query: debounced,
       })
@@ -71,13 +73,11 @@ export const TaskCell = observer(function TaskCell({
   const close = useCallback(() => setIsOpen(false), []);
   useDismiss(box, isOpen, close);
   useEffect(() => {
-    if (isOpen && projectId) search.current?.focus();
+    if (isOpen) search.current?.focus();
   }, [isOpen, projectId]);
 
   const issues: TIssueSearchResponse[] = data?.issue ?? [];
-  const micro = microTasks.filter(
-    (task) => !task.done && task.title.toLowerCase().includes(query.trim().toLowerCase())
-  );
+  const micro = microTasks.filter((task) => task.title.toLowerCase().includes(query.trim().toLowerCase()));
 
   const pick = (next: TTaskRef) => {
     onChange(next);
@@ -128,6 +128,18 @@ export const TaskCell = observer(function TaskCell({
           )}
         >
           <div className="flex flex-wrap gap-1">
+            <button
+              type="button"
+              onClick={() => setProjectId(ALL_PROJECTS)}
+              className={cn(
+                "min-h-8 rounded-full border px-3 text-caption-sm-medium",
+                isAll
+                  ? "border-accent-strong bg-accent-subtle text-accent-primary"
+                  : "border-subtle text-secondary hover:bg-layer-1"
+              )}
+            >
+              All projects
+            </button>
             {joinedProjectIds.map((id) => (
               <button
                 key={id}
@@ -154,79 +166,75 @@ export const TaskCell = observer(function TaskCell({
               No project (micro tasks)
             </button>
           </div>
-          {projectId ? (
-            <>
-              <input
-                ref={search}
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={isMicro ? "Search your micro tasks" : "Search the work items"}
-                aria-label="Search tasks"
-                className="h-10 rounded-md border border-subtle bg-layer-1 px-3 text-body-sm-regular text-primary outline-none focus:border-accent-strong"
-              />
-              <ul role="listbox" aria-label="Tasks" className="max-h-64 overflow-y-auto">
-                {isMicro ? (
-                  micro.length === 0 ? (
-                    <li className="px-3 py-2 text-body-xs-regular text-tertiary">
-                      No open micro tasks. Add them in Micro Tasks.
-                    </li>
-                  ) : (
-                    micro.map((task) => (
-                      <li key={task.id} role="option" aria-selected={value?.id === task.id}>
-                        <button
-                          type="button"
-                          className="min-h-10 w-full truncate rounded px-3 py-2 text-left text-body-sm-regular hover:bg-layer-1"
-                          onClick={() =>
-                            pick({
-                              kind: "micro",
-                              id: task.id,
-                              key: null,
-                              name: task.title,
-                              project: null,
-                              isMeeting: task.is_meeting,
-                            })
-                          }
-                        >
-                          {task.is_meeting ? <span className="mr-1 text-success-primary">●</span> : null}
-                          {task.title}
-                        </button>
-                      </li>
-                    ))
-                  )
-                ) : issues.length === 0 ? (
+          <>
+            <input
+              ref={search}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={isMicro ? "Search your micro tasks" : "Search work items, including older ones"}
+              aria-label="Search tasks"
+              className="h-10 rounded-md border border-subtle bg-layer-1 px-3 text-body-sm-regular text-primary outline-none focus:border-accent-strong"
+            />
+            <ul role="listbox" aria-label="Tasks" className="max-h-64 overflow-y-auto">
+              {isMicro ? (
+                micro.length === 0 ? (
                   <li className="px-3 py-2 text-body-xs-regular text-tertiary">
-                    {isLoading ? "Searching..." : "No work items found."}
+                    No micro tasks found. Add them in Micro Tasks.
                   </li>
                 ) : (
-                  issues.map((issue) => (
-                    <li key={issue.id} role="option" aria-selected={value?.id === issue.id}>
+                  micro.map((task) => (
+                    <li key={task.id} role="option" aria-selected={value?.id === task.id}>
                       <button
                         type="button"
                         className="min-h-10 w-full truncate rounded px-3 py-2 text-left text-body-sm-regular hover:bg-layer-1"
                         onClick={() =>
                           pick({
-                            kind: "issue",
-                            id: issue.id,
-                            key: `${issue.project__identifier}-${issue.sequence_id}`,
-                            name: issue.name,
-                            project: getPartialProjectById(projectId)?.name ?? null,
+                            kind: "micro",
+                            id: task.id,
+                            key: null,
+                            name: task.title,
+                            project: null,
+                            isMeeting: task.is_meeting,
                           })
                         }
                       >
-                        <span className="text-tertiary">
-                          {issue.project__identifier}-{issue.sequence_id}
-                        </span>{" "}
-                        {issue.name}
+                        {task.is_meeting ? <span className="mr-1 text-success-primary">●</span> : null}
+                        {task.title}
                       </button>
                     </li>
                   ))
-                )}
-              </ul>
-            </>
-          ) : (
-            <p className="px-1 text-caption-sm-regular text-tertiary">Choose a project, or "No project".</p>
-          )}
+                )
+              ) : issues.length === 0 ? (
+                <li className="px-3 py-2 text-body-xs-regular text-tertiary">
+                  {isLoading ? "Searching..." : "No work items found."}
+                </li>
+              ) : (
+                issues.map((issue) => (
+                  <li key={issue.id} role="option" aria-selected={value?.id === issue.id}>
+                    <button
+                      type="button"
+                      className="min-h-10 w-full truncate rounded px-3 py-2 text-left text-body-sm-regular hover:bg-layer-1"
+                      onClick={() =>
+                        pick({
+                          kind: "issue",
+                          id: issue.id,
+                          key: `${issue.project__identifier}-${issue.sequence_id}`,
+                          name: issue.name,
+                          project: getPartialProjectById(issue.project_id)?.name ?? null,
+                        })
+                      }
+                    >
+                      <span className="text-tertiary">
+                        {issue.project__identifier}-{issue.sequence_id}
+                      </span>{" "}
+                      {issue.name}
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </>
         </div>
       ) : null}
     </div>

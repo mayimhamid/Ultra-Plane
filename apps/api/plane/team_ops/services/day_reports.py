@@ -139,7 +139,12 @@ def issue_progress(issue_ids):
         .values_list("issue_id", "total")
     )
     finished_rows = set(
-        DayReportEntry.objects.filter(issue_id__in=issue_ids, finished=True, report__deleted_at__isnull=True)
+        DayReportEntry.objects.filter(
+            issue_id__in=issue_ids,
+            finished=True,
+            report__status=DayReport.Status.SUBMITTED,
+            report__deleted_at__isnull=True,
+        )
         .values_list("issue_id", flat=True)
         .distinct()
     )
@@ -480,13 +485,14 @@ def save_report(*, workspace, user, actor, day, rows, submit, reason=""):
                 for position, row in enumerate(cleaned)
             ]
         )
-        for row in cleaned:
-            micro = row["micro_task"]
-            if micro is not None and row["finished"] and not micro.done:
-                micro.done, micro.done_at = True, now
-                micro.save(update_fields=["done", "done_at", "updated_at"])
-        # "Done" in the report also moves the work item to its project's Done state.
-        complete_issues([row["issue"] for row in cleaned if row["issue"] is not None and row["finished"]], actor)
+        if sending:
+            for row in cleaned:
+                micro = row["micro_task"]
+                if micro is not None and row["finished"] and not micro.done:
+                    micro.done, micro.done_at = True, now
+                    micro.save(update_fields=["done", "done_at", "updated_at"])
+            # A draft never completes a task in its project.
+            complete_issues([row["issue"] for row in cleaned if row["issue"] is not None and row["finished"]], actor)
         after = _snapshot(report)
         if sending and report.status != DayReport.Status.SUBMITTED:
             report.status = DayReport.Status.SUBMITTED

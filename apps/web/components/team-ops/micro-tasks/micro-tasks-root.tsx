@@ -140,10 +140,14 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
     if (done) setMeeting(null);
   };
 
-  /** Ticking an open task asks how long it took (like a work item moved to Done); for someone else's task it only ticks. */
+  /** Ticking an open task asks its assignee to report the work before completion. */
   const finish = async (task: TMicroTask) => {
     if (forSomeoneElse) {
-      await guard(() => update(task.id, { done: true }));
+      setToast({
+        type: "error",
+        title: "The assignee must report this task",
+        message: "Ask them to add it to their Day Report.",
+      });
       return;
     }
     setFinishing(task);
@@ -151,8 +155,8 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
 
   const reportFinished = async (task: TMicroTask, { day, minutes, start, end, place, note }: TFinishedWork) => {
     try {
-      // The report row, marked finished, also marks the micro task done.
-      await dayReportService.addRow(workspaceSlug, day, {
+      // The report row marks the micro task done when the report is sent.
+      const report = await dayReportService.addRow(workspaceSlug, day, {
         micro_task: task.id,
         minutes,
         ...(start && end ? { start, end } : {}),
@@ -164,7 +168,7 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
       setToast({
         type: "success",
         title: "Added to the Day Report",
-        message: `${task.title} · ${formatMinutes(minutes)}${day === toDateKey(new Date()) ? " today" : ` on ${day}`}.`,
+        message: `${task.title} · ${formatMinutes(minutes)}${day === toDateKey(new Date()) ? " today" : ` on ${day}`}.${report.status === "SUBMITTED" ? " Task finished." : " Send the report to finish the task."}`,
       });
       setFinishing(null);
     } catch (error) {
@@ -326,12 +330,9 @@ export const MicroTasksRoot = observer(function MicroTasksRoot({ workspaceSlug }
       {finishing ? (
         <FinishTaskDialog
           key={finishing.id}
-          heading={finishing.is_meeting ? "Meeting done" : "Task done"}
+          heading={finishing.is_meeting ? "Finish meeting" : "Finish task"}
           name={finishing.title}
           onSubmit={(work) => reportFinished(finishing, work)}
-          onSkip={async () => {
-            if (await guard(() => update(finishing.id, { done: true }))) setFinishing(null);
-          }}
           onClose={() => setFinishing(null)}
         />
       ) : null}

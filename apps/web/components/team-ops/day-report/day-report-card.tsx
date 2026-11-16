@@ -115,7 +115,6 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
 
   const readOnly = !report?.can_edit;
   const recorded = report?.changes_are_recorded ?? false;
-  const isPast = report ? report.date < report.today : false;
   const defaultPlace: TReportPlace | "" =
     report?.planned_mode === "REMOTE" || report?.planned_mode === "ONSITE" ? report.planned_mode : "";
 
@@ -265,7 +264,7 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
 
   // Today's unsent draft saves itself on the server a few seconds after the last change (on any device).
   const canAutosave =
-    !readOnly && (!recorded || isPast) && dirty && problems.length === 0 && (rows.some(isFilled) || report?.exists);
+    !readOnly && !recorded && dirty && problems.length === 0 && (rows.some(isFilled) || report?.exists);
   useEffect(() => {
     if (!canAutosave || isSaving) return;
     const autosave = async () => {
@@ -399,12 +398,12 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
           ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
-            {recorded && !isPast ? (
+            {recorded ? (
               <Button
                 variant="primary"
                 size="lg"
                 stretch="auto"
-                label={isPast && report.status !== "SUBMITTED" ? "Send the forgotten report" : "Save the change"}
+                label={report.status !== "SUBMITTED" ? "Send the forgotten report" : "Save the change"}
                 loading={isSaving === "send"}
                 disabled={isSaving === "send" || isSaving === "draft"}
                 onClick={() => void send(true)}
@@ -443,8 +442,8 @@ export const DayReportCard = observer(function DayReportCard({ workspaceSlug, da
           </div>
           <p className="text-caption-sm-regular text-tertiary">
             Press a task to write its time (from and to, or only how long), where it was done and what was done. Tick
-            "Task done" when it is finished: it is also set to Done in its project, and Speedy, On time or OverTime
-            compares all its reported time with its plan.
+            "Task done" when it is finished: sending the report sets it to Done in its project. Speedy, On time or
+            OverTime compares all its reported time with its plan.
           </p>
         </>
       )}

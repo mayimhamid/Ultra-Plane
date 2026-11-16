@@ -159,9 +159,12 @@ class TestPlannedTime:
         assert saved.status_code == 200 and saved.data["planned_minutes"] == 120
         put(member_client, workspace, today(), [{"issue": str(issue.id), "minutes": 60, "finished": True}])
         progress = member_client.get(plan_url).data
-        assert progress["reported_minutes"] == 60 and progress["finished"] and progress["status"] == SPEEDY
+        assert progress["reported_minutes"] == 60 and not progress["finished"] and progress["status"] == IN_PROGRESS
         row = member_client.get(report_url(workspace, today())).data["entries"][0]
-        assert row["task"]["status"] == SPEEDY and row["task"]["planned_minutes"] == 120
+        assert row["task"]["status"] == IN_PROGRESS and row["task"]["planned_minutes"] == 120
+        put(member_client, workspace, today(), [{"issue": str(issue.id), "minutes": 60, "finished": True}], submit=True)
+        progress = member_client.get(plan_url).data
+        assert progress["finished"] and progress["status"] == SPEEDY
         assert member_client.put(plan_url, {"amount": "", "unit": "HOURS"}, format="json").data["status"] is None
         assert not TaskPlan.objects.exists()
 
@@ -192,6 +195,17 @@ class TestMicroTasks:
         ).data
         assert [row["task"]["kind"] for row in report["entries"]] == ["micro", "micro"]
         assert report["entries"][0]["task"]["project"] is None
+        assert not MicroTask.objects.get(pk=created.data["id"]).done
+        put(
+            member_client,
+            workspace,
+            today(),
+            [
+                {"micro_task": created.data["id"], "minutes": 50, "finished": True},
+                {"micro_task": meeting["id"], "minutes": 30},
+            ],
+            submit=True,
+        )
         assert MicroTask.objects.get(pk=created.data["id"]).done
         listed = member_client.get(url(workspace, "micro-tasks/")).data["results"]
         assert {task["title"] for task in listed} == {"Call the supplier", "Weekly sync"}
@@ -354,7 +368,11 @@ class TestStateSync:
             project=project, workspace=workspace, name="Shipped", defaults={"color": "#0a0", "group": "completed"}
         )
         Issue.objects.filter(pk=issue.pk).update(state=todo)
-        put(member_client, workspace, today(), [{"issue": str(issue.id), "minutes": 30, "finished": True}])
+        rows = [{"issue": str(issue.id), "minutes": 30, "finished": True}]
+        put(member_client, workspace, today(), rows)
+        issue.refresh_from_db()
+        assert issue.state.group == "unstarted"
+        put(member_client, workspace, today(), rows, submit=True)
         issue.refresh_from_db()
         assert issue.state.group == "completed"
         from plane.db.models import IssueActivity
@@ -380,3 +398,24 @@ class TestStateSync:
         )
         revision = DayReportRevision.objects.get()
         assert revision.kind == "CHANGE" and "marked done" in revision.reason
+
+    def test_forgotten_task_can_be_added_five_days_later(self, member_client, workspace, issue):
+        past = today() - timedelta(days=5)
+        added = member_client.post(
+            report_url(workspace, past, "rows/"),
+            {"issue": str(issue.id), "minutes": 45, "location": "REMOTE"},
+            format="json",
+        )
+        assert added.status_code == 201
+        assert added.data["status"] == "SUBMITTED"
+        assert member_client.get(report_url(workspace, past)).data["entries"][0]["task"]["id"] == str(issue.id)
+
+    def test_row_endpoint_rejects_future_day(self, member_client, workspace, issue):
+        future = today() + timedelta(days=1)
+        response = member_client.post(
+            report_url(workspace, future, "rows/"),
+            {"issue": str(issue.id), "minutes": 45},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert not DayReport.objects.filter(workspace=workspace, date=future).exists()

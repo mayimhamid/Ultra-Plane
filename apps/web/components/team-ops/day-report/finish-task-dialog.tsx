@@ -22,15 +22,13 @@ export type TFinishedWork = {
 };
 
 type Props = {
-  /** "Task done", or whatever names the thing that was finished. */
+  /** The action the person is starting, before completion is saved. */
   heading?: string;
   /** The key of the work item, when it has one. */
   label?: string;
   name: string;
   /** Adds the work to the Day Report; throws when it cannot. */
   onSubmit: (work: TFinishedWork) => Promise<void>;
-  /** Finished before, nothing to report: the task is only marked done. */
-  onSkip: () => Promise<void> | void;
   onClose: () => void;
 };
 
@@ -48,10 +46,10 @@ const lastPlace = (): TReportPlace | "" => {
 };
 
 /**
- * The box that asks how long a finished task took, like a Day Report row: the day, from and to (or only how long),
+ * The box that asks how long a task took, like a Day Report row: the day, from and to (or only how long),
  * remote or onsite, and what was done. It is the same for a work item moved to Done and for a micro task.
  */
-export function FinishTaskDialog({ heading = "Task done", label, name, onSubmit, onSkip, onClose }: Props) {
+export function FinishTaskDialog({ heading = "Finish task", label, name, onSubmit, onClose }: Props) {
   const [day, setDay] = useState(() => toDateKey(new Date()));
   const [spread, setSpread] = useState(false);
   const [start, setStart] = useState("");
@@ -59,19 +57,17 @@ export function FinishTaskDialog({ heading = "Task done", label, name, onSubmit,
   const [duration, setDuration] = useState("");
   const [place, setPlace] = useState<TReportPlace | "">(lastPlace);
   const [note, setNote] = useState("");
-  const [earlier, setEarlier] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const minutes = spread ? parseDuration(duration) : spanMinutes(start, end);
 
   const save = async () => {
-    if (earlier) {
-      setBusy(true);
-      try {
-        await onSkip();
-      } finally {
-        setBusy(false);
-      }
+    if (!day || day > toDateKey(new Date())) {
+      setToast({
+        type: "error",
+        title: "Choose a valid day",
+        message: "Work can only be reported for today or a past day.",
+      });
       return;
     }
     if (!minutes) {
@@ -84,6 +80,14 @@ export function FinishTaskDialog({ heading = "Task done", label, name, onSubmit,
     }
     if (!place) {
       setToast({ type: "error", title: "Remote or onsite?", message: "Choose where the work was done." });
+      return;
+    }
+    if (!note.trim()) {
+      setToast({
+        type: "error",
+        title: "Describe the work",
+        message: "Write what was done before marking the task done.",
+      });
       return;
     }
     setBusy(true);
@@ -106,7 +110,7 @@ export function FinishTaskDialog({ heading = "Task done", label, name, onSubmit,
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Add the finished task to the Day Report"
+        aria-label="Report work before finishing the task"
         className="flex max-h-[92dvh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-t-xl border border-subtle bg-surface-1 p-4 shadow-raised-300 sm:rounded-xl"
       >
         <header className="flex items-start gap-3">
@@ -128,108 +132,88 @@ export function FinishTaskDialog({ heading = "Task done", label, name, onSubmit,
           </button>
         </header>
 
-        <label className="flex min-h-11 items-start gap-3 rounded-lg border border-subtle p-3">
-          <input
-            type="checkbox"
-            aria-label="Done earlier, do not add it to a Day Report"
-            checked={earlier}
-            onChange={(event) => setEarlier(event.target.checked)}
-            className="mt-0.5 size-5 shrink-0"
-          />
-          <span>
-            <span className="block text-body-sm-medium text-primary">Done earlier, do not add it to a Day Report</span>
-            <span className="text-caption-sm-regular text-tertiary">
-              For work finished before, already reported, or not worth reporting.
-            </span>
-          </span>
-        </label>
-
-        {earlier ? null : (
-          <>
-            <p className="text-body-xs-regular text-secondary">
-              How long did it take? It goes into the Day Report with "Task done", like a row you add there.
-            </p>
-            <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-              <label className="flex min-w-36 flex-1 flex-col gap-0.5">
-                <span className="text-caption-sm-medium text-tertiary">Day</span>
-                <input
-                  type="date"
-                  value={day}
-                  max={toDateKey(new Date())}
-                  onChange={(e) => setDay(e.target.value)}
-                  className={field}
-                />
-              </label>
-              {spread ? (
-                <label className="flex min-w-28 flex-1 flex-col gap-0.5">
-                  <span className="text-caption-sm-medium text-tertiary">How long</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={duration}
-                    placeholder="1:30"
-                    onChange={(e) => setDuration(e.target.value)}
-                    onBlur={() => {
-                      const value = parseDuration(duration);
-                      if (value) setDuration(durationText(value));
-                    }}
-                    className={field}
-                  />
-                </label>
-              ) : (
-                <>
-                  <label className="flex min-w-28 flex-1 flex-col gap-0.5">
-                    <span className="text-caption-sm-medium text-tertiary">From</span>
-                    <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className={field} />
-                  </label>
-                  <label className="flex min-w-28 flex-1 flex-col gap-0.5">
-                    <span className="text-caption-sm-medium text-tertiary">To</span>
-                    <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className={field} />
-                  </label>
-                </>
-              )}
-              <span className="pb-2.5 text-body-sm-semibold text-primary tabular-nums">
-                {minutes ? formatMinutes(minutes) : "—"}
-              </span>
-            </div>
-            <label className="flex min-h-10 items-center gap-2 text-body-xs-medium text-secondary">
-              <input
-                type="checkbox"
-                checked={spread}
-                onChange={(event) => {
-                  if (event.target.checked && minutes) setDuration(durationText(minutes));
-                  setSpread(event.target.checked);
-                }}
-                className="size-5"
-              />
-              Not continuous (only how long)
-            </label>
-            <div role="radiogroup" aria-label="Place" className="flex self-start rounded-md border border-subtle p-0.5">
-              {(["REMOTE", "ONSITE"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={place === value}
-                  onClick={() => setPlace(value)}
-                  className={cn(
-                    "min-h-9 rounded px-4 text-body-xs-medium",
-                    place === value ? "bg-accent-primary text-on-color" : "text-secondary hover:bg-layer-1"
-                  )}
-                >
-                  {value === "REMOTE" ? "Remote" : "Onsite"}
-                </button>
-              ))}
-            </div>
+        <p className="text-body-xs-regular text-secondary">
+          How long did it take? Send the Day Report to mark the task done in its project.
+        </p>
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+          <label className="flex min-w-36 flex-1 flex-col gap-0.5">
+            <span className="text-caption-sm-medium text-tertiary">Day</span>
             <input
-              type="text"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="What was done (optional)"
+              type="date"
+              value={day}
+              max={toDateKey(new Date())}
+              onChange={(e) => setDay(e.target.value)}
               className={field}
             />
-          </>
-        )}
+          </label>
+          {spread ? (
+            <label className="flex min-w-28 flex-1 flex-col gap-0.5">
+              <span className="text-caption-sm-medium text-tertiary">How long</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={duration}
+                placeholder="1:30"
+                onChange={(e) => setDuration(e.target.value)}
+                onBlur={() => {
+                  const value = parseDuration(duration);
+                  if (value) setDuration(durationText(value));
+                }}
+                className={field}
+              />
+            </label>
+          ) : (
+            <>
+              <label className="flex min-w-28 flex-1 flex-col gap-0.5">
+                <span className="text-caption-sm-medium text-tertiary">From</span>
+                <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className={field} />
+              </label>
+              <label className="flex min-w-28 flex-1 flex-col gap-0.5">
+                <span className="text-caption-sm-medium text-tertiary">To</span>
+                <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className={field} />
+              </label>
+            </>
+          )}
+          <span className="pb-2.5 text-body-sm-semibold text-primary tabular-nums">
+            {minutes ? formatMinutes(minutes) : "—"}
+          </span>
+        </div>
+        <label className="flex min-h-10 items-center gap-2 text-body-xs-medium text-secondary">
+          <input
+            type="checkbox"
+            checked={spread}
+            onChange={(event) => {
+              if (event.target.checked && minutes) setDuration(durationText(minutes));
+              setSpread(event.target.checked);
+            }}
+            className="size-5"
+          />
+          Not continuous (only how long)
+        </label>
+        <div role="radiogroup" aria-label="Place" className="flex self-start rounded-md border border-subtle p-0.5">
+          {(["REMOTE", "ONSITE"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={place === value}
+              onClick={() => setPlace(value)}
+              className={cn(
+                "min-h-9 rounded px-4 text-body-xs-medium",
+                place === value ? "bg-accent-primary text-on-color" : "text-secondary hover:bg-layer-1"
+              )}
+            >
+              {value === "REMOTE" ? "Remote" : "Onsite"}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder="What was done (required)"
+          className={field}
+        />
 
         <div className="flex flex-wrap gap-2">
           <button
@@ -238,17 +222,15 @@ export function FinishTaskDialog({ heading = "Task done", label, name, onSubmit,
             onClick={() => void save()}
             className="inline-flex min-h-11 items-center rounded-md bg-accent-primary px-4 text-body-sm-medium text-on-color disabled:opacity-60"
           >
-            {earlier ? "Done, without reporting" : busy ? "Adding..." : "Add to the Day Report"}
+            {busy ? "Adding..." : "Add to the Day Report"}
           </button>
-          {earlier ? null : (
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex min-h-11 items-center rounded-md border border-subtle px-4 text-body-sm-medium text-secondary hover:bg-layer-1"
-            >
-              Not now
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex min-h-11 items-center rounded-md border border-subtle px-4 text-body-sm-medium text-secondary hover:bg-layer-1"
+          >
+            Not now
+          </button>
         </div>
       </div>
     </div>

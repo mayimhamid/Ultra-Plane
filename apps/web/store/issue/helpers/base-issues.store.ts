@@ -562,6 +562,23 @@ export abstract class BaseIssuesStore implements IBaseIssuesStore {
     // Store Before state of the issue
     const issueBeforeUpdate = clone(this.rootIssueStore.issues.getIssueById(issueId));
     try {
+      if (
+        shouldSync &&
+        data.state_id &&
+        data.state_id !== issueBeforeUpdate?.state_id &&
+        typeof window !== "undefined"
+      ) {
+        const detail = {
+          workspaceSlug,
+          projectId,
+          issueId,
+          stateId: data.state_id,
+          previousStateId: issueBeforeUpdate?.state_id,
+          deferred: false,
+        };
+        window.dispatchEvent(new CustomEvent("team-ops:before-state-changed", { detail }));
+        if (detail.deferred) return;
+      }
       // Update the Respective Stores
       this.rootIssueStore.issues.updateIssue(issueId, data);
       this.updateIssueList({ ...issueBeforeUpdate, ...data } as TIssue, issueBeforeUpdate);
