@@ -386,19 +386,22 @@ def _clean_rows(workspace, user, rows):
     return cleaned
 
 
-def complete_issues(issues, actor):
-    """Move each work item to the first Done state of its project (unless it is done already), as Plane would,
-    with the change in its history. Only for people who may change the work item (members, not guests)."""
+def complete_issues(issues, actor, state_id=None):
+    """Move each work item to the selected Done state, or its project's first Done state by default.
+
+    Record the transition in issue history and require project edit access.
+    """
     moved = []
     for issue in {issue.id: issue for issue in issues}.values():
         state = issue.state if issue.state_id else None
-        if state is not None and state.group in COMPLETED_GROUPS:
+        if state is not None and state.group in COMPLETED_GROUPS and state_id is None:
             continue
         if not ProjectMember.objects.filter(
             project_id=issue.project_id, member=actor, is_active=True, role__gte=15
         ).exists():
             continue
-        done = State.objects.filter(project_id=issue.project_id, group="completed").order_by("sequence").first()
+        states = State.objects.filter(project_id=issue.project_id, group="completed")
+        done = states.filter(pk=state_id).first() if state_id else states.order_by("sequence").first()
         if done is None:
             continue
         issue.state = done
@@ -422,12 +425,13 @@ def complete_issues(issues, actor):
     return moved
 
 
-def append_row(*, workspace, user, actor, day, row, reason=""):
+@transaction.atomic
+def append_row(*, workspace, user, actor, day, row, reason="", completed_state=None):
     """Add one row to the report of `day`, keeping the rows already there (a task marked done in its project).
 
     Today's unsent report stays a draft; a sent report or a past day records the change, as any change does.
     """
-    report = DayReport.objects.filter(workspace=workspace, user=user, date=day).first()
+    report = DayReport.objects.select_for_update().filter(workspace=workspace, user=user, date=day).first()
     rows = []
     if report is not None:
         for entry in report.entries.all():
@@ -443,11 +447,35 @@ def append_row(*, workspace, user, actor, day, row, reason=""):
                     "note": entry.note,
                 }
             )
+    if completed_state and report and report.status == DayReport.Status.DRAFT:
+        # The old project form could save a finished row while leaving the issue open.
+        for index in range(len(rows) - 1, -1, -1):
+            previous = rows[index]
+            if (
+                previous["finished"]
+                and previous["issue"] == row.get("issue")
+                and previous["start"] == (row.get("start") or None)
+                and previous["end"] == (row.get("end") or None)
+                and str(previous["minutes"]) == str(row.get("minutes"))
+                and previous["location"] == row.get("location")
+                and previous["note"] == row.get("note")
+            ):
+                rows.pop(index)
+                break
     rows.append(row)
-    return save_report(workspace=workspace, user=user, actor=actor, day=day, rows=rows, submit=False, reason=reason)
+    return save_report(
+        workspace=workspace,
+        user=user,
+        actor=actor,
+        day=day,
+        rows=rows,
+        submit=False,
+        reason=reason,
+        completed_state=completed_state,
+    )
 
 
-def save_report(*, workspace, user, actor, day, rows, submit, reason=""):
+def save_report(*, workspace, user, actor, day, rows, submit, reason="", completed_state=None):
     """Save the report of `user` for `day`; `submit` sends it. Returns the payload.
 
     Today's draft changes freely. Sending the report of a past day, or changing a report that was already sent,
@@ -485,6 +513,10 @@ def save_report(*, workspace, user, actor, day, rows, submit, reason=""):
                 for position, row in enumerate(cleaned)
             ]
         )
+        if completed_state is not None:
+            issue = cleaned[-1]["issue"]
+            if not issue or not cleaned[-1]["finished"] or not complete_issues([issue], actor, completed_state):
+                raise ParseError(detail="Could not move this work item to the selected Done state.")
         if sending:
             for row in cleaned:
                 micro = row["micro_task"]

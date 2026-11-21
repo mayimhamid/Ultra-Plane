@@ -31,7 +31,7 @@ type TDone = {
 
 /**
  * When a work item is moved to a Done state in its project (list, board or its page), this asks how long it took,
- * like a Day Report row. The task enters Done when the report is submitted.
+ * like a Day Report row. Saving the form records the work and completes the task.
  */
 export const DonePrompt = observer(function DonePrompt() {
   const [done, setDone] = useState<TDone | null>(null);
@@ -65,28 +65,27 @@ export const DonePrompt = observer(function DonePrompt() {
 
   const submit = async ({ day, minutes, start, end, place, note }: TFinishedWork) => {
     try {
-      const report = await dayReportService.addRow(done.workspaceSlug, day, {
+      await dayReportService.addRow(done.workspaceSlug, day, {
         issue: done.issueId,
         minutes,
         ...(start && end ? { start, end } : {}),
         location: place,
         finished: true,
+        completed_state: done.stateId,
         note,
       });
-      if (report.status === "SUBMITTED") {
-        await projectIssues.updateIssue(
-          done.workspaceSlug,
-          done.projectId,
-          done.issueId,
-          { state_id: done.stateId },
-          false
-        );
-      }
-      await refreshTeamOps();
+      await projectIssues.updateIssue(
+        done.workspaceSlug,
+        done.projectId,
+        done.issueId,
+        { state_id: done.stateId },
+        false
+      );
+      void refreshTeamOps().catch(() => {});
       setToast({
         type: "success",
         title: "Added to the Day Report",
-        message: `${key} · ${formatMinutes(minutes)}${day === toDateKey(new Date()) ? " today" : ` on ${day}`}.${report.status === "SUBMITTED" ? " Task finished." : " Send the report to finish the task."}`,
+        message: `${key} · ${formatMinutes(minutes)}${day === toDateKey(new Date()) ? " today" : ` on ${day}`}. Task finished.`,
       });
       close();
     } catch (error) {
@@ -95,5 +94,14 @@ export const DonePrompt = observer(function DonePrompt() {
     }
   };
 
-  return <FinishTaskDialog key={done.issueId} label={key} name={issue?.name ?? ""} onSubmit={submit} onClose={close} />;
+  return (
+    <FinishTaskDialog
+      key={done.issueId}
+      completesIssue
+      label={key}
+      name={issue?.name ?? ""}
+      onSubmit={submit}
+      onClose={close}
+    />
+  );
 });

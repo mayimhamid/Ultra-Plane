@@ -28,6 +28,7 @@ type Props = {
   label?: string;
   name: string;
   reportingOnly?: boolean;
+  completesIssue?: boolean;
   /** Adds the work to the Day Report; throws when it cannot. */
   onSubmit: (work: TFinishedWork) => Promise<void>;
   onClose: () => void;
@@ -55,6 +56,7 @@ export function FinishTaskDialog({
   label,
   name,
   reportingOnly = false,
+  completesIssue = false,
   onSubmit,
   onClose,
 }: Props) {
@@ -143,7 +145,9 @@ export function FinishTaskDialog({
         <p className="text-body-xs-regular text-secondary">
           {reportingOnly
             ? "Choose the day, time and place for this work."
-            : "How long did it take? Send the Day Report to mark the task done."}
+            : completesIssue
+              ? "Save the work to your Day Report and move this task to Done."
+              : "How long did it take? Send the Day Report to mark the task done."}
         </p>
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
           <label className="flex min-w-36 flex-1 flex-col gap-0.5">

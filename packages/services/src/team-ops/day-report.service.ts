@@ -110,7 +110,11 @@ export class DayReportService extends APIService {
   }
 
   /** Adds one row to the caller's report of `day`, keeping the rows already there. */
-  async addRow(workspaceSlug: string, day: string, row: TDayReportRowInput & { reason?: string }): Promise<TDayReport> {
+  async addRow(
+    workspaceSlug: string,
+    day: string,
+    row: TDayReportRowInput & { reason?: string; completed_state?: string }
+  ): Promise<TDayReport> {
     return this.post(`${this.base(workspaceSlug)}/day-reports/${day}/rows/`, row)
       .then((response) => response?.data)
       .catch(unwrap);

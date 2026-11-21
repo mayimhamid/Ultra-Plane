@@ -104,6 +104,10 @@ class DayReportRowEndpoint(BaseAPIView):
             actor=request.user,
             day=_day(day),
             row=row,
+            completed_state=(
+                parse_uuid(request.data["completed_state"], "completed_state")
+                if request.data.get("completed_state") else None
+            ),
             reason=request.data.get("reason") or "Added when the task was marked done",
         )
         payload["can_edit"] = True

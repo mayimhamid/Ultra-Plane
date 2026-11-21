@@ -416,6 +416,19 @@ class TestSummary:
 
 @pytest.mark.contract
 class TestStateSync:
+    def test_project_done_adds_row_and_completes_without_sending_report(self, member_client, workspace, project, issue):
+        done = State.objects.create(project=project, workspace=workspace, name="Delivered", color="#0a0", group="completed")
+        response = member_client.post(
+            report_url(workspace, today(), "rows/"),
+            {"issue": str(issue.id), "minutes": 45, "finished": True, "completed_state": str(done.id)},
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.data["status"] == "DRAFT"
+        assert response.data["total_minutes"] == 45
+        issue.refresh_from_db()
+        assert issue.state_id == done.id
+
     def test_done_in_the_report_moves_the_work_item_to_done(self, member_client, workspace, project, issue):
         todo, _ = State.objects.get_or_create(
             project=project, workspace=workspace, name="Todo", defaults={"color": "#999", "group": "unstarted"}
