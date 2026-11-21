@@ -101,6 +101,7 @@ jobs:
     environment: mg-sfactory
     permissions:
       contents: read
+      packages: read
     env:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_PORT: ${{ secrets.SSH_PORT }}
@@ -144,7 +145,20 @@ jobs:
         run: scp deploy/server/plane-compose.sh deploy/server/post-deploy-check.sh deploy/server/deploy.sh "server:$DEPLOY_PATH/"
 
       - name: Deploy
-        run: ssh server "cd '$DEPLOY_PATH' && chmod +x plane-compose.sh post-deploy-check.sh deploy.sh && PLANE_DIR='$DEPLOY_PATH' bash ./deploy.sh"
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s\n' "$GHCR_TOKEN" | ssh -T server "bash -c '
+            set -euo pipefail
+            cd \"\$1\"
+            chmod +x plane-compose.sh post-deploy-check.sh deploy.sh
+            DOCKER_CONFIG=\$(mktemp -d)
+            export DOCKER_CONFIG
+            trap \"rm -f -- \\\"\$DOCKER_CONFIG/config.json\\\"; rmdir -- \\\"\$DOCKER_CONFIG\\\"\" EXIT
+            printf \"%s\\n\" \"{\\\"auths\\\":{\\\"ghcr.io\\\":{}}}\" > \"\$DOCKER_CONFIG/config.json\"
+            docker login ghcr.io --username \"\$2\" --password-stdin
+            PLANE_DIR=\"\$PWD\" bash ./deploy.sh </dev/null
+          ' deploy '$DEPLOY_PATH' '$GITHUB_ACTOR'"
 
       - name: Remove the key
         if: always()
