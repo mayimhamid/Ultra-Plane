@@ -4,20 +4,17 @@
  *
  * Caching never holds a release back:
  * - /assets/* files have a content hash in their name, so a cached copy is always the right one (cache first).
- * - Pages are asked from the network first. When it does not answer within a few seconds (a slow phone link)
- *   or not at all, the cached page opens the app at once and the fresh copy is kept for next time.
+ * - Pages use the cached shell only when the network request fails. A slow response may contain a new release.
  * - The page can ask the worker to fetch the app's screens ahead of time (WARM), so they open instantly.
  * - API calls, sign-in and uploads are never cached.
  * The page itself checks for a new release and, when there is one, offers to update (see app-updater.tsx);
  * it then sends CLEAR_CACHE and reloads.
  */
 
-const CACHE = "ultra-plane-v1";
+const CACHE = "ultra-plane-v2";
 const SHELL = "/__app-shell__";
 // Old hashed files of earlier releases pile up; keep the newest ones only.
 const MAX_ASSETS = 1200;
-// How long a page may take before the cached copy is shown instead.
-const PAGE_TIMEOUT_MS = 3000;
 const NEVER = ["/api/", "/auth/", "/god-mode", "/spaces", "/live", "/uploads", "/team-ops-sw.js", "/sw.js"];
 
 self.addEventListener("install", () => {
@@ -28,7 +25,9 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const names = await caches.keys();
-      await Promise.all(names.filter((name) => name !== CACHE).map((name) => caches.delete(name)));
+      await Promise.all(
+        names.filter((name) => name.startsWith("ultra-plane-") && name !== CACHE).map((name) => caches.delete(name))
+      );
       await self.clients.claim();
     })()
   );
@@ -101,21 +100,17 @@ const staleWhileRevalidate = async (request) => {
 
 const networkFirstPage = async (event) => {
   const cache = await caches.open(CACHE);
-  const fresh = fetch(event.request).then(async (response) => {
+  const fresh = fetch(event.request, { cache: "no-cache" }).then(async (response) => {
     // The app is a single page: any page works as the shell to open offline.
     if (response.ok && response.type === "basic") await cache.put(SHELL, response.clone());
     return response;
   });
-  // Keep the fresh copy coming in even when the cached one is shown.
-  event.waitUntil(fresh.catch(() => undefined));
-  const shell = await cache.match(SHELL);
-  if (!shell) return fresh;
-  const slow = new Promise((resolve) => setTimeout(() => resolve(null), PAGE_TIMEOUT_MS));
   try {
-    const first = await Promise.race([fresh, slow]);
-    return first || shell;
+    return await fresh;
   } catch (error) {
-    return shell;
+    const shell = await cache.match(SHELL);
+    if (shell) return shell;
+    throw error;
   }
 };
 
